@@ -110,8 +110,8 @@ const VIEW_PUBLISHED = {
 
 - 编辑者先落盘，再 `bumpAnnotRev(bookId, code, 'reader'|'side')`，把 `viewLink.state.annotRev` 加一发出去；
 - 另一端收到更高值 → 把该页两组数据从 localStorage 重读（`remoteAnnotRev` / `seenAnnotRev`）；
-- 阅读器的写回逻辑用「**与存储内容相同就不算编辑**」来判断一次写入是重读还是真编辑，所以重读不会反弹；右侧是显式 `commitStrokes`/`commitMasks`（只在用户操作时调用），不会在重读时写回。
-- 导入 sidecar 后当前页的写入可能与存储一致而被判为「重读」，因此导入完成后显式广播一次。
+- **写入只发生在用户操作处**：两端都是「显式保存」——`savePageAnnots`/`savePageMasks`（阅读器）与 `commitStrokes`/`commitMasks`（右栏），页面加载只读不写。这样翻页时不会把上一页的内容写进新页，也不需要「内容相同算重读」这种启发式判断；
+- 导入 sidecar 是整章批量写存储，完成后显式广播一次。
 
 ## 6. 组件
 
@@ -144,8 +144,7 @@ const VIEW_PUBLISHED = {
 
 ### 6.2 阅读器侧改动
 
-- `ReaderView`：`docRev` 由翻译/补译/导入标注递增并发布；标注/框选编辑后调用 `bumpAnnotRev(..., 'reader')`；订阅 `origin === 'side'` 的 `annotRev`，收到后把当前页两组数据从 localStorage 重读；
-- 阅读器的写回判据：**写出的 JSON 与存储相同 ⇒ 是重读，不广播**；因此另一端编辑后重读不会反弹；
+- `ReaderView`：`docRev` 由翻译/补译/导入标注递增并发布；标注/框选编辑走 `savePageAnnots`/`savePageMasks`（写存储 + 广播 `annotRev`），页面加载只读；订阅 `origin === 'side'` 的 `annotRev`，收到后把当前页两组数据从 localStorage 重读；
 - `WorkbenchPage`：`readerViewKey` 字符串变化 → `syncView(..., 'reader')`；订阅右栏的 `page/mode`，用 `readerPage` 与已判重的 setState 应用；
 - `openReader(target)` 新增 `target.page`，供「在工作台打开」精确落页。
 

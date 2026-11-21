@@ -3550,7 +3550,6 @@ window.__ModuleLoader__.load({
       const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
       const [draftStroke, setDraftStroke] = useState(null)
-      const annotLoaded = useRef(false)
       const [translatedImage, setTranslatedImage] = useState('')
       const [overlayNote, setOverlayNote] = useState('')
       const overlaySource = useRef('')
@@ -3592,13 +3591,14 @@ window.__ModuleLoader__.load({
       // Bumped whenever the translated/overlay file on disk changes, so the
       // reader (and the side preview) reloads the same new bytes.
       const [docRev, setDocRev] = useState(0)
-      const maskWritten = useRef('')
-      const annotWritten = useRef('')
       // Annotation edits are shared: each end persists, then announces, and the
-      // other end re-reads that page. `remoteAnnotRev` is this end's reload signal
-      // and the two flags keep a reload from being announced back.
+      // other end re-reads that page. `remoteAnnotRev` is this end's reload signal.
       const [remoteAnnotRev, setRemoteAnnotRev] = useState(0)
       const seenAnnotRev = useRef(0)
+      const strokesRef = useRef([])
+      const masksRef = useRef([])
+      strokesRef.current = strokes
+      masksRef.current = masks
       useEffect(() => {
         seenAnnotRev.current = Number(readView(reader.bookId, reader.code).annotRev) || 0
         return subscribeView(reader.bookId, reader.code, state => {
@@ -3609,6 +3609,28 @@ window.__ModuleLoader__.load({
           setRemoteAnnotRev(value => value + 1)
         })
       }, [reader.bookId, reader.code])
+      // Every edit goes through these: state, storage and the announcement stay in
+      // step, and a page's own load never writes anything back.
+      const savePageAnnots = next => {
+        strokesRef.current = next
+        setStrokes(next)
+        try {
+          window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(next))
+        } catch {
+          // storage unavailable: the ink stays on screen only
+        }
+        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+      }
+      const savePageMasks = next => {
+        masksRef.current = next
+        setMasks(next)
+        try {
+          window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(next))
+        } catch {
+          // storage unavailable: the boxes stay on screen only
+        }
+        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+      }
       useEffect(() => {
         if (docRev === 0) return
         syncView(reader.bookId, reader.code, { docRev }, 'reader')
@@ -3775,38 +3797,15 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         try {
           const raw = window.localStorage.getItem(maskKey)
-          setMasks(raw === null ? [] : JSON.parse(raw))
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          const list = Array.isArray(parsed) ? parsed : []
+          masksRef.current = list
+          setMasks(list)
         } catch {
+          masksRef.current = []
           setMasks([])
         }
       }, [maskKey, remoteAnnotRev])
-      useEffect(() => {
-        // A write whose bytes already match storage is a reload (the page's own
-        // load, or the other end's edit), not an edit of ours to announce.
-        const serialized = JSON.stringify(masks)
-        let stored = null
-        try {
-          stored = window.localStorage.getItem(maskKey)
-        } catch {
-          // storage unavailable: fall through and try to write anyway
-        }
-        if (stored === serialized) {
-          maskWritten.current = maskKey
-          return
-        }
-        try {
-          window.localStorage.setItem(maskKey, serialized)
-        } catch {
-          // storage unavailable
-        }
-        // The first write of a page is the load above re-saving it; only an edit
-        // after that is a change the side preview has to redraw.
-        if (maskWritten.current !== maskKey) {
-          maskWritten.current = maskKey
-          return
-        }
-        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
-      }, [maskKey, masks])
       useEffect(() => {
         if (!overlay || dualDoc === null) {
           setTranslatedImage('')
@@ -3876,7 +3875,7 @@ window.__ModuleLoader__.load({
         if (overlayStart.current === null) return
         overlayStart.current = null
         setMaskDraft(draft => {
-          if (draft !== null && draft.w > 0.02 && draft.h > 0.02) setMasks(list => [...list, draft])
+          if (draft !== null && draft.w > 0.02 && draft.h > 0.02) savePageMasks([...masksRef.current, draft])
           return null
         })
       }
@@ -3905,7 +3904,7 @@ window.__ModuleLoader__.load({
             const bottom = Math.min(1, y + h + 0.022)
             next.push({ x: left, y: top, w: right - left, h: bottom - top })
           }
-          if (next.length > 0) setMasks(next)
+          if (next.length > 0) savePageMasks(next)
         } catch {
           // no cached blocks for this page: leave the current boxes alone
         }
@@ -3913,41 +3912,17 @@ window.__ModuleLoader__.load({
 
       const annotKey = `mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
-        annotLoaded.current = false
         try {
           const raw = window.localStorage.getItem(annotKey)
           const parsed = raw === null ? [] : JSON.parse(raw)
-          setStrokes(Array.isArray(parsed) ? parsed : [])
+          const list = Array.isArray(parsed) ? parsed : []
+          strokesRef.current = list
+          setStrokes(list)
         } catch {
+          strokesRef.current = []
           setStrokes([])
         }
-        annotLoaded.current = true
       }, [annotKey, remoteAnnotRev])
-      useEffect(() => {
-        if (!annotLoaded.current) return
-        // Same rule as the boxes: matching bytes mean a reload, not an edit.
-        const serialized = JSON.stringify(strokes)
-        let stored = null
-        try {
-          stored = window.localStorage.getItem(annotKey)
-        } catch {
-          // storage unavailable: fall through and try to write anyway
-        }
-        if (stored === serialized) {
-          annotWritten.current = annotKey
-          return
-        }
-        try {
-          window.localStorage.setItem(annotKey, serialized)
-        } catch {
-          // storage unavailable
-        }
-        if (annotWritten.current !== annotKey) {
-          annotWritten.current = annotKey
-          return
-        }
-        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
-      }, [annotKey, strokes])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
       // eraser can turn its pixel tolerance into page units.
@@ -3998,14 +3973,14 @@ window.__ModuleLoader__.load({
         event.preventDefault()
         if (annotTool === 'erase') {
           erasing.current = true
-          setStrokes(list => list.filter(entry => !annotHit(entry, point)))
+          savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
           return
         }
         if (annotTool === 'text') {
           const typed = typeof window.prompt === 'function' ? window.prompt(format('annotTextPrompt'), '') : ''
           const value = typeof typed === 'string' ? typed.trim() : ''
           if (value !== '') {
-            setStrokes(list => [...list, { kind: 'text', x: point[0], y: point[1], text: value, color: annotColor }])
+            savePageAnnots([...strokesRef.current, { kind: 'text', x: point[0], y: point[1], text: value, color: annotColor }])
           }
           return
         }
@@ -4018,7 +3993,7 @@ window.__ModuleLoader__.load({
           const point = annotPoint(event)
           if (point === null) return
           event.preventDefault()
-          setStrokes(list => list.filter(entry => !annotHit(entry, point)))
+          savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
           return
         }
         if (draftStroke === null) return
@@ -4034,7 +4009,7 @@ window.__ModuleLoader__.load({
       const annotUp = () => {
         erasing.current = false
         if (draftStroke === null) return
-        if (draftStroke.points.length > 1) setStrokes(list => [...list, draftStroke])
+        if (draftStroke.points.length > 1) savePageAnnots([...strokesRef.current, draftStroke])
         setDraftStroke(null)
       }
 
@@ -4062,6 +4037,8 @@ window.__ModuleLoader__.load({
               continue
             }
             if (page === reader.page) {
+              masksRef.current = pageMasks
+              strokesRef.current = pageAnnots
               setMasks(pageMasks)
               setStrokes(pageAnnots)
             }
@@ -4070,8 +4047,8 @@ window.__ModuleLoader__.load({
           updateNote(format('importAnnotsDone', { n: count }))
           setRetryAction(null)
           setDocRev(value => value + 1)
-          // The current page's state already matched storage, so the write effect
-          // stayed silent; the import is still an edit the other end must see.
+          // Every page was written straight to storage, so the editor's own save
+          // helpers never ran: announce once for the whole import.
           seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
@@ -4452,7 +4429,7 @@ window.__ModuleLoader__.load({
             title: format('overlayRemove'),
             onPointerDown: event => {
               event.stopPropagation()
-              setMasks(list => list.filter((item, position) => position !== index))
+              savePageMasks(masksRef.current.filter((item, position) => position !== index))
             },
             style: {
               left: `${mask.x * 100}%`,
@@ -4699,7 +4676,7 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               disabled: strokes.length === 0,
               title: format('annotClearHint'), 'aria-label': format('annotClear'),
-              onClick: () => setStrokes([]),
+              onClick: () => savePageAnnots([]),
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('select', {
