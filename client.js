@@ -4495,6 +4495,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const openGroup = useCallback(id => {
         setGroup(id)
         setSelected(new Set())
+        setReader(null)
+        readerRef.current = null
+        setPreview(null)
+        setWork(previous => previous === null ? previous : {
+          ...previous,
+          view: 'shelf',
+          bookId: null,
+          activeChapter: null,
+        })
       }, [])
 
       const createShelf = useCallback(() => {
@@ -5041,10 +5050,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   type: 'button', className: 'md-crumb',
                   onClick: goShelf,
                 }, libraryName),
-            groupName === null || book !== null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            groupName === null || book !== null
+            groupName === null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
+            groupName === null
               ? null
-              : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName),
+              : book === null
+                ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
+                : h('button', {
+                  type: 'button', className: 'md-crumb',
+                  onClick: () => openGroup(group),
+                }, groupName),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title)
           ),
