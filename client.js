@@ -2718,10 +2718,11 @@ window.__ModuleLoader__.load({
         open ? h('div', { className: 'md-detail', id: detailId },
           chapter.file === '' ? null : h('div', { className: 'md-detail-line' },
             h('span', { className: 'md-detail-key' }, format('pdfLabel')),
-            h('span', { className: 'md-detail-value' }, `${chapter.file}.pdf`)
-          ),
-          h('div', { className: 'md-detail-actions' },
-            h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => props.onOpenPdf(chapter) }, format('openPdf'))
+            h('span', { className: 'md-detail-value' }, `${chapter.file}.pdf`),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-detail-open',
+              onClick: () => props.onOpenPdf(chapter),
+            }, format('openPdf'))
           ),
           h('div', {
             className: 'md-sessions-wrap',
@@ -3020,7 +3021,8 @@ window.__ModuleLoader__.load({
 .md-chevron::before { content: ""; position: absolute; top: 50%; left: 40%; width: 6px; height: 6px; border-right: 1.5px solid var(--dsw-alias-label-secondary); border-bottom: 1.5px solid var(--dsw-alias-label-secondary); transform: translate(0, -50%) rotate(-45deg); transition: transform .16s ease; }
 .md-chapter[data-open="true"] .md-chevron::before { transform: translate(0, -50%) rotate(45deg); }
 .md-detail { display: flex; flex-direction: column; gap: 8px; padding: 2px 8px 16px 70px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
-.md-detail-line { display: flex; flex-wrap: wrap; gap: 6px; }
+.md-detail-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.md-detail-open { margin-left: auto; }
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
 .md-detail-value { color: var(--dsw-alias-label-primary); word-break: break-all; }
 .md-detail-actions { display: flex; gap: 8px; }
