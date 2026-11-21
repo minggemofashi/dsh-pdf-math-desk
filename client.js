@@ -1533,7 +1533,7 @@ window.__ModuleLoader__.load({
                 item.id === props.activeId ? h('span', { className: 'md-badge' }, format('libraryActive')) : null,
                 h('span', { className: 'md-badge md-badge-quiet' }, format('modeMath'))
               ),
-              h('code', { className: 'md-path' }, item.libraryDir),
+              h('code', { className: 'md-path' }, '<库根>'),
               h('div', { className: 'md-library-actions' },
                 item.id === props.activeId
                   ? null
@@ -2233,7 +2233,7 @@ window.__ModuleLoader__.load({
         body = h('div', { className: 'md-artifacts-empty' },
           h('span', null, state.missing === true ? format('artifactsMissing') : format('artifactsEmpty')),
           h('span', { className: 'md-artifacts-hint' }, format('artifactsEmptyHint')),
-          h('code', { className: 'md-path' }, state.dir),
+          h('code', { className: 'md-path' }, `<库根>\\产物\\${props.bookId}\\${props.code}`),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-btn-ghost',
@@ -2846,11 +2846,11 @@ window.__ModuleLoader__.load({
       const lines = []
       lines.push(catalog.source === 'index.json' ? format('sourceIndex') : format('sourceScan'))
       if (catalog.indexIgnored) lines.push(format('indexIgnored'))
-      lines.push(format('libraryAt', { dir: catalog.libraryDir }))
+      lines.push(format('libraryAt', { dir: '<库根>' }))
       if (typeof catalog.artifactDir === 'string' && catalog.artifactDir !== '') {
-        lines.push(format('artifactAt', { dir: catalog.artifactDir }))
+        lines.push(format('artifactAt', { dir: '<库根>\\产物' }))
       }
-      if (catalog.target.cwd !== '') lines.push(format('sessionTarget', { dir: catalog.target.cwd }))
+      if (catalog.target.cwd !== '') lines.push(format('sessionTarget', { dir: '<库根>' }))
       for (const book of props.books) {
         if (typeof book.unparsed === 'number' && book.unparsed > 0) {
           lines.push(format('bookUnparsed', { title: book.title, n: book.unparsed }))
