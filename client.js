@@ -2741,8 +2741,9 @@ window.__ModuleLoader__.load({
 .md-code-gutter { position: sticky; left: 0; flex: none; margin: 0; padding-right: 2px; background: var(--dsw-alias-interactive-bg-hover-solid); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; user-select: none; }
 .md-code-text { flex: 1 1 auto; min-width: 0; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-primary); white-space: pre; }
 .md-artifacts { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
-.md-artifacts-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.md-artifacts-head .md-btn { margin-left: auto; }
+.md-artifacts-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-start; }
+.md-artifacts-head .md-btn { margin-left: 0; }
+.md-artifacts-head .md-btn:last-child { margin-left: auto; }
 .md-artifacts-title { font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-artifacts-empty { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-artifacts-empty .md-btn { align-self: flex-start; }
@@ -2831,7 +2832,8 @@ window.__ModuleLoader__.load({
 .md-section-bar { display: flex; align-items: center; gap: 12px; }
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
-.md-sessions-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.md-sessions-head { display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
+.md-sessions-head .md-btn:first-of-type { margin-left: auto; }
 .md-sessions-wrap[data-collapsed="true"] .md-session-group { display: none; }
 .md-sessions-title { font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-session-state { font-size: 12px; color: var(--dsw-alias-label-secondary); }
