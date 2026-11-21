@@ -183,6 +183,8 @@ window.__ModuleLoader__.load({
       sideMenuClearAnnots: '清除本页标注',
       sideMenuClearMasks: '清空本页框选',
       sideMenuSessions: '跳到会话',
+      sideHideToolbar: '隐藏工具条',
+      sideShowToolbar: '显示工具条',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
@@ -549,6 +551,8 @@ window.__ModuleLoader__.load({
       sideMenuClearAnnots: 'Clear this page’s ink',
       sideMenuClearMasks: 'Clear this page’s boxes',
       sideMenuSessions: 'Jump to a conversation',
+      sideHideToolbar: 'Hide the toolbar',
+      sideShowToolbar: 'Show the toolbar',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
@@ -5413,12 +5417,17 @@ window.__ModuleLoader__.load({
 .md-diag { display: flex; flex-direction: column; gap: 4px; margin-top: 28px; padding-top: 14px; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .md-diag-line { margin: 0; font-size: 12px; color: var(--dsw-alias-label-secondary); word-break: break-word; }
 /* The right column's chapter preview: the reader's stage, in a narrow pane. */
-.md-side { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; background: var(--dsw-alias-bg-base); }
+.md-side { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; background: var(--dsw-alias-bg-base); }
 .md-side-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
 .md-side-bar .md-btn { white-space: nowrap; flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
 .md-side-count { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-side-more { font-size: 15px; line-height: 1; padding: 2px 9px; }
+/* With the toolbar hidden, the handle fades in on hover and sits in the stage's
+   top padding so it never covers the page itself. */
+.md-side-handle { position: absolute; top: 6px; right: 8px; z-index: 7; opacity: 0; transition: opacity .12s ease; font-size: 15px; line-height: 1; padding: 2px 9px; background: color-mix(in srgb, var(--dsw-alias-card-fill) 90%, transparent); }
+.md-side:hover .md-side-handle, .md-side-handle:focus-visible { opacity: 1; }
+.md-side[data-toolbar='hidden'] .md-side-body > .md-reader-stage { padding-top: 32px; }
 .md-side-gap { flex: 1 1 auto; }
 .md-side-body { flex: 1 1 auto; min-height: 0; display: flex; }
 /* Horizontal padding must stay in step with the width minus twenty in
@@ -5515,6 +5524,26 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Publishing starts only after the opening view has been adopted, so the
       // first render cannot push a default page 1 over the reader's page.
       const [started, setStarted] = useState(false)
+      // The toolbar can be hidden for a cleaner page: the preference is global
+      // (this is about looks, not about one chapter).
+      const [toolsHidden, setToolsHidden] = useState(() => {
+        try {
+          return window.localStorage.getItem('mathdesk:side-toolbar') === '0'
+        } catch {
+          return false
+        }
+      })
+      const toggleTools = () => {
+        setToolsHidden(current => {
+          const next = !current
+          try {
+            window.localStorage.setItem('mathdesk:side-toolbar', next ? '0' : '1')
+          } catch {
+            // storage unavailable: the choice lasts for this tab only
+          }
+          return next
+        })
+      }
       // Annotation and box editing: this end edits too, so both the tool and the
       // in-progress shapes live here and the shared counter tells the reader.
       const [tool, setTool] = useState('')
@@ -6142,7 +6171,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // so the menu always reflects the live page, mode and zoom.
       const menuState = useRef(null)
       menuState.current = {
-        page, count, mode, autoFit, follow, phase, bookId, code, target, tool,
+        page, count, mode, autoFit, follow, phase, bookId, code, target, tool, toolsHidden,
         strokes: strokes.length, masks: masks.length,
         tabActions: info.tab.actions,
       }
@@ -6239,6 +6268,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             run: () => requestDeskOpen(state.bookId, state.code, state.page),
           },
           {
+            id: 'toolbar',
+            label: format(state.toolsHidden ? 'sideShowToolbar' : 'sideHideToolbar'),
+            separatorBefore: true,
+            run: () => toggleTools(),
+          },
+          {
             id: 'close',
             label: format('sideMenuClose'),
             separatorBefore: true,
@@ -6314,9 +6349,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       return h('div', {
         className: 'md-side',
         'data-mode': mode,
+        'data-toolbar': toolsHidden ? 'hidden' : 'shown',
         onContextMenu: openSideMenu,
       },
-        h('div', { className: 'md-side-bar' },
+        toolsHidden
+          // The way back to the toolbar: a handle that appears when the pointer
+          // is over the preview, without taking any layout space.
+          ? h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-side-handle',
+            title: format('sideShowToolbar'),
+            'aria-label': format('sideShowToolbar'),
+            'aria-haspopup': 'menu',
+            disabled: target === null,
+            onClick: event => openSideMenu(event),
+          }, '⋯')
+          : null,
+        toolsHidden ? null : h('div', { className: 'md-side-bar' },
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small',

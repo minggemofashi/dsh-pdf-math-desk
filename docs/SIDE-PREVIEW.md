@@ -120,7 +120,7 @@ const VIEW_PUBLISHED = {
 - `SidePdfView` 状态：`doc / count / page / renderScale(见 5.2) / mode / phase / error / docRev / strokes / masks / tool / shownVariant`；
 - 加载：`loadPdfjs()` + `getDocument({ url, isEvalSupported:false, ...pdfAssetUrls() })`，卸载或换版时 `task.destroy()`；
 - 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式挂遮罩层、标注层与编辑层，连续模式走 `ContinuousView` 的窗口化挂载；
-- 工具条：`‹ 页码 ›`、笔/擦/框三个图标、缩放百分比、`⋯`；其余动作见 6.4 的右键菜单；
+- 工具条：`‹ 页码 ›`、笔/擦/框三个图标、缩放百分比、`⋯`；可在菜单里**隐藏**（`v0.64.0`），隐藏时右上角悬浮一个鼠标移入才出现的 `⋯` 作为入口，舞台顶部留 32px 让它不压页面；其余动作见 6.4 的右键菜单；
 - 标注层：`mathdesk:annots:<书>:<章>:<页>` → `.md-annot-readonly`（`pointer-events:none`）；编辑层只在选了工具时出现（`.md-annot-edit`）；
 - 遮罩层：`mathdesk:masks:<书>:<章>:<页>` → `.md-masks-readonly`（`z-index:4`，标注之下），每个框用 `OverlayMaskPage` 把**译文页**画进框里；框本身先出现、译文随后填进来。
 
