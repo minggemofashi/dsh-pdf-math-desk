@@ -2547,7 +2547,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-detail-actions' },
             h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => props.onOpenPdf(chapter) }, format('openPdf'))
           ),
-          h('div', { className: 'md-detail-actions' },
+          h('div', { className: 'md-section-bar' },
             h('span', { className: 'md-detail-key' }, format('sessionsTitle')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
@@ -2826,6 +2826,7 @@ window.__ModuleLoader__.load({
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
 .md-detail-value { color: var(--dsw-alias-label-primary); word-break: break-all; }
 .md-detail-actions { display: flex; gap: 8px; }
+.md-section-bar { display: flex; align-items: center; gap: 12px; }
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .md-sessions-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
