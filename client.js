@@ -1835,18 +1835,18 @@ window.__ModuleLoader__.load({
           props.loaded
             ? null
             : h('span', { className: 'md-session-state' }, format(props.available ? 'sessionLoading' : 'sessionUnavailable')),
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+            onClick: props.onToggle,
+          }, props.open === false ? format('artifactsExpand') : format('artifactsCollapse')),
           props.loaded && props.available
             ? h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-session-digest',
               title: format('digestHint'),
               'aria-label': format('digestOf'),
               onClick: () => props.onDigest(props.chapter),
             }, format('digest'))
-            : null,
-          h('button', {
-            type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-            onClick: props.onToggle,
-          }, props.open === false ? format('artifactsExpand') : format('artifactsCollapse'))
+            : null
         ),
         props.error === '' ? null : h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error),
@@ -2833,7 +2833,7 @@ window.__ModuleLoader__.load({
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .md-sessions-head { display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
-.md-sessions-head .md-btn:first-of-type { margin-left: auto; }
+.md-session-digest { margin-left: auto; }
 .md-sessions-wrap[data-collapsed="true"] .md-session-group { display: none; }
 .md-sessions-title { font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-session-state { font-size: 12px; color: var(--dsw-alias-label-secondary); }
