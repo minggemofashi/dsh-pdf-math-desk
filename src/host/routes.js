@@ -279,12 +279,12 @@ export function createHandler(config, options = {}) {
           return
         }
         const wanted = basename(url.searchParams.get('name') ?? '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 160)
-        if (wanted === '' || !/\.(md|markdown|txt|pdf|png|jpe?g|webp)$/i.test(wanted)) {
-          fail(response, 400, 'bad-name', '只接受 md/txt/pdf/图片文件')
+        if (wanted === '' || !/\.(md|markdown|txt|pdf)$/i.test(wanted)) {
+          fail(response, 400, 'bad-name', '只接受 md / markdown / txt / pdf 文件')
           return
         }
         const library = await activeLibrary()
-        const dir = join(library.libraryDir, '导入')
+        const dir = join(library.libraryDir, '整本')
         await mkdir(dir, { recursive: true })
         const chunks = []
         let total = 0
@@ -296,27 +296,41 @@ export function createHandler(config, options = {}) {
           }
           chunks.push(chunk)
         }
-        const extension = extname(wanted)
+        const extension = extname(wanted).toLowerCase()
         const stem = wanted.slice(0, wanted.length - extension.length)
-        let target = join(dir, wanted)
-        for (let n = 2; n < 1000; n += 1) {
-          try {
-            await stat(target)
-            target = join(dir, `${stem}-${n}${extension}`)
-          } catch {
-            break
+        const unique = async () => {
+          let target = join(dir, `${stem}.pdf`)
+          for (let n = 2; n < 1000; n += 1) {
+            try {
+              await stat(target)
+            } catch {
+              return target
+            }
+            target = join(dir, `${stem}-${n}.pdf`)
           }
+          return target
         }
-        await writeFile(target, Buffer.concat(chunks))
-        let pdf = ''
-        if (/\.md$/i.test(target) && options.md2texScript !== undefined) {
-          try {
-            pdf = await renderMarkdown(options.md2texScript, target, `${target.slice(0, target.length - 3)}.pdf`)
-          } catch {
-            pdf = ''
-          }
+        if (extension === '.pdf') {
+          const target = await unique()
+          await writeFile(target, Buffer.concat(chunks))
+          sendJson(response, 200, { ok: true, path: target, pdf: target, bytes: total })
+          return
         }
-        sendJson(response, 200, { ok: true, path: target, pdf, bytes: total })
+        if (options.md2texScript === undefined) {
+          fail(response, 503, 'render-unavailable', '导入 md 需要 Python 与 TeX Live（xelatex）')
+          return
+        }
+        const temporary = join(config.dataDir, 'tmp', `${Date.now()}-${wanted}`)
+        await mkdir(join(config.dataDir, 'tmp'), { recursive: true })
+        await writeFile(temporary, Buffer.concat(chunks))
+        const target = await unique()
+        try {
+          await renderMarkdown(options.md2texScript, temporary, target)
+        } catch (error) {
+          fail(response, 503, 'render-failed', `渲染失败：${String(error && error.message ? error.message : error).slice(-400)}`)
+          return
+        }
+        sendJson(response, 200, { ok: true, path: target, pdf: target, bytes: total })
         return
       }
 

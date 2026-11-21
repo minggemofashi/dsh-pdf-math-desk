@@ -93,8 +93,8 @@ window.__ModuleLoader__.load({
       splitHint: '把工具复制到当前书库的 工具\\，并新建一个带预设提示词的会话。',
       importStart: '导入文件',
       importBusy: '导入中…',
-      importHint: '把外部文件复制到当前书库的 导入\\ 目录',
-      importFilesDone: '已导入 {n} 个文件到 库根\\导入\\',
+      importHint: '导入 md/txt/pdf：md/txt 自动渲染为 PDF 放进 <库根>\\整本\\（当作整本书）；PDF 直接放进 整本\\。',
+      importFilesDone: '已导入 {n} 个文件到 库根\\整本\\',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
       splitFailed: '拆分工具启动失败',
       librariesTitleHint: '双击标题回到书库',
@@ -315,8 +315,8 @@ window.__ModuleLoader__.load({
       splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
       importStart: 'Import files',
       importBusy: 'Importing…',
-      importHint: 'Copy external files into the active library\'s 导入\\ folder',
-      importFilesDone: 'Imported {n} file(s) into the library\'s 导入\\ folder',
+      importHint: 'Import md/txt/pdf: md/txt are rendered to PDF in <root>\\整本\\ as a whole book; PDFs go there directly.',
+      importFilesDone: 'Imported {n} file(s) into the library\'s 整本\\ folder',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
       splitFailed: 'Could not start the split conversation',
       librariesTitleHint: 'Double-click the title for the libraries',
@@ -3536,8 +3536,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           await request('POST', 'render', { book: work.bookId, code, name: item.name })
           showNotice(format('renderDone', { name: item.name.replace(/\.md$/i, '.pdf') }))
           await reloadArtifacts(code)
-        } catch {
-          showNotice(format('renderFailed'))
+        } catch (error) {
+          showNotice(error !== null && error !== undefined && typeof error.message === 'string' && error.message !== ''
+            ? error.message.slice(0, 240)
+            : format('renderFailed'))
         }
       }, [reloadArtifacts, showNotice, work])
 
