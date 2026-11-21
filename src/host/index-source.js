@@ -441,7 +441,7 @@ async function scanWholeBooks(libraryDir) {
         whole: true,
         wholeAt: at,
         pages: '',
-        kind: 'preface',
+        kind: 'chapter',
       }],
     })
   }

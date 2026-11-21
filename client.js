@@ -2581,31 +2581,6 @@ window.__ModuleLoader__.load({
     function BookSheet(props) {
       const book = props.book
       const chapters = Array.isArray(book.chapters) ? book.chapters : []
-      // A whole-book entry has one synthetic chapter and no chapter semantics:
-      // it gets a single "open the PDF" action instead of the session rows.
-      if (book.whole === true) {
-        const chapter = chapters[0]
-        return h('div', { className: 'md-book' },
-          h('div', { className: 'md-book-head' },
-            h('h2', { className: 'md-book-title', tabIndex: -1, ref: props.headingRef }, book.title),
-            h('div', { className: 'md-book-meta' },
-              h('span', { className: 'md-book-author' }, format('wholeBadge')),
-              h('span', { className: 'md-book-count' }, format('wholeHint'))
-            )
-          ),
-          h('div', { className: 'md-whole' },
-            h('button', {
-              type: 'button',
-              className: 'md-btn',
-              disabled: chapter === undefined,
-              onClick: () => {
-                if (chapter !== undefined) props.onOpenPdf(chapter)
-              },
-            }, format('openPdf')),
-            h('p', { className: 'md-shelf-sub' }, format('wholeExplain', { dir: props.libraryDir ?? '' }))
-          )
-        )
-      }
       const errorForChapter = chapter => props.createError !== null
         && props.createError.bookId === book.id
         && props.createError.code === chapter.code
