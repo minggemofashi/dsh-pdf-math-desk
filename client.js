@@ -3234,7 +3234,7 @@ window.__ModuleLoader__.load({
       // Freehand annotations, one array of strokes per page, normalized so they
       // follow the page box through any zoom.
       const [annotTool, setAnnotTool] = useState('')
-      const [annotColor, setAnnotColor] = useState('#e0554a')
+      const [annotColor, setAnnotColor] = useState('#1f1f1f')
       const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
       const [draftStroke, setDraftStroke] = useState(null)
@@ -4097,7 +4097,7 @@ window.__ModuleLoader__.load({
               title: format('annotTextHint'), 'aria-label': format('annotText'),
               onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
             }, annotIcon('M4 6h16M12 6v13M9 19h6')),
-            ['#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+            ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
               key: color,
               type: 'button',
               className: 'md-btn md-btn-small md-annot-swatch',
