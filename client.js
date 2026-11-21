@@ -211,6 +211,7 @@ window.__ModuleLoader__.load({
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
       overlayLoading: '正在准备叠加层…',
+      overlayTwoColumns: '这一页疑似双栏排版：叠加位置可能不准，逐段对照建议用「双语」',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translateCancel: '取消翻译',
@@ -557,6 +558,7 @@ window.__ModuleLoader__.load({
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
       overlayLoading: 'Preparing the overlay layer…',
+      overlayTwoColumns: 'This page looks two-column: the overlay boxes may be off; use the bilingual view for a reliable reading',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translateCancel: 'Cancel translation',
@@ -3437,6 +3439,27 @@ window.__ModuleLoader__.load({
             if (!cancelled) {
               setOverlayNote(notice)
               setDualDoc(doc)
+            }
+            if (doc !== null && overlay && notice === '' && !cancelled) {
+              // Two-column pages position poorly: say so instead of pretending
+              // the boxes line up. A later release can reflow by column.
+              try {
+                const payload = await request('GET',
+                  `blocks?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&page=${reader.page}`)
+                const list = Array.isArray(payload.blocks) ? payload.blocks : []
+                const looksTwoColumn = list.some((first, index) => list.slice(index + 1).some(second => {
+                  const a = first.bbox
+                  const b = second.bbox
+                  if (!Array.isArray(a) || !Array.isArray(b)) return false
+                  const overlap = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1])
+                  if (overlap < 0.5 * Math.min(a[3], b[3])) return false
+                  const apart = a[0] + a[2] <= b[0] + 0.01 || b[0] + b[2] <= a[0] + 0.01
+                  return apart && a[2] < 0.45 && b[2] < 0.45
+                }))
+                if (!cancelled && looksTwoColumn) setOverlayNote(format('overlayTwoColumns'))
+              } catch {
+                // blocks are optional here
+              }
             }
           } catch {
             if (!cancelled) {
