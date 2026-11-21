@@ -197,6 +197,8 @@ window.__ModuleLoader__.load({
       exportChapterHint: '导出整章 PDF：每页原文 + 框选露出的译文 + 标注，另存一份 sidecar JSON 到产物目录',
       exportingChapter: '正在导出整章…',
       exportAnnotatedPages: '带标注/遮罩 {n} 页',
+      exportGroup: '导出…',
+      exportGroupHint: '导出本页 / 整章，或从 sidecar 导入标注',
       importAnnots: '导入标注',
       importAnnotsHint: '从本章产物的 `<章代码>_export.annots.json` 恢复遮罩与标注（会覆盖对应页的现有标注）',
       importingAnnots: '正在导入标注…',
@@ -541,6 +543,8 @@ window.__ModuleLoader__.load({
       exportChapterHint: 'Export the whole chapter: every page as original + revealed translation + notes, plus a sidecar JSON next to it',
       exportingChapter: 'Exporting the chapter…',
       exportAnnotatedPages: '{n} page(s) with marks',
+      exportGroup: 'Export…',
+      exportGroupHint: 'Export this page or the chapter, or import annotations from a sidecar',
       importAnnots: 'Import notes',
       importAnnotsHint: 'Restore masks and notes from this chapter\'s `<code>_export.annots.json` (overwrites those pages)',
       importingAnnots: 'Importing notes…',
@@ -4266,21 +4270,24 @@ window.__ModuleLoader__.load({
                 onClick: () => { void maskAllBlocks() },
               }, format('overlayBlocks'))
               : null,
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              title: format('exportHint'),
-              onClick: () => { void exportPage() },
-            }, format('exportPage')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              title: format('exportChapterHint'),
-              onClick: () => { void exportChapter() },
-            }, format('exportChapter')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              title: format('importAnnotsHint'),
-              onClick: () => { void importAnnots() },
-            }, format('importAnnots')),
+            h('select', {
+              className: 'md-reader-lang md-reader-export',
+              value: '',
+              title: format('exportGroupHint'),
+              'aria-label': format('exportGroup'),
+              onChange: event => {
+                const action = event.target.value
+                event.target.value = ''
+                if (action === 'page') void exportPage()
+                else if (action === 'chapter') void exportChapter()
+                else if (action === 'import') void importAnnots()
+              },
+            },
+              h('option', { value: '' }, format('exportGroup')),
+              h('option', { value: 'page' }, format('exportPage')),
+              h('option', { value: 'chapter' }, format('exportChapter')),
+              h('option', { value: 'import' }, format('importAnnots'))
+            ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
@@ -4330,11 +4337,11 @@ window.__ModuleLoader__.load({
               onClick: () => setStrokes([]),
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
               className: 'md-reader-lang',
               value: translateTarget,
               title: format('translateHint'),
+              'aria-label': format('translateFor'),
               onChange: event => setTranslateTarget(event.target.value),
             },
               h('option', { value: 'zh' }, format('langZh')),
@@ -4989,6 +4996,7 @@ window.__ModuleLoader__.load({
 .md-reader-name { font-size: 13.5px; font-weight: 550; color: var(--dsw-alias-label-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-reader-sub { font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-reader-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.md-reader-tools .md-btn { white-space: nowrap; flex: 0 0 auto; }
 .md-reader-page { width: 64px; font: inherit; font-size: 12.5px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; padding: 3px 6px; }
 .md-reader-of { font-size: 12px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
@@ -5040,7 +5048,9 @@ window.__ModuleLoader__.load({
 .md-reader-slot { display: flex; flex-direction: column; align-items: safe center; min-height: 240px; position: relative; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.md-reader-modes { display: flex; align-items: center; gap: 4px; }
+.md-reader-modes { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.md-reader-subbar .md-btn { white-space: nowrap; flex: 0 0 auto; }
+.md-reader-export { min-width: 92px; font-size: 12px; }
 .md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--dsw-alias-border-l4); background: var(--dsw-alias-interactive-bg-hover-solid); color: var(--dsw-alias-label-primary); }
 .md-reader-newlabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-canvas { display: block; flex: none; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); }
