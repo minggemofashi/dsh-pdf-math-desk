@@ -106,6 +106,9 @@ dsh plugin add dsh-pdf-math-desk@0.35.3
 ### 本地目录
 DSH → Plugins → Add plugin → 选择本目录。
 
+
+> 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX Live（xelatex、ctex）**；不装也能正常读书、开会话、预览 md，只是「转 PDF」会提示缺少依赖。
+
 ## 开始使用
 
 1. 打开左侧栏的工作台图标；

@@ -191,7 +191,22 @@ export function createHandler(config, options = {}) {
           return
         }
         // The Refresh button is a deliberate look: bypass the short reuse window.
-        const fresh = await catalog(true)
+        // A first run may have no library yet: an unreadable catalog must still
+        // reach the browser so it can show the "add a library" page instead of a
+        // dead error screen.
+        let fresh
+        try {
+          fresh = await catalog(true)
+        } catch (error) {
+          fresh = {
+            source: 'missing',
+            indexIgnored: false,
+            problem: String(error !== null && error !== undefined && error.message ? error.message : error),
+            books: [],
+            skipped: [],
+            warnings: [],
+          }
+        }
         const library = await activeLibrary()
         const state = await readState(config.statePath)
         const target = typeof options.resolveTarget === 'function'
