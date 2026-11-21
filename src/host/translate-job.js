@@ -152,11 +152,29 @@ export async function startChapterJob(options) {
             const size = sizes[index] ?? sizes[sizes.length - 1] ?? [595, 842]
             const miniMd = join(tmpdir(), `md-${jobId}-${index}.md`)
             const miniPdf = join(tmpdir(), `pg-${jobId}-${index}.pdf`)
-            await writeFile(miniMd, chunks[index], 'utf8')
-            await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
-              MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
-              MATH_DESK_FONTSIZE: fontClass,
-            })
+            let positioned = false
+            if (typeof options.cacheDir === 'string' && options.cacheDir !== '') {
+              try {
+                const blocksFile = join(options.cacheDir, `page-${String(index + 1).padStart(3, '0')}.blocks.json`)
+                await capture(join(options.toolsDir, 'md2overlay.py'), [
+                  blocksFile,
+                  miniPdf,
+                  String(size[0]),
+                  String(size[1]),
+                  fontClass,
+                ])
+                positioned = true
+              } catch {
+                positioned = false
+              }
+            }
+            if (!positioned) {
+              await writeFile(miniMd, chunks[index], 'utf8')
+              await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
+                MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
+                MATH_DESK_FONTSIZE: fontClass,
+              })
+            }
             parts.push(miniPdf)
           }
           await capture(join(options.toolsDir, 'pdf_merge.py'), [options.overlayPath, ...parts])

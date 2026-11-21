@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.47.0
+
+- M3-2c-2：新增 `tools/md2overlay.py`，按块 bbox 用 TikZ 绝对定位渲染单页；翻译任务生成 overlay 时优先用 `page-NNN.blocks.json`，没有块数据才退回整页重排；
+- overlay 的页面尺寸、字号仍与原文一致，页数 1:1；段落起点现在按原 bbox 放置。
+
 ## v0.46.0
 
 - A 方案块级翻译：每页一次视觉请求，附带块清单并返回 `{blockId: md}`；结果存 `~/.dsh/mathdesk/translation/<书>/<章>/page-NNN.blocks.json`；
