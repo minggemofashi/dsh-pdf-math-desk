@@ -193,6 +193,8 @@ window.__ModuleLoader__.load({
       previewPdfHint: '创建会话时自动在右栏显示本章 PDF（只是预览，不进入上下文）',
       deleteNonPdf: '非PDF删除',
       deleteNonPdfHint: '开启后，md/txt 等非 PDF 产物也会显示「删除」按钮；关闭时只允许删除 PDF',
+      settings: '设置',
+      version: '版本',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -437,6 +439,8 @@ window.__ModuleLoader__.load({
       previewPdfHint: 'Automatically show this chapter\'s PDF in the side column when creating a session (preview only, not context)',
       deleteNonPdf: 'Delete non-PDF',
       deleteNonPdfHint: 'When on, md/txt artifacts also show a Delete button; when off, only PDFs can be deleted',
+      settings: 'Settings',
+      version: 'Version',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -2867,6 +2871,11 @@ window.__ModuleLoader__.load({
 .md-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .01em; }
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-head-actions { display: flex; align-items: center; gap: 8px; }
+.md-settings { position: relative; }
+.md-settings-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 190px; padding: 6px; display: flex; flex-direction: column; gap: 4px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.md-settings-version { padding: 4px 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.md-settings-item { padding: 6px 8px; text-align: left; font: inherit; font-size: 12.5px; color: var(--dsw-alias-label-primary); background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.md-settings-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .md-btn { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
 .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
 .md-btn:disabled { opacity: .55; cursor: default; }
@@ -3177,6 +3186,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return false
         }
       })
+      const [settingsOpen, setSettingsOpen] = useState(false)
+      useEffect(() => {
+        if (!settingsOpen) return undefined
+        const onDown = event => {
+          if (event.target instanceof Element && event.target.closest('.md-settings') !== null) return
+          setSettingsOpen(false)
+        }
+        const onKey = event => {
+          if (event.key === 'Escape') setSettingsOpen(false)
+        }
+        document.addEventListener('mousedown', onDown)
+        window.addEventListener('keydown', onKey, true)
+        return () => {
+          document.removeEventListener('mousedown', onDown)
+          window.removeEventListener('keydown', onKey, true)
+        }
+      }, [settingsOpen])
       const [sample, setSample] = useState(null)
       const [sampleBusy, setSampleBusy] = useState(false)
       const [importBusy, setImportBusy] = useState(false)
@@ -5464,36 +5490,48 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               book === null ? null : h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', onClick: backToShelf,
               }, `‹ ${format('back')}`),
-              h('button', {
-                type: 'button', className: 'md-btn md-btn-ghost',
-                title: format('previewPdfHint'),
-                onClick: () => {
-                  setPreviewPdf(value => {
-                    const next = !value
-                    try {
-                      window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
-                    } catch {
-                      // storage unavailable: keep the in-memory choice
-                    }
-                    return next
-                  })
-                },
-              }, `${format('previewPdf')}：${previewPdf ? format('previewOn') : format('previewOff')}`),
-              h('button', {
-                type: 'button', className: 'md-btn md-btn-ghost',
-                title: format('deleteNonPdfHint'),
-                onClick: () => {
-                  setAllowNonPdfDelete(value => {
-                    const next = !value
-                    try {
-                      window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
-                    } catch {
-                      // storage unavailable: keep the in-memory choice
-                    }
-                    return next
-                  })
-                },
-              }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`),
+              h('div', { className: 'md-settings' },
+                h('button', {
+                  type: 'button', className: 'md-btn md-btn-ghost',
+                  'aria-haspopup': 'menu', 'aria-expanded': settingsOpen ? 'true' : 'false',
+                  onClick: () => setSettingsOpen(value => !value),
+                }, `⚙ ${format('settings')}`),
+                settingsOpen
+                  ? h('div', { className: 'md-settings-menu', role: 'menu' },
+                    h('div', { className: 'md-settings-version' }, `${format('version')} ${catalog === null ? '' : catalog.version}`),
+                    h('button', {
+                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
+                      'aria-checked': previewPdf ? 'true' : 'false',
+                      onClick: () => {
+                        setPreviewPdf(value => {
+                          const next = !value
+                          try {
+                            window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
+                          } catch {
+                            // storage unavailable
+                          }
+                          return next
+                        })
+                      },
+                    }, `${format('previewPdf')}：${previewPdf ? format('previewOn') : format('previewOff')}`),
+                    h('button', {
+                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
+                      'aria-checked': allowNonPdfDelete ? 'true' : 'false',
+                      onClick: () => {
+                        setAllowNonPdfDelete(value => {
+                          const next = !value
+                          try {
+                            window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
+                          } catch {
+                            // storage unavailable
+                          }
+                          return next
+                        })
+                      },
+                    }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`)
+                  )
+                  : null
+              ),
               h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', disabled: updateBusy || catalog === null,
                 title: format('updateHint'),
