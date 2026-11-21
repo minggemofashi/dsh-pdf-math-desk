@@ -35,6 +35,7 @@ window.__ModuleLoader__.load({
     /** The mode word written into a session title (data, not UI copy). */
     const TITLE_MODE = { extract: '提取', qa: '答疑', exercise: '习题' }
     const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-math-desk'
+    const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
 
     /** A workbench session title: `[<book> cNN] <mode>`, half- or full-width brackets. */
     const SESSION_TITLE = /^[\[【](.+?)[\s\u3000]+(c\d{2,3})[\]】][\s\u3000]*(.+?)[\s\u3000]*$/i
@@ -211,6 +212,13 @@ window.__ModuleLoader__.load({
       toolbarTitle: '工具栏',
       diagnosticsTitle: '目录来源与路径',
       envTitle: '排版环境',
+      envOn: '已就绪',
+      envOff: '未安装（点击下载）',
+      envPython: 'Python 3',
+      envPythonSize: '约 25 MB',
+      envTex: 'TeX Live（xelatex + ctex）',
+      envTexSize: '约 5 GB',
+      settingsFeatures: '特殊功能',
       envReady: '已就绪：md 可转 PDF',
       envMissing: '未安装：md→PDF 按钮已隐藏，其余功能正常',
       envDownload: '下载 TeX Live（约 5 GB）',
@@ -477,6 +485,13 @@ window.__ModuleLoader__.load({
       toolbarTitle: 'Toolbar',
       diagnosticsTitle: 'Catalog source and paths',
       envTitle: 'Typesetting environment',
+      envOn: 'ready',
+      envOff: 'missing (click to download)',
+      envPython: 'Python 3',
+      envPythonSize: '~25 MB',
+      envTex: 'TeX Live (xelatex + ctex)',
+      envTexSize: '~5 GB',
+      settingsFeatures: 'Features',
       envReady: 'ready: md can render to PDF',
       envMissing: 'missing: md-to-PDF buttons are hidden, everything else works',
       envDownload: 'Download TeX Live (~5 GB)',
@@ -1526,6 +1541,71 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Standalone settings page (modal) with environment, GitHub and feature switches.
+     * @param {{ version: string, envTools: object, previewPdf: boolean, allowNonPdfDelete: boolean, onPreview: Function, onNonPdf: Function, onClose: Function }} props - settings state and handlers.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function SettingsDialog(props) {
+      const ready = props.envTools.python === true && props.envTools.tex === true
+      const openLink = url => {
+        try {
+          window.open(url, '_blank', 'noopener')
+        } catch {
+          // popup blocked
+        }
+      }
+      return h(React.Fragment, null,
+        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
+        h('div', { className: 'md-picker md-settings-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('settings') },
+          h('div', { className: 'md-picker-head' },
+            h('span', { className: 'md-picker-title' }, format('settings')),
+            h('span', { className: 'md-settings-version' }, `${format('version')} ${props.version}`),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              'aria-label': format('previewClose'), onClick: props.onClose,
+            }, '×')
+          ),
+          h('div', { className: 'md-settings-section' },
+            h('h4', { className: 'md-settings-heading' }, format('envTitle')),
+            h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}`),
+            h('div', { className: 'md-settings-row' },
+              h('span', null, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
+            ),
+            h('div', { className: 'md-settings-row' },
+              h('span', null, `${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
+            )
+          ),
+          h('div', { className: 'md-settings-section' },
+            h('h4', { className: 'md-settings-heading' }, format('githubRepo')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => openLink(GITHUB_URL),
+            }, format('githubRepo'))
+          ),
+          h('div', { className: 'md-settings-section' },
+            h('h4', { className: 'md-settings-heading' }, format('settingsFeatures')),
+            h('div', { className: 'md-settings-row' },
+              h('span', null, format('previewPdf')),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onPreview,
+              }, props.previewPdf ? format('previewOn') : format('previewOff'))
+            ),
+            h('div', { className: 'md-settings-row' },
+              h('span', null, format('deleteNonPdf')),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onNonPdf,
+              }, props.allowNonPdfDelete ? format('previewOn') : format('previewOff'))
+            )
+          )
+        )
+      )
+    }
+
+    /**
      * The library page: choose/add/switch libraries, read the format manual, and
      * start a split conversation with the toolkit already in the library.
      * @param {{ libraries: object[], activeId: string, busy: boolean, error: string, libraryDir: string, sample: object | null, sampleBusy: boolean, onUse: Function, onRemove: Function, onAdd: Function, onPick: Function, onSplit: Function, onLoadSample: Function }} props - libraries and handlers.
@@ -1712,6 +1792,32 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'md-btn', disabled: busy || props.importBusy,
             onClick: props.onImport,
           }, props.importBusy ? format('importBusy') : format('importStart'))
+        ),
+        h('div', { className: 'md-tool-card', id: 'md-env-card' },
+          h('h3', { className: 'md-subheading' }, format('envTitle')),
+          h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}`),
+          h('div', { className: 'md-library-tools' },
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                try {
+                  window.open('https://www.python.org/downloads/windows/', '_blank', 'noopener')
+                } catch {
+                  // popup blocked
+                }
+              },
+            }, `${format('envPython')}（${format('envPythonSize')}）`),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                try {
+                  window.open(TEXLIVE_URL, '_blank', 'noopener')
+                } catch {
+                  // popup blocked
+                }
+              },
+            }, `${format('envTex')}（${format('envTexSize')}）`)
+          )
         )
         )
         )
@@ -2962,6 +3068,9 @@ window.__ModuleLoader__.load({
 .md-settings-version { padding: 4px 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .md-settings-item { padding: 6px 8px; text-align: left; font: inherit; font-size: 12.5px; color: var(--dsw-alias-label-primary); background: none; border: 0; border-radius: 6px; cursor: pointer; }
 .md-settings-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.md-settings-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .md-btn { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
 .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
 .md-btn:disabled { opacity: .55; cursor: default; }
@@ -5556,7 +5665,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // In the narrow overlay the page underneath is covered: it must not take
       // clicks or Tab stops while the drawer is open. The import dialog and the
       // reader are modal at every width, so they cover the page the same way.
-      const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null || shelfName !== null
+      const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null || shelfName !== null || settingsOpen
       // The crumbs render before the catalog arrives; `work` is still null then.
       const librariesView = work !== null && work.view === 'libraries'
       const groupName = group === 'hidden'
@@ -5633,7 +5742,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   'aria-haspopup': 'menu', 'aria-expanded': settingsOpen ? 'true' : 'false',
                   onClick: () => setSettingsOpen(value => !value),
                 }, `⚙ ${format('settings')}`),
-                settingsOpen
+                false
                   ? h('div', { className: 'md-settings-menu', role: 'menu' },
                     h('div', { className: 'md-settings-version' }, `${format('version')} ${catalog === null ? '' : catalog.version}`),
                     h('button', {
@@ -5646,6 +5755,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                         }
                       },
                     }, format('githubRepo')),
+                    h('button', {
+                      type: 'button', className: 'md-settings-item',
+                      onClick: () => {
+                        backToLibraries()
+                        window.setTimeout(() => {
+                          const node = document.getElementById('md-env-card')
+                          if (node !== null) node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        }, 150)
+                      },
+                    }, `${format('envTitle')}：${envTools.python && envTools.tex ? format('envOn') : format('envOff')}`),
                     h('button', {
                       type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
                       'aria-checked': previewPdf ? 'true' : 'false',
@@ -5773,6 +5892,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClose: closeDigest,
             onCopy: copyDigest,
           }),
+        settingsOpen
+          ? h(SettingsDialog, {
+            version: catalog === null ? '' : catalog.version,
+            envTools,
+            previewPdf,
+            allowNonPdfDelete,
+            onPreview: () => setPreviewPdf(value => {
+              const next = !value
+              try {
+                window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
+              } catch {
+                // storage unavailable
+              }
+              return next
+            }),
+            onNonPdf: () => setAllowNonPdfDelete(value => {
+              const next = !value
+              try {
+                window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
+              } catch {
+                // storage unavailable
+              }
+              return next
+            }),
+            onClose: () => setSettingsOpen(false),
+          })
+          : null,
         shelfName === null
           ? null
           : h(ShelfNameDialog, {
