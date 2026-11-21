@@ -172,6 +172,9 @@ window.__ModuleLoader__.load({
       dualOriginal: '原文',
       dualTranslated: '译文',
       toolsToggle: '收起/展开工具条',
+      overlayToggle: '叠加',
+      overlayHint: '拖拽画框，框内露出译文；点框可删除（需要先生成译文）',
+      overlayRemove: '点击删除这个框',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translating: '翻译中…',
@@ -470,6 +473,9 @@ window.__ModuleLoader__.load({
       dualOriginal: 'Original',
       dualTranslated: 'Translation',
       toolsToggle: 'Collapse or expand the tool row',
+      overlayToggle: 'Overlay',
+      overlayHint: 'Drag to draw a box that reveals the translation underneath; click a box to remove it (translate the chapter first)',
+      overlayRemove: 'Click to remove this box',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
@@ -2956,6 +2962,12 @@ window.__ModuleLoader__.load({
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
+      const [overlay, setOverlay] = useState(false)
+      const [masks, setMasks] = useState([])
+      const [maskDraft, setMaskDraft] = useState(null)
+      const [translatedImage, setTranslatedImage] = useState('')
+      const overlayLayer = useRef(null)
+      const overlayStart = useRef(null)
       const [translateTarget, setTranslateTarget] = useState('zh')
       const [translating, setTranslating] = useState(false)
       const [translateNote, setTranslateNote] = useState('')
@@ -2976,7 +2988,7 @@ window.__ModuleLoader__.load({
         if (dual && rightScale === null) setRightScale(reader.scale ?? 1)
       }, [dual, reader.scale, rightScale])
       useEffect(() => {
-        if (!dual) return undefined
+        if (!dual && !overlay) return undefined
         let cancelled = false
         const load = async () => {
           try {
@@ -2998,7 +3010,7 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true
         }
-      }, [dual, reader.bookId, reader.code])
+      }, [dual, overlay, reader.bookId, reader.code])
 
 
       useEffect(() => {
@@ -3012,6 +3024,87 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [reader.bookId, reader.code, reader.fileName])
+      const maskKey = `mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
+      useEffect(() => {
+        try {
+          const raw = window.localStorage.getItem(maskKey)
+          setMasks(raw === null ? [] : JSON.parse(raw))
+        } catch {
+          setMasks([])
+        }
+      }, [maskKey])
+      useEffect(() => {
+        try {
+          window.localStorage.setItem(maskKey, JSON.stringify(masks))
+        } catch {
+          // storage unavailable
+        }
+      }, [maskKey, masks])
+      useEffect(() => {
+        if (!overlay || dualDoc === null) {
+          setTranslatedImage('')
+          return undefined
+        }
+        let cancelled = false
+        const render = async () => {
+          try {
+            const pageNumber = Math.min(reader.page, dualDoc.numPages || 1)
+            const page = await dualDoc.getPage(pageNumber)
+            const base = page.getViewport({ scale: 1 })
+            const viewport = page.getViewport({ scale: Math.min(2, Math.max(1, 1200 / base.width)) })
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.floor(viewport.width)
+            canvas.height = Math.floor(viewport.height)
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+            if (!cancelled) setTranslatedImage(canvas.toDataURL('image/jpeg', 0.86))
+          } catch {
+            if (!cancelled) setTranslatedImage('')
+          }
+        }
+        void render()
+        return () => {
+          cancelled = true
+        }
+      }, [overlay, dualDoc, reader.page])
+
+      const pointOf = event => {
+        const node = overlayLayer.current
+        if (node === null) return null
+        const rect = node.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return null
+        return {
+          x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        }
+      }
+      const maskDown = event => {
+        if (!overlay) return
+        const point = pointOf(event)
+        if (point === null) return
+        overlayStart.current = point
+        setMaskDraft({ x: point.x, y: point.y, w: 0, h: 0 })
+      }
+      const maskMove = event => {
+        if (overlayStart.current === null) return
+        const point = pointOf(event)
+        if (point === null) return
+        const start = overlayStart.current
+        setMaskDraft({
+          x: Math.min(start.x, point.x),
+          y: Math.min(start.y, point.y),
+          w: Math.abs(point.x - start.x),
+          h: Math.abs(point.y - start.y),
+        })
+      }
+      const maskUp = () => {
+        if (overlayStart.current === null) return
+        overlayStart.current = null
+        setMaskDraft(draft => {
+          if (draft !== null && draft.w > 0.02 && draft.h > 0.02) setMasks(list => [...list, draft])
+          return null
+        })
+      }
+
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
       useEffect(() => {
@@ -3289,6 +3382,15 @@ window.__ModuleLoader__.load({
                 setDual(value => !value)
               },
             }, format('dualToggle')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': overlay ? 'true' : 'false',
+              title: format('overlayHint'),
+              onClick: () => {
+                if (reader.variant === 'translated') return
+                if (reader.mode !== 'single') props.onMode('single')
+                setOverlay(value => !value)
+              },
+            }, format('overlayToggle')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
@@ -3430,6 +3532,57 @@ window.__ModuleLoader__.load({
                 : h('div', { className: 'md-reader-single' },
                   h('div', { className: 'md-reader-single-page' },
                     h('canvas', { className: 'md-reader-canvas', ref: props.canvasRef }),
+                    overlay
+                      ? h('div', {
+                        className: 'md-overlay-layer',
+                        ref: overlayLayer,
+                        onPointerDown: maskDown,
+                        onPointerMove: maskMove,
+                        onPointerUp: maskUp,
+                        onPointerLeave: maskUp,
+                      },
+                        masks.map((mask, index) => h('div', {
+                          key: `${mask.x}-${mask.y}-${index}`,
+                          className: 'md-mask',
+                          title: format('overlayRemove'),
+                          onPointerDown: event => {
+                            event.stopPropagation()
+                            setMasks(list => list.filter((item, position) => position !== index))
+                          },
+                          style: {
+                            left: `${mask.x * 100}%`,
+                            top: `${mask.y * 100}%`,
+                            width: `${mask.w * 100}%`,
+                            height: `${mask.h * 100}%`,
+                          },
+                        }, translatedImage === ''
+                          ? null
+                          : h('img', {
+                            src: translatedImage,
+                            alt: '',
+                            draggable: false,
+                            style: {
+                              position: 'absolute',
+                              maxWidth: 'none',
+                              width: `${100 / mask.w}%`,
+                              height: `${100 / mask.h}%`,
+                              left: `${-(mask.x / mask.w) * 100}%`,
+                              top: `${-(mask.y / mask.h) * 100}%`,
+                            },
+                          }))),
+                        maskDraft === null
+                          ? null
+                          : h('div', {
+                            className: 'md-mask md-mask-draft',
+                            style: {
+                              left: `${maskDraft.x * 100}%`,
+                              top: `${maskDraft.y * 100}%`,
+                              width: `${maskDraft.w * 100}%`,
+                              height: `${maskDraft.h * 100}%`,
+                            },
+                          })
+                      )
+                      : null,
                     h(BlockOverlay, { bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks })
                   ))
         )
@@ -3923,6 +4076,10 @@ window.__ModuleLoader__.load({
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
+.md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
+.md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
+.md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
+.md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
 .md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .12s ease; }
