@@ -206,6 +206,7 @@ window.__ModuleLoader__.load({
       tipsTitle: '使用提示',
       splitToolTitle: '拆分工具',
       importToolTitle: '导入文件',
+      toolbarTitle: '工具栏',
       diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
@@ -464,6 +465,7 @@ window.__ModuleLoader__.load({
       tipsTitle: 'Interaction tips',
       splitToolTitle: 'Split toolkit',
       importToolTitle: 'Import files',
+      toolbarTitle: 'Toolbar',
       diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
@@ -1579,7 +1581,7 @@ window.__ModuleLoader__.load({
               )
             ))
           ),
-        h('div', { className: 'md-library-add', style: { order: 1 } },
+        h('div', { className: 'md-library-add' },
           h('h3', { className: 'md-subheading' }, format('libraryAddTitle')),
           h('p', { className: 'md-shelf-sub' }, format('libraryAddHint')),
           h('div', { className: 'md-library-form' },
@@ -1641,6 +1643,7 @@ window.__ModuleLoader__.load({
           )
         ),
         h('div', { className: 'md-library-toolcell' },
+        h('h3', { className: 'md-subheading' }, format('toolbarTitle')),
         h('div', { className: 'md-library-samples md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('sampleTitle')),
           props.sample === null
@@ -3006,10 +3009,10 @@ window.__ModuleLoader__.load({
 .md-shelf-sub { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 .md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: stretch; max-width: none; }
 .md-libraries > .md-shelf-head, .md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p, .md-libraries > .md-details, .md-libraries > .md-library-tools { grid-column: 1 / -1; }
-.md-libraries > .md-library-add { grid-column: 1; }
-.md-libraries > .md-library-toolcell { grid-column: 2; }
+.md-libraries > .md-library-add { grid-column: 1; grid-row: 2; }
+.md-libraries > .md-library-toolcell { grid-column: 2; grid-row: 2; max-height: 460px; overflow-y: auto; padding-right: 4px; }
 .md-library-toolcell { display: flex; flex-direction: column; gap: 12px; height: 100%; }
-.md-library-toolcell > .md-tool-card { flex: 1 1 0; }
+.md-library-toolcell > .md-tool-card { flex: 0 0 auto; }
 .md-tool-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
 .md-libraries > .md-library-samples { grid-column: 2; }
 .md-library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
