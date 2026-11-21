@@ -2,6 +2,14 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.55.0
+
+- sidecar 导入（M6-3）：工具条新增 **「导入标注」**。
+  - `POST /mathdesk/import-annots` 读本章产物的 `<章代码>_export.annots.json`，把每页 `masks` / `annots` 原样返回；
+  - 客户端写回 `mathdesk:masks:<书>:<章>:<页>` 与 `mathdesk:annots:...`，当前页立即生效（不用重开阅读器）；
+  - 提示「已导入 N 页的遮罩与标注」；没有 sidecar 时提示先「导出整章」。
+- 覆盖范围：按页覆盖，sidecar 里没有的页不动。
+
 ## v0.54.1
 
 - 修复导出 sidecar（`<章代码>_export.annots.json`）无法删除：它属于插件自己生成的导出数据，现在不再受「非 PDF 删除保护」限制，产物行上直接有「删除」，删除仍进回收站。

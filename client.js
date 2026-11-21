@@ -197,6 +197,11 @@ window.__ModuleLoader__.load({
       exportChapterHint: '导出整章 PDF：每页原文 + 框选露出的译文 + 标注，另存一份 sidecar JSON 到产物目录',
       exportingChapter: '正在导出整章…',
       exportAnnotatedPages: '带标注/遮罩 {n} 页',
+      importAnnots: '导入标注',
+      importAnnotsHint: '从本章产物的 `<章代码>_export.annots.json` 恢复遮罩与标注（会覆盖对应页的现有标注）',
+      importingAnnots: '正在导入标注…',
+      importAnnotsDone: '已导入 {n} 页的遮罩与标注',
+      importAnnotsFailed: '导入标注失败',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -533,6 +538,11 @@ window.__ModuleLoader__.load({
       exportChapterHint: 'Export the whole chapter: every page as original + revealed translation + notes, plus a sidecar JSON next to it',
       exportingChapter: 'Exporting the chapter…',
       exportAnnotatedPages: '{n} page(s) with marks',
+      importAnnots: 'Import notes',
+      importAnnotsHint: 'Restore masks and notes from this chapter\'s `<code>_export.annots.json` (overwrites those pages)',
+      importingAnnots: 'Importing notes…',
+      importAnnotsDone: 'Restored masks and notes for {n} page(s)',
+      importAnnotsFailed: 'Importing notes failed',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3649,6 +3659,42 @@ window.__ModuleLoader__.load({
         setDraftStroke(null)
       }
 
+      // Restore masks/notes from the sidecar written by "export chapter": the
+      // file lives in the chapter artifacts, so another machine (or a fresh
+      // browser profile) can pick the annotations back up.
+      const importAnnots = async () => {
+        updateNote(format('importingAnnots'))
+        try {
+          const payload = await request('POST', 'import-annots', {
+            book: reader.bookId,
+            code: reader.code,
+          })
+          const list = Array.isArray(payload.pages) ? payload.pages : []
+          let count = 0
+          for (const item of list) {
+            const page = Number(item.page)
+            if (!Number.isFinite(page)) continue
+            const pageMasks = Array.isArray(item.masks) ? item.masks : []
+            const pageAnnots = Array.isArray(item.annots) ? item.annots : []
+            try {
+              window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${page}`, JSON.stringify(pageMasks))
+              window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${page}`, JSON.stringify(pageAnnots))
+            } catch {
+              continue
+            }
+            if (page === reader.page) {
+              setMasks(pageMasks)
+              setStrokes(pageAnnots)
+            }
+            count += 1
+          }
+          updateNote(format('importAnnotsDone', { n: count }))
+        } catch (error) {
+          const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
+          updateNote(`${format('importAnnotsFailed')}：${message}`)
+        }
+      }
+
       // Whole chapter: pages without masks or notes stay the plain original; the
       // sidecar JSON keeps the normalized data next to the PDF.
       const exportChapter = async () => {
@@ -4188,6 +4234,11 @@ window.__ModuleLoader__.load({
               title: format('exportChapterHint'),
               onClick: () => { void exportChapter() },
             }, format('exportChapter')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('importAnnotsHint'),
+              onClick: () => { void importAnnots() },
+            }, format('importAnnots')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',

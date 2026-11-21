@@ -504,6 +504,30 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/import-annots`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const library = await activeLibrary()
+          const file = join(library.artifactDir, body.book, body.code, `${body.code}_export.annots.json`)
+          let spec = null
+          try {
+            spec = JSON.parse(await readFile(file, 'utf8'))
+          } catch {
+            fail(response, 404, 'no-sidecar', '没有找到标注 sidecar，请先「导出整章」')
+            return
+          }
+          const pages = spec !== null && Array.isArray(spec.pages) ? spec.pages : []
+          sendJson(response, 200, { ok: true, pages })
+        } catch (error) {
+          fail(response, 500, 'import-annots-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/export-chapter`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
