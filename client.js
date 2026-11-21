@@ -1649,7 +1649,7 @@ window.__ModuleLoader__.load({
             const node = event.currentTarget
             node.classList.add('md-scrolling')
             window.clearTimeout(node.__mdScrollTimer)
-            node.__mdScrollTimer = window.setTimeout(() => node.classList.remove('md-scrolling'), 700)
+            node.__mdScrollTimer = window.setTimeout(() => node.classList.remove('md-scrolling'), 350)
           },
         },
         h('h3', { className: 'md-subheading' }, format('toolbarTitle')),
@@ -2129,7 +2129,7 @@ window.__ModuleLoader__.load({
       const items = state !== undefined && Array.isArray(state.items) ? state.items : []
       const truncated = state !== undefined && state.truncated === true
       // Long chapters get a lot of products; collapse long lists by default.
-      const [collapsed, setCollapsed] = useState(false)
+      const [collapsed, setCollapsed] = useState(true)
       const [openArtifacts, setOpenArtifacts] = useState(() => new Set())
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
       const artifactStem = item => String(item.name).replace(/\.(md|pdf)$/i, '')
@@ -2720,7 +2720,7 @@ window.__ModuleLoader__.load({
      */
     function ChapterRow(props) {
       const chapter = props.chapter
-      const [sessionsOpen, setSessionsOpen] = useState(true)
+      const [sessionsOpen, setSessionsOpen] = useState(false)
       const open = props.open
       const detailId = `md-detail-${encodeURIComponent(props.bookId)}-${chapter.code}`
       const kindKey = chapter.kind !== undefined && chapter.kind !== 'chapter' ? `kind.${chapter.kind}` : ''
