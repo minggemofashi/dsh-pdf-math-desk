@@ -1583,7 +1583,12 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => openLink(GITHUB_URL),
-            }, format('githubRepo'))
+            }, format('githubRepo')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
+              title: format('updateHint'),
+              onClick: props.onCheckUpdate,
+            }, props.updateBusy === true ? format('updateChecking') : format('updateCheck'))
           ),
           h('div', { className: 'md-settings-section' },
             h('h4', { className: 'md-settings-heading' }, format('settingsFeatures')),
@@ -3133,7 +3138,7 @@ window.__ModuleLoader__.load({
 .md-file-action:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l4); }
 .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
 .md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
-.md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }
+.md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 .md-card-check { position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-inverse, #fff); display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
 .md-shelf { position: relative; display: flex; flex-direction: column; gap: 16px; }
 .md-shelf-head { display: flex; align-items: baseline; gap: 10px; }
@@ -5802,11 +5807,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   : null
               ),
               h('button', {
-                type: 'button', className: 'md-btn md-btn-ghost', disabled: updateBusy || catalog === null,
-                title: format('updateHint'),
-                onClick: checkUpdates,
-              }, updateBusy ? format('updateChecking') : format('updateCheck')),
-              h('button', {
                 type: 'button', className: 'md-btn', disabled: busy || creatingKey !== '',
                 title: format('cleanupHint'),
                 onClick: cleanupNow,
@@ -5899,6 +5899,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? h(SettingsDialog, {
             version: catalog === null ? '' : catalog.version,
             envTools,
+            updateBusy,
+            onCheckUpdate: checkUpdates,
             previewPdf,
             allowNonPdfDelete,
             onPreview: () => setPreviewPdf(value => {
