@@ -24,7 +24,7 @@
 
 ## 仓库边界
 
-- **进 git**：`index.js`、`client.js`、`src/`、`locale/`、`vendor/`（pdf.js + LICENSE）、`tools/`（拆分工具与规范）、`README.md`、`安装与分发.md`、`CHANGELOG.md`、`package.json`、`cordis.patch.yml`、`icon.svg`、本文件。
+- **进 git**：`index.js`、`client.js`、`src/`、`locale/`、`vendor/`（pdf.js + LICENSE）、`tools/`（拆分工具与规范）、`samples/`（内置示例书库 PDF + manifest）、`README.md`、`安装与分发.md`、`CHANGELOG.md`、`package.json`、`cordis.patch.yml`、`icon.svg`、本文件。
 - **不进 git**：`node_modules/`、`dist/`（构建产物）、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
 - `cordis.patch.yml` 必须保持**中性**：不写具体书库路径，示例只放在注释里。真实书库列表由运行时的 `~/.dsh/mathdesk/libraries.json` 管理。
 - 不要提交任何**个人目录的绝对路径**（真实书库路径只放在运行时的 `~/.dsh/mathdesk/libraries.json`，仓库里一律用示例 `D:\数学书库`）、API key、token 等；提交前 `git diff --cached` 检查一遍。

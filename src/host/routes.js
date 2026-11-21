@@ -21,7 +21,7 @@
  *
  * @module dsh-pdf-math-desk/routes
  */
-import { readFile, readdir } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 
 import { countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
@@ -123,6 +123,19 @@ export function createHandler(config, options = {}) {
   }
 
   /**
+   * The bundled sample library's manifest, when the package ships one.
+   * @returns {Promise<object | null>} `{ book, files }` or null.
+   */
+  async function readSampleManifest() {
+    try {
+      const manifest = JSON.parse(await readFile(join(config.samplesDir, 'manifest.json'), 'utf8'))
+      return manifest !== null && typeof manifest === 'object' ? manifest : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * The catalog of one library, reused for a couple of seconds; `fresh` rescans.
    * @param {boolean} [fresh] - ignore the cached copy.
    * @returns {Promise<Awaited<ReturnType<typeof loadCatalog>>>} the catalog.
@@ -208,6 +221,63 @@ export function createHandler(config, options = {}) {
           warnings: fresh.warnings,
           state,
         })
+        return
+      }
+
+      if (path === `${PREFIX}/samples`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const manifest = await readSampleManifest()
+        if (manifest === null) {
+          fail(response, 404, 'no-samples', '插件没有附带示例书')
+          return
+        }
+        sendJson(response, 200, { ok: true, ...manifest })
+        return
+      }
+
+      if (path === `${PREFIX}/samples/install`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const manifest = await readSampleManifest()
+        if (manifest === null || manifest.book === undefined) {
+          fail(response, 404, 'no-samples', '插件没有附带示例书')
+          return
+        }
+        const bookId = String(manifest.book.id ?? '')
+        if (!/^[^\\/:*?"<>|]{1,120}$/.test(bookId)) {
+          fail(response, 400, 'bad-sample', '示例书的书 id 不合法')
+          return
+        }
+        const library = await activeLibrary()
+        const source = join(config.samplesDir, '分片', bookId)
+        const target = join(library.fragmentDir, bookId)
+        await mkdir(target, { recursive: true })
+        let copied = 0
+        let skipped = 0
+        const names = Array.isArray(manifest.files) ? manifest.files : []
+        for (const entry of names) {
+          const name = typeof entry === 'string' ? entry : String(entry?.name ?? '')
+          if (!/^[^\\/:*?"<>|]{1,200}\.pdf$/i.test(name)) continue
+          try {
+            await stat(join(target, name))
+            skipped += 1
+            continue
+          } catch {
+            // Not there yet: copy it in.
+          }
+          try {
+            await copyFile(join(source, name), join(target, name))
+            copied += 1
+          } catch {
+            // A missing sample file is skipped; the manifest is the source of truth.
+          }
+        }
+        sendJson(response, 200, { ok: true, book: bookId, dir: target, copied, skipped })
         return
       }
 

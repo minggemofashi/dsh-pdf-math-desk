@@ -1,288 +1,111 @@
-# Math workbench (dsh-pdf-math-desk)
+# dsh-pdf-math-desk（数学工作台）
 
-A full-page DSH workbench organized by **book → chapter**. Open it from the
-workbench icon in the left sidebar; the main column switches to the shelf.
+DSH 的整页插件：把数学书按「书 → 章」摆开，在章上直接开会话、看 PDF、收产物。
+适合“按章读数学书 + 让 Agent 提取/答疑/做题”的日常用法。
 
-## Installing this plugin
+> 插件本身是一个 DSH bundle，装法见下文。仓库：https://github.com/minggemofashi/dsh-pdf-math-desk
 
-This folder is a DSH bundle (`dsh.bundle.patch` → `cordis.patch.yml`). On another
-machine: unzip it anywhere, then **Plugins → Add plugin** and pick the folder (or
-`plugin_manager` `install_bundle` with its absolute path), and restart DSH. A
-prebuilt zip and the exact steps are in [`安装与分发.md`](./安装与分发.md).
+## 功能
 
-## Network and privacy
+- **书架**：扫 `<库根>\分片\` 下的分章 PDF 自动列书；也认 `<库根>\整本\` 或库根下的整本 PDF。
+  封面优先用 `封面\<书 id>.png`，没有就用 pdf.js 渲染第一页，再没有就用字母占位。
+- **书页 / 章节**：一章一行，展开后按「提取 / 答疑 / 习题」三组列会话。
+  - 「＋ 新建」优先接着本章该组已有的会话；上下文快到上限（默认 85%，`resumeRatio`）才自动开 `（续 N）`；
+  - 「另起」跳过续接直接开新会话；「导入」把已有会话挂到本章（不改标题）；
+  - 行内 ✎ 重命名、× 只取消本章挂载。
+- **新会话自带本章上下文**：输入框开头写明「书 / 章 / PDF 文件 / 阅读页」，方便模型直接知道在讲哪一章。
+- **章提纲**：一键用默认模型把本章所有会话压成 Markdown 提纲，存 `产物\<书>\<cNN>\提纲-all.md`；
+  下一次续会话会把提纲放进输入框（可改可删）。
+- **产物**：章下列出 `产物\<书 id>\<cNN>\` 里的文件，文本类可页内预览（行号、512 KB 上限）；
+  PDF 产物直接用内置阅读器打开。
+- **PDF 阅读器**：页内 pdf.js，单页 / 连续两种模式，翻页、跳页、缩放、适应宽度、Home 回首页、⌂ 回书架；
+  连续模式只渲染视口附近页面；阅读位置会记住。
+- **从阅读器开会话**：工具栏上的「＋ 提取 / 答疑 / 习题」会建会话并跳过去，同时把本章 PDF 开在会话右侧。
+- **多书库**：书库页添加/切换/移除书库；单击切换，双击进入该库书架；没有分片、只有整本 PDF 的库也能用。
+- **拆分工具**：书库页「拆分工具：开一个会话」会把内置工具复制到 `<库根>\工具\`，并新开一个会话，
+  提示词里已写好当前书库路径、命名规则和「先按章节手动拆」的要求。
+- **检查更新**：页头按钮，只有点击时才访问 GitHub Releases，比较版本并提示；不自动联网。
 
-- The plugin itself runs locally. It reads the library directory and writes only
-  `~/.dsh/mathdesk/` (state, libraries, links, pending intents) plus `产物/` and
-  `封面/` inside a library; PDFs and previews never leave the machine.
-- The **only** outbound request is the explicit **Check for updates** button:
-  it calls `https://api.github.com/repos/minggemofashi/dsh-pdf-math-desk/releases/latest`
-  when clicked and shows the result. There is no automatic polling, no analytics,
-  no telemetry, and no upload of library paths or session content.
-- Conversation content is handled by DSH and the configured model, exactly as in
-  any other DSH session; the plugin adds nothing to that path.
-- If the machine cannot reach GitHub, the button reports a network failure and
-  everything else keeps working, because no other feature uses the network.
+## 安装
 
-## What it does
+要求：DSH 0.2.2-rc.5 或更高（`engines.dsh` 会检查）。
 
-- **Libraries** (0.11.0): the workbench now keeps a list of libraries in
-  `$DSH_HOME/mathdesk/libraries.json` (the profile's `libraryDir` is the first
-  entry, so an existing install is unchanged). The **书库** page (breadcrumb, or
-  the first screen when the active library has no books) lists them, adds a root
-  directory (`分片/` is expected), **single-click** switches the active one,
-  **double-click** opens that library's shelf, and removes entries without touching
-  files. Double-clicking the page title or the **书架** crumb opens the 书库 page as
-  well. Only the math layout is supported; the page says so.
-- **Split toolkit** (0.11.0): the 书库 page offers **拆分工具：开一个会话** — it copies
-  the bundled toolkit (`tools/`: `pdfkit.py`, `auto_chapters.py`,
-  `rename_chapters.py`, `dsfile.mjs`, the 规范 rules, a README) into the active
-  library's `工具/`, then opens a new conversation whose composer already holds the
-  split instructions (lookup → split → verify, naming rules). The zip download
-  option was removed on request; the installer is the only path.
-- **Shelf**: one card per recognized book (title, author when derivable, chapter
-  count) with a **cover**: a user image in `<libraryDir>/封面/<book id>.png`
-  (`.jpg` / `.jpeg` / `.webp` also work) wins; otherwise the first page of the
-  book's first split PDF is rendered to a small JPEG with pdf.js, one book at a
-  time and cached for the session; if neither exists the card keeps its lettered
-  placeholder. Covers render only after the user image is found missing, so a
-  hand-made cover costs no PDF download.
-- **Whole-book fallback** (0.13.0/0.13.1): a library may also carry unsplit books as
-  `<libraryDir>\整本\<book id>.pdf`, or directly in the library root. The shelf shows a
-  “Whole-book PDF” card; its book page has one **Open PDF** action, and the reader
-  hides the chapter New buttons (single/continuous, zoom, jump still work). There are
-  no chapters and no per-chapter sessions — this is the path for someone who cannot
-  run the splitter; the split layout remains the full-featured one. A library with no
-  `分片\` at all is valid as long as it has whole PDFs.
-- **Book page**: the book's chapters in `cNN` order, with page range and a badge
-  for front matter / appendix / bibliography. Click a chapter row to expand it in
-  place; double-click it to open the chapter PDF in the reader.
-- **Produced files under a chapter** (M2): the expanded chapter lists the files it
-  owns — name, size, modified time — from `<artifactDir>/<book id>/<cNN>/`; a
-  collapsed chapter's row still says how many files it holds (one scan per book,
-  `GET /mathdesk/artifact-counts`).
-- **PDF reader** (M3): double-clicking a chapter row, the chapter's **Open PDF**
-  button, or a PDF produced file opens the page's own reader — two reading modes
-  (**单页** / **连续**), previous/next, a page box (type a number, Enter), zoom out /
-  fit width / zoom in, and ↑↓ scroll the page, ←→ and PageUp/PageDown turn pages,
-  +/− zoom, Escape exits, Home returns to the first page. The reader's toolbar
-  starts with **⌂ 书架** (back to the shelf) and **‹ 返回章节** (back to the chapter),
-  so a PDF can be left for either the book list or the chapter. The column of
-  continuous mode renders lazily: pages near the viewport are painted, far ones
-  release their canvas. It is drawn by pdf.js
-  vendored inside this package (`vendor/pdf.min.mjs` +
-  `vendor/pdf.worker.min.mjs`, served by the Host under `/mathdesk/vendor/`), so
-  nothing is imported from the Harness Client packages.
-- **Chapter outline** (M3.7 / 0.9.0): the sessions block has an **整理提纲**
-  button. It sends the chapter's conversation ids to the Host, which folds their
-  transcripts (bounded to 120k characters), asks the **default model** for a fixed
-  Markdown outline (范围 / 已解决 / 未解决 / 下一步), saves it as
-  `产物/<book id>/<cNN>/提纲-all.md`, and shows it with a copy button; it then
-  appears in the chapter's produced files after the automatic reload. One model
-  call per digest; failures show the model's message. When a **continuation** is
-  created (`（续 N）`) and that outline exists, it is placed into the new
-  conversation's **composer** (via the same draft API the host uses for new
-  sessions), so it is visible, editable, and sent by you — no hidden context. A
-  short notice says it happened.
-- **Every new conversation knows its PDF** (0.9.x): a session created from the
-  workbench starts its composer with a context line the model cannot miss —
-  `〔数学工作台〕本章：概率论 · c04 第四章 … · PDF：…pdf · 阅读位置：第 12 页（单页）`.
-  A continuation adds the chapter outline below it. The line is plain text in the
-  composer — visible, editable, never hidden context — so referring to another
-  textbook is just editing that line or the message. (A “mention other chapters”
-  picker was built and then removed on request: it made the toolbar bulky.)
-- **Start a session while reading**: the reader's toolbar carries the chapter's
-  three **＋ 提取 / 答疑 / 习题** buttons. Clicking one creates the session and leaves
-  for it immediately, and the chapter PDF is opened in that conversation's right
-  column (hideable; the column's own expand button makes it full screen).
-  Returning to the workbench reopens the reader on the same page and mode, because
-  the reading position is stored with the workbench position.
-- **File preview** (M2): clicking a text-like produced file (`.md`, `.txt`, `.tex`,
-  code, `.json`, `.csv`, …) opens the page's own preview on the right: text with
-  line numbers, up to 512 KiB / 4000 lines, with truncation and encoding stated
-  above the text. Escape, ×, or the backdrop closes it and puts focus back on the
-  row. A PDF produced file opens the reader instead; other binaries open the same
-  drawer with a note. **Reload** in the section header re-reads the chapter; the
-  empty state prints the exact directory and a copy button, because files are not
-  noticed automatically — and the Host never creates the folder: create
-  `<artifactDir>/<book id>/<cNN>/` yourself (or let an agent write there) before
-  the first Reload.
-- **Sessions under a chapter** (M1): the expanded chapter shows three groups —
-  提取 / 答疑 / 习题 — each with its own **＋ New** button. Sessions are read live
-  from their titles; a new session is created in the Workspace that owns the
-  library directory (the footer shows where) and appears in its group as
-  **unsent**; clicking it opens the host conversation.
-- **New continues instead of multiplying** (M3.6 / 0.8.0): a group's New reopens
-  that chapter's existing conversation when it has room, so clicking it repeatedly
-  no longer leaves a session behind every time. Once the conversation's context
-  reaches `resumeRatio` (default 85%) of its window, New starts a numbered
-  continuation instead — `[概率论 c04] 答疑（续 2）` — which still classifies into
-  the same chapter. A small **另起** button next to New (and a toggle of the same
-  name in the reader) skips continuing on purpose and numbers the new session after
-  the existing chain. The title prefix is the conversation's **native chapter**;
-  links added from another chapter never change it, so an imported conversation
-  always shows where it came from. Context pressure is read live from `tokenMeter`
-  and, for sessions that are no longer running, from the snapshot the Host records
-  at the end of every turn (`$DSH_HOME/mathdesk/pressure.json`); a session never
-  observed by this Host is treated as having room.
-- **Import, rename, and share a conversation** (M2.5): each group also has an
-  **Import** button that attaches an *existing* conversation to this chapter
-  (`↪` marks it) without touching its title; **✎** on any row renames it inline
-  (Enter saves, Escape cancels); **×** on an imported row detaches only that
-  chapter. A conversation can sit under several chapters at once — its title
-  still names its primary chapter, and the extra placements live in
-  `$DSH_HOME/mathdesk/links.json` on the Host. Renaming a row to a title that no
-  longer matches `[<book> cNN] <mode>` moves it out of its titled chapter (its
-  imported placements stay).
-- **Naming happens on the first message.** A workbench session stays an ordinary
-  untitled blank until its first turn starts, then the Host renames it to
-  `[<book> cNN] <mode>` and pins the title. A blank therefore cannot lend its
-  name to another "New Session" (the workspace blank-reuse would otherwise show
-  a stale workbench title).
-- **Unused blanks are not kept.** The Host keeps their intent in
-  `$DSH_HOME/mathdesk/pending.json`; the next workbench visit (and every New)
-  archives sessions that are still blank and forgets them. Clicking New reuses
-  the workspace's existing untitled blank instead of adding another one.
-- **Empty leftovers are removed.** DSH has no "delete session" API — archive is
-  its removal. For sessions the workbench itself left empty (archived, not live,
-  in the library directory, never started a turn) the Host also deletes the
-  header-only log file, so they stop appearing in the archived list; sessions
-  that ever ran a turn are only archived, never deleted.
-- **No jump when a selected blank is cleaned.** Archiving the session that is
-  currently selected normally sends the main column back to the Conversation;
-  the workbench re-selects its own panel in the same step, so returning to the
-  workbench stays on the workbench.
-- **Clean unused** in the header does the same cleanup on demand for leftovers
-  that predate this version.
-- **Navigation**: breadcrumb (`书库 / <book>`) and a Back button; no URL changes
-  are involved, so the position — including the chapter you were working in — is
-  kept on the Host instead.
-- **Position persistence**: the open book, the active chapter and each book's
-  expanded chapters are stored in `$DSH_HOME/mathdesk/state.json`, so switching
-  to a conversation and back — or reloading the page — returns to the same place
-  once the workbench is reopened.
+1. 下载仓库（或本仓库 Releases 里的 `dsh-pdf-math-desk-<版本>.zip`）并解压到任意目录；
+2. DSH → **Plugins（插件）→ Add plugin（添加插件）** → 选这个文件夹；
+3. 重启 DSH；
+4. 侧栏出现「数学工作台」→ 打开 → 「书库」→ 添加你的书库目录。
 
-## Session title convention
+也可以让 Agent 用 `plugin_manager` 的 `install_bundle`，target 填这个文件夹的绝对路径。
 
-The title is the binding, not an index file:
+## 第一次使用：先准备一个书库
+
+工作台只读你的书库，不负责拆书。最快的试法是先加载**内置示例书库**：
+
+> 书库页（面包屑「书库」）里有「示例书库」一栏：《中国剩余定理》小册子，**10 章，共 168 KB**，
+> 点「加载示例书」就会复制到你当前书库的 `分片\` 下，书架立刻能看到，用来试章节、会话、产物和阅读器。
+
+之后按你的书准备：
+
+### 方式一：按章节拆（推荐，功能完整）
 
 ```
-[概率论 c04] 答疑
-[Algebra_Lang c03] 提取
-[高等代数学 c01] 习题
+<库根>\
+  分片\
+    <书 id>\
+      <书 id>_c00_前置_封面目录_p001-008.pdf
+      <书 id>_c01_第一章_章名_p009-040.pdf
+      ...
+  产物\        （可选，会话产出）
+  封面\        （可选，<书 id>.png 自定义封面）
 ```
 
-The book part is matched against the catalog book id (the file-name short name
-for derived books) or an unambiguous display title, the code against the chapter
-code, and the mode against 提取 / 答疑 / 习题 (English aliases and a suffix such as
-`答疑（续）` are tolerated). The footer lists the id → title legend for derived
-books, because the title prefix is the id (e.g. `卓里奇数分一`). A bracket-shaped
-title that names no book/chapter, no known mode, or no mode at all is counted in
-the footer rather than silently dropped; renaming a workbench session by hand
-therefore moves or detaches it on the next render — that is the intended
-workflow.
+- **先按章节手动拆**：一章一个 PDF；章号两位（`c01`…`c99`），`c00` 放封面/目录/前言；
+- 目录必须有，它是定位各章的索引；
+- 不建议整本一次拆完（整本拆 = 整本 OCR，贵且容易撑爆上下文）；以后要学新章再加分片即可；
+- 工具包里 `tools\README.md` 有完整命名规则与 `pdfkit.py` 用法（需要 Python + Pillow）。
 
-## Extra placements (`links.json`)
+### 方式二：整本阅读（不拆）
 
-The title names a session's **primary** chapter. On top of that, a session may be
-attached to any number of chapters from the Workbench's Import button; those
-placements live on the Host in `$DSH_HOME/mathdesk/links.json`
-(`{ sessionId: [{bookId, code, mode}] }`). A chapter lists the union of its
-titled sessions and its linked ones, once each, so one conversation can appear
-under two chapters (and the footer/section counts count it in both). Detaching
-only removes the link; a session that has ever run a turn is never deleted. Links
-whose session is gone are pruned when the workbench cleans up empty records.
+把整本 PDF 放进 `<库根>\整本\`，或直接放库根。书架会出现「整本 PDF」卡片，点开就是整本阅读；
+代价是没有分章、没有按章会话、没有产物目录。
 
-## Where the catalog comes from
+## 配置
 
-1. `<libraryDir>/索引.json` when it exists (the schema in
-   `数学工作台插件-路线图.md` §5.1);
-2. otherwise the chapter-split PDF file names under `<libraryDir>/分片/*/`,
-   matching `<short>_cNN_<title>_p<from>-<to>.pdf`. Book titles and authors are
-   derived from the directory names, with scanning-vendor parentheticals removed.
-
-Unrecognized directories (PDFs not split by chapter) are skipped and listed in
-the page footer.
-
-## Where produced files come from
-
-One directory per chapter: `<artifactDir>/<book id>/<cNN>/`, where `<book id>` is
-the id the footer prints (`概率论`, `Algebra_Lang`, …) and `<cNN>` is the chapter
-code. Files are listed sorted by name, dirs, dotfiles and Office lock files
-(`~$…`) are ignored, and the listing caps at 300 rows (the page says when it was
-cut). The empty state prints the directory to drop files into, and the footer
-prints the root.
-
-Previews are read by the Host and decoded as UTF-8, falling back to GB18030 when
-the bytes are not valid UTF-8; NUL bytes mean "binary, not previewable", and a
-cut inside a multi-byte character is trimmed before the encoding is chosen. The
-route resolves `book` + `code` against the catalog first, then joins a plain file
-name under that chapter's own directory, so a crafted name cannot read outside
-it.
-
-Why the preview is drawn by this plugin rather than the host's right sidebar:
-the right sidebar is a **session-bound** column. Its service acts on the session
-that is on screen (`layout.panelInfo.activePanelId === null`), and it is not
-drawn while a global panel such as this one owns the main column — calling
-`ctx.sidebarRight.openResource` from the workbench throws
-`sidebarRight: no session surface is mounted`. See
-`数学工作台插件-路线图.md` §4 constraint 18.
-
-## Configuration
-
-The bundle patch inserts one row:
+插件没有 Config schema，配置写在 profile 的 patch 层（`cordis.patch.yml`）：
 
 ```yaml
 - id: mathdesk
   name: dsh-pdf-math-desk
   config:
-    libraryDir: 'D:\数学书库'
+    libraryDir: 'D:\数学书库'   # 首次启动的默认书库；之后以 libraries.json 为准
+    # resumeRatio: 0.85        # 会话用到多少上下文就开续会话
 ```
 
-Optional `config` fields: `libraryDir`, `fragmentDir` (default
-`<libraryDir>/分片`), `artifactDir` (default `<libraryDir>/产物`), `coverDir`
-(default `<libraryDir>/封面`), `indexPath` (default `<libraryDir>/索引.json`),
-`dataDir` (default `$DSH_HOME/mathdesk`), `vendorDir` (default: this package's
-`vendor/`), `toolsDir` (default: this package's `tools/`), `resumeRatio` (default
-`0.85`: how full a conversation may get before New starts a continuation). The
-plugin declares no `Config` schema, so the row accepts a free-form mapping; edit it
-in the profile's `cordis.patch.yml`. The `libraryDir` here only seeds the first
-library; after that the `libraries.json` list is authoritative.
+运行时数据都在 `~/.dsh/mathdesk/`：`libraries.json`（书库列表）、`state.json`（位置）、
+`links.json`（多章挂载）、`pending.json`（待发送会话）、`pressure.json`（上下文快照）。
 
-## Limits of this version
+## 隐私
 
-- The reader shows one page or a continuous column of lazily painted pages; the
-  continuous mode cannot select or search text yet, and it does not remember the
-  scroll offset across a reload (the page number is remembered instead). Very
-  large pages drop to device pixel ratio 1 so the canvas stays paintable. CMaps
-  are not bundled: a PDF whose CJK fonts are not embedded may show garbled text —
-  add `pdfjs-dist/cmaps` to `vendor/` and pass `cMapUrl` when that happens. The
-  "PDF on the session's right" shortcut needs the chapter PDF to live inside the
-  library directory (it is sent as a workspace-relative path); with a custom
-  `fragmentDir` outside the library, the reader still works but that shortcut is
-  skipped.
-- Text previews show the file as plain text, without markdown rendering, search or
-  line wrapping (long lines scroll horizontally with the line numbers pinned).
-- Only sessions the workbench itself created (or that were renamed into the
-  convention) are classified automatically; older ones are attached from the
-  chapter's Import button (M2.5).
-- Archived sessions that ever ran a turn are not deleted (DSH exposes no delete
-  API); only the empty, never-started records are purged, and only those
-  belonging to the library directory.
-- The Host reads the library with its own filesystem access; the browser never
-  receives file paths beyond chapter file names, one chapter's produced-file
-  names, and the text of a file it is previewing.
-- The `/mathdesk/*` routes accept loopback peers only, so the workbench is a
-  local-Desktop surface: opening the same GUI from another machine shows a read
-  error rather than the shelf.
-- The vendored pdf.js (6.3.289) is Apache-2.0; its license is in
-  `vendor/pdfjs-LICENSE.txt`.
-- A render bug inside the page shows an error panel with the exception message
-  (and logs the component stack) instead of a blank panel; Retry re-renders the
-  page. Keep `useCallback` dependency arrays free of forward references —
-  `.dsh-scratch/check-deps.mjs` statically checks that for this page.
-- "New continues" trusts the recorded context pressure. A conversation this Host
-  has never seen end a turn has no snapshot and is treated as having room; if it
-  is in fact full, raising `resumeRatio` downward or renaming it by hand are the
-  available escapes. Continuation numbers come from parsing `（续 N）`, so
-  hand-editing a title out of that shape restarts the chain at the first number.
+- 插件**不上传任何数据**：只读书库，只写 `~/.dsh/mathdesk/` 与库内 `产物\`、`封面\`；
+- 唯一联网点是页头「检查更新」按钮（点击才请求 `api.github.com` 的 releases 接口），没有遥测、没有自动轮询；
+- 会话内容由 DSH 与所选模型处理，和插件无关；
+- 仓库里不含任何本机路径、书库列表或密钥；`libraries.json` 不入库。
+
+## 限制
+
+- 目前只支持**数学布局**（书 / 章 / 提取·答疑·习题）；界面只有中文。
+- 拆分需要你手动按章切；插件不识别书的内容、不做 OCR。
+- 阅读器基于 pdf.js；个别扫描版 PDF 的封面可能缺字体资源，不影响正文。
+- 客户端改动需要重启 DSH 生效（没有 HMR）。
+
+## 开发
+
+- Host：`index.js` + `src/host/*.js`，只依赖 Node 内置模块；路由前缀 `/mathdesk/`。
+- 浏览器：`client.js`，通过 `window.__ModuleLoader__.load({ id, factory })` 注册侧栏与主面板。
+- 改完跑：`node --check client.js`、`node --check src/host/*.js`；然后升版本、写 `CHANGELOG.md`、
+  `git commit -m "vX.Y.Z: …"`、`git tag vX.Y.Z`（详见 `AGENTS.md`）。
+- 重新打分发 zip：`powershell -ExecutionPolicy Bypass -File .\build-dist.ps1`。
+
+## 版本
+
+见 [`CHANGELOG.md`](./CHANGELOG.md)。当前 **0.15.0**。

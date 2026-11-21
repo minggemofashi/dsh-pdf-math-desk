@@ -86,6 +86,7 @@ export function resolveConfig(rawConfig) {
   // The reader's pdf.js build ships inside this package, next to `src/`.
   const vendorDir = resolve(expandHome(textField(source, 'vendorDir') ?? join(HERE, '..', '..', 'vendor')))
   const toolsDir = resolve(expandHome(textField(source, 'toolsDir') ?? join(HERE, '..', '..', 'tools')))
+  const samplesDir = resolve(expandHome(textField(source, 'samplesDir') ?? join(HERE, '..', '..', 'samples')))
   const ratio = Number(source.resumeRatio)
   const resumeRatio = Number.isFinite(ratio) && ratio > 0 && ratio < 1 ? ratio : DEFAULT_RESUME_RATIO
   return {
@@ -97,6 +98,7 @@ export function resolveConfig(rawConfig) {
     dataDir,
     vendorDir,
     toolsDir,
+    samplesDir,
     resumeRatio,
     statePath: join(dataDir, 'state.json'),
     pendingPath: join(dataDir, 'pending.json'),

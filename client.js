@@ -201,6 +201,14 @@ window.__ModuleLoader__.load({
       wholeHint: '可直接阅读，不分章',
       wholeExplain: '不会拆分？把整本 PDF 放进 {dir}\\整本\\ 也能直接读：点上面的按钮就开始读整本。代价是没有分章、没有按章会话，产物也只按整本。',
       manualWhole: '不想拆 / 不会拆？把整本 PDF 直接放进 <库根>\\整本\\（文件名就是书 id）：书架会出现「整本 PDF」，点开就能读整本。代价是没有分章、没有按章会话，只有一个整本阅读。',
+      sampleTitle: '示例书库',
+      sampleLoading: '正在读取示例书…',
+      sampleEmpty: '插件没有附带示例书',
+      sampleMeta: '{chapters} 章 · 共 {size}',
+      sampleHint: '内置的一本小册子，已经按章拆好；加载后书架立即可见，用来试用章节会话与阅读器。',
+      sampleLoad: '加载示例书',
+      sampleBusy: '正在复制…',
+      sampleLoaded: '示例书已加入当前书库（{n} 个文件）',
       loading: '正在读取书目…',
       loadFailed: '读取书目失败',
       timeout: '读取超时，请重试。',
@@ -391,6 +399,14 @@ window.__ModuleLoader__.load({
       wholeHint: 'Readable as one document, no chapters',
       wholeExplain: 'No splitter? Drop whole PDFs into {dir}\\整本\\ and read them here — no chapters and no per-chapter sessions, one conversation per book.',
       manualWhole: 'Cannot or will not split? Drop whole PDFs into <root>\\整本\\ (the file name is the book id): the shelf shows "Whole-book PDF" and one click reads it. The trade-off is no chapters and no per-chapter sessions.',
+      sampleTitle: 'Sample library',
+      sampleLoading: 'Reading the sample…',
+      sampleEmpty: 'This package ships no sample book',
+      sampleMeta: '{chapters} chapters · {size} total',
+      sampleHint: 'A small built-in booklet, already split by chapter; loading it makes the shelf usable immediately so you can try chapters, sessions and the reader.',
+      sampleLoad: 'Load sample book',
+      sampleBusy: 'Copying…',
+      sampleLoaded: 'Sample book added to the active library ({n} files)',
       loading: 'Reading the catalog…',
       loadFailed: 'Could not read the catalog',
       timeout: 'Timed out while reading; try again.',
@@ -869,6 +885,18 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Present a byte count for the sample book line.
+     * @param {number} bytes - the size.
+     * @returns {string} a short human-readable size.
+     */
+    function formatBytes(bytes) {
+      const value = Number(bytes)
+      if (!Number.isFinite(value) || value <= 0) return '0 KB'
+      if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`
+      return `${Math.max(1, Math.round(value / 1024))} KB`
+    }
+
+    /**
      * Group sessions by the chapter their title names, then add the chapters
      * their explicit links name (an imported or shared conversation), and
      * include sessions the workbench created but that have not been sent yet.
@@ -1277,7 +1305,7 @@ window.__ModuleLoader__.load({
     /**
      * The library page: choose/add/switch libraries, read the format manual, and
      * start a split conversation with the toolkit already in the library.
-     * @param {{ libraries: object[], activeId: string, busy: boolean, error: string, libraryDir: string, onUse: Function, onRemove: Function, onAdd: Function, onPick: Function, onSplit: Function }} props - libraries and handlers.
+     * @param {{ libraries: object[], activeId: string, busy: boolean, error: string, libraryDir: string, sample: object | null, sampleBusy: boolean, onUse: Function, onRemove: Function, onAdd: Function, onPick: Function, onSplit: Function, onLoadSample: Function }} props - libraries and handlers.
      * @returns {import('react').ReactElement} the page.
      */
     function LibrariesPage(props) {
@@ -1399,6 +1427,26 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
           )
+        ),
+        h('div', { className: 'md-library-samples' },
+          h('h3', { className: 'md-subheading' }, format('sampleTitle')),
+          props.sample === null
+            ? h('p', { className: 'md-shelf-sub' }, format('sampleLoading'))
+            : props.sample.book === null || props.sample.book === undefined
+              ? h('p', { className: 'md-shelf-sub' }, format('sampleEmpty'))
+              : h(React.Fragment, null,
+                h('p', { className: 'md-shelf-sub' },
+                  `${props.sample.book.title} · ${format('sampleMeta', {
+                    chapters: props.sample.book.chapters,
+                    size: formatBytes(props.sample.book.bytes),
+                  })}`),
+                h('p', { className: 'md-shelf-sub' }, format('sampleHint')),
+                h('button', {
+                  type: 'button', className: 'md-btn',
+                  disabled: props.sampleBusy || props.busy,
+                  onClick: props.onLoadSample,
+                }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad'))
+              )
         ),
         h('div', { className: 'md-library-tools' },
           h('button', {
@@ -2452,6 +2500,7 @@ window.__ModuleLoader__.load({
 .md-input { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; padding: 6px 8px; }
 .md-input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .md-library-manual { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px dashed var(--dsw-alias-border-l3); border-radius: 10px; }
+.md-library-samples { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-card-fill); }
 .md-manual-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-manual-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .md-library-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -2642,6 +2691,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [libBusy, setLibBusy] = useState(false)
       const [libError, setLibError] = useState('')
       const [updateBusy, setUpdateBusy] = useState(false)
+      const [sample, setSample] = useState(null)
+      const [sampleBusy, setSampleBusy] = useState(false)
       const bootstrapSeq = useRef(0)
       const digestRef = useRef(false)
       const pendingDrafts = useRef(new Map())
@@ -4169,6 +4220,36 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [catalog, showNotice, updateBusy])
 
+      /** Load the bundled sample library's manifest once the libraries page opens. */
+      useEffect(() => {
+        if (work === null || work.view !== 'libraries' || sample !== null) return undefined
+        let alive = true
+        void request('GET', 'samples')
+          .then(payload => {
+            if (alive) setSample(payload)
+          })
+          .catch(() => {
+            if (alive) setSample({ book: null })
+          })
+        return () => { alive = false }
+      }, [sample, work])
+
+      /** Copy the bundled sample book into the active library. */
+      const installSample = useCallback(async () => {
+        if (sampleBusy) return
+        setSampleBusy(true)
+        setLibError('')
+        try {
+          const payload = await request('POST', 'samples/install', {})
+          showNotice(format('sampleLoaded', { n: Number(payload.copied) || 0 }))
+          setReloadKey(key => key + 1)
+        } catch (reason) {
+          setLibError(`${format('libraryFailed')} (${errorText(reason)})`)
+        } finally {
+          setSampleBusy(false)
+        }
+      }, [sampleBusy, showNotice])
+
       /** Apply a libraries response to the page's list state. */
       const applyLibraryList = useCallback(payload => {
         if (payload === null || typeof payload !== 'object' || !Array.isArray(payload.items)) return
@@ -4436,6 +4517,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onAdd: addLibrary,
           onPick: pickLibraryDir,
           onSplit: startSplitSession,
+          sample,
+          sampleBusy,
+          onLoadSample: installSample,
           libraryDir: library === null ? (catalog === null ? '' : catalog.libraryDir) : library.libraryDir,
         })
       } else if (book !== null) {
