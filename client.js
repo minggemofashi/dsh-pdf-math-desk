@@ -2048,10 +2048,15 @@ window.__ModuleLoader__.load({
       // Long chapters get a lot of products; collapse long lists by default.
       const [collapsed, setCollapsed] = useState(false)
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
-      const row = (item, index) => h('li', { key: `${index}:${item.name}` },
-        h('button', {
-          type: 'button',
-          className: 'md-file',
+      const artifactStem = item => String(item.name).replace(/\.(md|pdf)$/i, '')
+      const row = (item, index) => {
+        const groups = props.sessionIndex !== undefined && props.sessionIndex.byArtifact !== undefined
+          ? props.sessionIndex.byArtifact.get(`${props.bookId}|${props.code}|${artifactStem(item)}`)
+          : undefined
+        return h('li', { key: `${index}:${item.name}`, className: 'md-artifact-item' },
+          h('button', {
+            type: 'button',
+            className: 'md-file',
           onContextMenu: event => {
             if (/\.md$/i.test(item.name)) {
               event.preventDefault()
@@ -2094,8 +2099,31 @@ window.__ModuleLoader__.load({
               },
             }, format('renderAction'))
             : null
+          ),
+          h('div', { className: 'md-artifact-modes' },
+            MODES.map(mode => h('button', {
+              key: mode,
+              type: 'button',
+              className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
+              onClick: event => {
+                event.stopPropagation()
+                props.onArtifactSession(props.chapter, item, mode)
+              },
+            }, format(`mode.${mode}`)))
+          ),
+          groups === undefined
+            ? null
+            : h('ul', { className: 'md-session-list md-artifact-sessions' },
+              MODES.flatMap(mode => (Array.isArray(groups[mode]) ? groups[mode] : []).map(entry => h('li', {
+                key: entry.id, className: 'md-session-row',
+              },
+                h('button', {
+                  type: 'button', className: 'md-session',
+                  onClick: () => props.onOpenSession(entry),
+                }, h('span', { className: 'md-session-name' }, entry.title === '' ? entry.displayTitle : entry.title))
+              ))))
         )
-      )
+      }
       let body
       if (phase === 'error') {
         body = h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
@@ -2619,7 +2647,11 @@ window.__ModuleLoader__.load({
           h(ChapterArtifacts, {
             bookId: props.bookId,
             bookTitle: props.bookTitle,
+            chapter,
             code: chapter.code,
+            sessionIndex: props.sessionIndex,
+            onArtifactSession: props.onArtifactSession,
+            onOpenSession: props.onOpenSession,
             state: props.artifacts,
             onOpen: item => props.onOpenArtifact(chapter, item),
             onRetry: props.onRetryArtifacts,
@@ -2667,6 +2699,8 @@ window.__ModuleLoader__.load({
                 chapter,
                 open: props.expanded.includes(chapter.code),
                 groups: props.sessionIndex.byChapter.get(key),
+                sessionIndex: props.sessionIndex,
+                onArtifactSession: props.onArtifactSession,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
                 creatingMode: props.creatingKey === key ? props.creatingMode : '',
@@ -2794,6 +2828,8 @@ window.__ModuleLoader__.load({
 .md-file-kind { flex: none; min-width: 34px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: .03em; text-align: center; color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l3); border-radius: 4px; padding: 0 4px; }
 .md-file[data-kind="text"] .md-file-kind { color: var(--dsw-alias-brand-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent); }
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-artifact-modes { display: flex; gap: 6px; padding: 2px 0 4px 52px; }
+.md-artifact-sessions { padding-left: 52px; }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-file-action { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); cursor: pointer; }
 .md-file-action:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l4); }
@@ -3675,6 +3711,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReloadKey(key => key + 1)
       }, [selected, shelfGroups, showNotice])
 
+      /** New session owned by one artifact file (M7.2). */
+      const newArtifactSession = useCallback((chapter, item, mode) => {
+        const stem = String(item.name).replace(/\.(md|pdf)$/i, '')
+        void createSession(chapter, mode, { jump: true, continuation: 0, artifact: stem })
+      }, [])
+
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
         if (item.kind === 'pdf') {
@@ -4439,7 +4481,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
         creatingRef.current = true
         const continuation = options !== undefined && Number(options.continuation) >= 2 ? Number(options.continuation) : 0
-        const title = `[${book.id} ${chapter.code}] ${TITLE_MODE[mode]}${continuation === 0 ? '' : `（续 ${continuation}）`}`
+        const artifact = options !== undefined && typeof options.artifact === 'string' ? options.artifact.trim() : ''
+        const title = `[${book.id} ${chapter.code}] ${artifact === '' ? TITLE_MODE[mode] : `${artifact} · ${TITLE_MODE[mode]}`}${continuation === 0 ? '' : `（续 ${continuation}）`}`
         setCreatingKey(`${book.id}|${chapter.code}`)
         setCreatingMode(mode)
         setCreateError(null)
@@ -4495,6 +4538,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // Every new conversation starts knowing which book, chapter and PDF it
           // belongs to; a continuation also starts from the chapter outline.
           const parts = [seedFor(book, chapter)]
+          if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
           if (catalog !== null && typeof catalog.libraryDir === 'string' && catalog.libraryDir !== '') {
             parts.push(`产物目录：${catalog.libraryDir}\\产物\\${book.id}\\${chapter.code}\\（报告/笔记的 md 请写到这里，才会出现在「产物」里）`)
           }
@@ -5177,6 +5221,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onRetryRename: retryRename,
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
+          onArtifactSession: newArtifactSession,
           onRenderArtifact: renderArtifact,
           onTrashArtifact: trashArtifact,
           onRetryArtifacts: retryArtifacts,
