@@ -1504,7 +1504,7 @@ window.__ModuleLoader__.load({
 
     /* ------------------------------------------------------------ elements -- */
 
-    const deskStatus = { value: 'idle', listeners: new Set() }
+    const deskStatus = { value: 'idle', job: '', listeners: new Set() }
 
     /**
      * Publish the plugin's busy/done state to the sidebar icon.
@@ -1539,11 +1539,43 @@ window.__ModuleLoader__.load({
     function DeskIcon(props) {
       const size = typeof props.size === 'number' && props.size > 0 ? props.size : 18
       const status = useDeskStatus()
+      useEffect(() => {
+        if (status !== 'busy' || deskStatus.job === '') return undefined
+        let stopped = false
+        const tick = async () => {
+          if (stopped) return
+          if (deskStatus.job === '') {
+            setTimeout(() => { void tick() }, 500)
+            return
+          }
+          try {
+            const state = await request('GET', `translate-status?job=${encodeURIComponent(deskStatus.job)}`)
+            if (stopped) return
+            if (state.status === 'done') {
+              setDeskStatus('done')
+              setTimeout(() => setDeskStatus('idle'), 8000)
+              return
+            }
+            if (state.status === 'error') {
+              setDeskStatus('error')
+              setTimeout(() => setDeskStatus('idle'), 8000)
+              return
+            }
+            setTimeout(() => { void tick() }, 2500)
+          } catch {
+            // job file may be gone
+          }
+        }
+        void tick()
+        return () => {
+          stopped = true
+        }
+      }, [status])
       const mark = status === 'idle' ? null : h('span', {
         className: status === 'busy' ? 'md-desk-mark md-desk-spin' : status === 'error' ? 'md-desk-mark md-desk-error' : 'md-desk-mark md-desk-done',
         'aria-hidden': true,
       })
-      return h('span', { style: { position: 'relative', display: 'inline-flex' } },
+      return h('span', { style: { position: 'relative', display: 'inline-block', flex: 'none', width: size, height: size } },
         h('svg', {
         width: size,
         height: size,
@@ -3199,17 +3231,27 @@ window.__ModuleLoader__.load({
           jobId = ''
         }
         if (jobId === '') return undefined
+        deskStatus.job = jobId
+        setTranslating(true)
         const tick = async () => {
           try {
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
             if (cancelled) return
             if (state.status === 'done') {
               setHasTranslation(true)
+              setTranslating(false)
+              deskStatus.job = ''
+              setDeskStatus('done')
+              setTimeout(() => setDeskStatus('idle'), 8000)
               updateNote(`${format('translateDone')}：${state.pdf}`)
               window.localStorage.removeItem(key)
               return
             }
             if (state.status === 'error') {
+              setTranslating(false)
+              deskStatus.job = ''
+              setDeskStatus('error')
+              setTimeout(() => setDeskStatus('idle'), 8000)
               updateNote(`${format('translateFailed')}：${state.error}`)
               window.localStorage.removeItem(key)
               return
@@ -3323,6 +3365,7 @@ window.__ModuleLoader__.load({
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
           const jobId = started.jobId
           jobRef.current = jobId
+          deskStatus.job = jobId
           try {
             window.localStorage.setItem(`mathdesk:job:${reader.bookId}:${reader.code}`, jobId)
           } catch {
@@ -3352,6 +3395,7 @@ window.__ModuleLoader__.load({
           updateNote(`${format('translateFailed')}：${message}`)
         } finally {
           jobRef.current = ''
+          deskStatus.job = ''
           setTranslating(false)
         }
       }
