@@ -205,6 +205,7 @@ window.__ModuleLoader__.load({
       hiddenShelf: '隐藏书籍',
       shelfDeleteConfirm: '删除这个书架？里面的书会回到书库，不会被隐藏。',
       shelfDeleteHint: '右键删除书架',
+      hiddenDeleteConfirm: '删除「隐藏书籍」？里面的书会全部回到书库，不会被删除。',
       cleanupHint: '归档没说话的空会话；工作台自己留下的空白记录会被删除',
       cleanupNotice: '已清理 {n} 个没说话的空白会话（归档）。',
       retryRename: '重试改名',
@@ -433,6 +434,7 @@ window.__ModuleLoader__.load({
       hiddenShelf: 'Hidden books',
       shelfDeleteConfirm: 'Delete this shelf? Its books go back to the library, nothing is hidden.',
       shelfDeleteHint: 'Right-click to delete the shelf',
+      hiddenDeleteConfirm: 'Delete the “Hidden books” shelf? Every hidden book returns to the library; nothing is deleted.',
       cleanupHint: 'Archive unused blank sessions; empty records the workbench itself left behind are deleted.',
       cleanupNotice: 'Cleaned {n} unused blank session(s) (archived).',
       retryRename: 'Retry rename',
@@ -4716,6 +4718,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [group, saveShelfGroups, selected, shelfGroups])
 
       const deleteShelf = useCallback(id => {
+        if (id === 'hidden') {
+          if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+            && !window.confirm(format('hiddenDeleteConfirm'))) return
+          // "Deleting" the hidden shelf just releases every hidden book back to
+          // the library; shelves nested under it move to the root.
+          const released = shelfGroups.shelves.map(shelf => (shelf.parent === 'hidden'
+            ? { id: shelf.id, name: shelf.name, books: shelf.books }
+            : shelf))
+          saveShelfGroups({ hidden: [], shelves: released })
+          if (group === 'hidden') setGroup(null)
+          setSelected(new Set())
+          return
+        }
         if (typeof window !== 'undefined' && typeof window.confirm === 'function'
           && !window.confirm(format('shelfDeleteConfirm'))) return
         // Removing a shelf must also remove its nested shelves, otherwise their
