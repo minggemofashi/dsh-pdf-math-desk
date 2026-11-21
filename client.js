@@ -2966,12 +2966,16 @@ window.__ModuleLoader__.load({
         saveReaderPage(reader.bookId, reader.code, reader.page)
       }, [reader.bookId, reader.code, reader.page])
       useEffect(() => {
+        if (dual && rightScale === null) setRightScale(reader.scale ?? 1)
+      }, [dual, reader.scale, rightScale])
+      useEffect(() => {
         if (!dual) return undefined
         let cancelled = false
         const load = async () => {
           try {
             const lib = await loadPdfjs()
-            const params = new URLSearchParams({ book: reader.bookId, code: reader.code, variant: 'translated' })
+            const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
+            if (reader.variant !== 'translated') params.set('variant', 'translated')
             const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
             const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             const doc = await task.promise
@@ -3357,11 +3361,11 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'md-reader-dual' },
               h('div', { className: 'md-reader-column', ref: dualLeft },
                 h(ContinuousView, {
-                  doc: props.doc,
+                  doc: reader.variant === 'translated' ? dualDoc : props.doc,
                   showBlocks,
                   bookId: reader.bookId,
                   code: reader.code,
-                  count: reader.count,
+                  count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: dualLeft,
                   onVisible: page => {
@@ -3375,11 +3379,11 @@ window.__ModuleLoader__.load({
               ),
               h('div', { className: 'md-reader-column', ref: dualRight },
                 h(ContinuousView, {
-                  doc: dualDoc,
+                  doc: reader.variant === 'translated' ? props.doc : dualDoc,
                   showBlocks: false,
                   bookId: reader.bookId,
                   code: reader.code,
-                  count: dualDoc.numPages || 0,
+                  count: reader.variant === 'translated' ? reader.count : (dualDoc.numPages || 0),
                   scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
                   onVisible: () => {},
