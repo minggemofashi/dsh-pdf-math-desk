@@ -3015,20 +3015,24 @@ window.__ModuleLoader__.load({
         }
       }, [reader.mode, props.stageRef])
       // Entering continuous mode keeps the page you were reading instead of
-      // starting at the top of the chapter.
+      // starting at the top of the chapter. Only a real single->continuous
+      // switch scrolls: a remount while already in continuous mode must not
+      // yank the reader back to the page start.
+      const previousMode = useRef(reader.mode)
       useEffect(() => {
         switchingMode.current = true
         const timer = setTimeout(() => { switchingMode.current = false }, 600)
+        const from = previousMode.current
+        previousMode.current = reader.mode
+        if (reader.mode === 'continuous' && from !== 'continuous') {
+          const node = slotRefs.current.get(reader.page)
+          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
+            node.scrollIntoView({ block: 'start' })
+          }
+        }
         return () => {
           switchingMode.current = false
           clearTimeout(timer)
-        }
-      }, [reader.mode])
-      useEffect(() => {
-        if (reader.mode !== 'continuous') return
-        const node = slotRefs.current.get(reader.page)
-        if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
-          node.scrollIntoView({ block: 'start' })
         }
       }, [reader.mode])
       // Scroll mode: derive the page from the slot nearest the stage top, so
