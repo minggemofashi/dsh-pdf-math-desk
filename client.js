@@ -2120,8 +2120,13 @@ window.__ModuleLoader__.load({
               onClick: event => {
                 event.stopPropagation()
                 const rows = groups === undefined ? [] : (Array.isArray(groups[mode]) ? groups[mode] : [])
-                const highest = rows.reduce((top, entry) => Math.max(top, continuationOf(entry.title)), 1)
-                props.onArtifactSession(props.chapter, item, mode, rows.length === 0 ? 0 : highest + 1)
+                // Reuse the conversation this artifact already has for that mode;
+                // only start a new one when there is none.
+                if (rows.length > 0) {
+                  props.onOpenSession(rows[0])
+                  return
+                }
+                props.onArtifactSession(props.chapter, item, mode, 0)
               },
             }, format(`mode.${mode}`)))
           ),
