@@ -172,7 +172,8 @@ DSH → Plugins → Add plugin → 选择本目录。
 - `libraries`：库目录（默认 `~\数学书库`）；
 - `resumeRatio`：上下文占用达到多少时续开会话（默认 0.85）；
 - `updateProxy`：检查更新所用代理（可选）；
-- `deepseekApiKey`：DeepSeek API Key，供翻译使用（也可用环境变量）。
+- `deepseekApiKey`：DeepSeek API Key，供翻译使用（也可用环境变量）；
+- 阅读器快捷键：**设置 → 快捷键**，可录制 / 清除 / 恢复默认。默认是 ←/→ 与 PgUp/PgDn 翻页、↑/↓ 滚动、Home 首页、= + - 缩放、Esc 关闭。
 
 运行时数据在 `~/.dsh/mathdesk/`：`libraries.json`、`state.json`、`links.json`、`pending.json`、`pressure.json`、`shelves.json`。
 

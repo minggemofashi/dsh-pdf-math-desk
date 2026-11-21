@@ -344,6 +344,25 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live（xelatex + ctex）',
       envTexSize: '约 5 GB',
       settingsFeatures: '特殊功能',
+      settingsTabReading: '阅读',
+      settingsTabKeys: '快捷键',
+      settingsTabEnv: '环境',
+      settingsTabAbout: '关于',
+      settingsNotesTitle: '笔记与备份',
+      settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.mathdesk\\annotations\\（随库走）；清掉浏览器数据或换机器后，打开该章会自动恢复。',
+      shortcutsTitle: '快捷键',
+      shortcutsHint: '默认是阅读器一直在用的键。点「录制」后按新键即可替换，Esc 取消录制。',
+      shortcutsRecord: '录制',
+      shortcutsRecording: '请按键…',
+      shortcutsCancel: '取消',
+      shortcutsClear: '清除',
+      shortcutsRestore: '恢复默认',
+      shortcutsClearAll: '全部清空',
+      shortcutsUnbound: '未绑定',
+      shortcutsListening: '正在给「{action}」录制按键…（Esc 取消）',
+      shortcutScrollUp: '向上滚动',
+      shortcutScrollDown: '向下滚动',
+      shortcutClose: '关闭阅读器',
       apiKeyTitle: 'DeepSeek API Key（翻译用）',
       apiKeyConfigured: '已配置',
       apiKeyMissing: '未配置',
@@ -358,6 +377,10 @@ window.__ModuleLoader__.load({
       updateNew: '发现新版本 {version}（当前 {current}），到 GitHub Releases 下载',
       updateNoRelease: '仓库还没有发布版本',
       updateFailed: '检查更新失败（网络或代理问题），可稍后重试',
+      pdfPassword: '这个 PDF 有密码或加密，暂时打不开——请先解除保护再放进书库',
+      pdfInvalid: '这个文件不是有效的 PDF（可能没下载完整或已损坏）',
+      pdfMissing: '找不到这个 PDF 文件，可能被移动或删除了',
+      pdfUnreachable: '读取 PDF 失败：本机服务没有返回文件',
       shelfCount: '{n} 本',
       shelfSelected: '已选 {n} 本',
       shelfNew: '新建书架',
@@ -715,6 +738,25 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live (xelatex + ctex)',
       envTexSize: '~5 GB',
       settingsFeatures: 'Features',
+      settingsTabReading: 'Reading',
+      settingsTabKeys: 'Shortcuts',
+      settingsTabEnv: 'Toolchain',
+      settingsTabAbout: 'About',
+      settingsNotesTitle: 'Notes and backup',
+      settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.mathdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
+      shortcutsTitle: 'Shortcuts',
+      shortcutsHint: 'These are the keys the reader has always used. Press “Record”, then press the new key; Esc cancels.',
+      shortcutsRecord: 'Record',
+      shortcutsRecording: 'Press a key…',
+      shortcutsCancel: 'Cancel',
+      shortcutsClear: 'Clear',
+      shortcutsRestore: 'Restore defaults',
+      shortcutsClearAll: 'Clear all',
+      shortcutsUnbound: 'unbound',
+      shortcutsListening: 'Recording a key for “{action}”… (Esc cancels)',
+      shortcutScrollUp: 'Scroll up',
+      shortcutScrollDown: 'Scroll down',
+      shortcutClose: 'Close the reader',
       apiKeyTitle: 'DeepSeek API key (translation)',
       apiKeyConfigured: 'configured',
       apiKeyMissing: 'not configured',
@@ -729,6 +771,10 @@ window.__ModuleLoader__.load({
       updateNew: 'Version {version} is available (you have {current}) — see GitHub Releases',
       updateNoRelease: 'The repository has no release yet',
       updateFailed: 'Update check failed (network or proxy) — try again later',
+      pdfPassword: 'This PDF is password-protected or encrypted, so it cannot be opened yet — remove the protection first',
+      pdfInvalid: 'This file is not a valid PDF (incomplete download or damaged file)',
+      pdfMissing: 'The PDF file is gone — it may have been moved or deleted',
+      pdfUnreachable: 'Could not read the PDF: the local service returned no file',
       shelfCount: '{n} books',
       shelfSelected: '{n} selected',
       shelfNew: 'New shelf',
@@ -948,6 +994,13 @@ window.__ModuleLoader__.load({
      * @returns {string} localized text.
      */
     function errorText(reason) {
+      const name = reason !== null && reason !== undefined && typeof reason.name === 'string' ? reason.name : ''
+      // pdf.js names its failures well; say what the reader can actually do about
+      // them instead of dropping `PasswordException` on the page.
+      if (name === 'PasswordException') return format('pdfPassword')
+      if (name === 'InvalidPDFException') return format('pdfInvalid')
+      if (name === 'MissingPDFException') return format('pdfMissing')
+      if (name === 'UnexpectedResponseException') return format('pdfUnreachable')
       const message = String(reason !== null && reason !== undefined && reason.message !== undefined ? reason.message : reason)
       return message === 'timeout' ? format('timeout') : message
     }
@@ -1947,6 +2000,154 @@ window.__ModuleLoader__.load({
       })
     }
 
+    /* --------------------------------------------------------------- keys -- */
+
+    /** Storage key of the user's reader shortcuts. */
+    const SHORTCUTS_KEY = 'mathdesk:shortcuts'
+
+    /**
+     * Every reader action that can take keys, with the shortcuts it has always
+     * had. An action may hold several keys (`PageUp` and `←` both turn back);
+     * `fallback: null` means the action ships unbound.
+     */
+    const SHORTCUT_ACTIONS = [
+      { id: 'prevPage', labelKey: 'readerPrev', fallback: [{ key: 'ArrowLeft' }, { key: 'PageUp' }] },
+      { id: 'nextPage', labelKey: 'readerNext', fallback: [{ key: 'ArrowRight' }, { key: 'PageDown' }] },
+      { id: 'firstPage', labelKey: 'readerFirst', fallback: [{ key: 'Home' }] },
+      { id: 'scrollUp', labelKey: 'shortcutScrollUp', fallback: [{ key: 'ArrowUp' }] },
+      { id: 'scrollDown', labelKey: 'shortcutScrollDown', fallback: [{ key: 'ArrowDown' }] },
+      { id: 'zoomIn', labelKey: 'readerZoomIn', fallback: [{ key: '=' }, { key: '+' }] },
+      { id: 'zoomOut', labelKey: 'readerZoomOut', fallback: [{ key: '-' }] },
+      { id: 'toggleMode', labelKey: 'readerMode', fallback: null },
+      { id: 'closeReader', labelKey: 'shortcutClose', fallback: [{ key: 'Escape' }] },
+    ]
+
+    /**
+     * Normalize one captured keyboard event into a binding.
+     * @param {KeyboardEvent} event - the captured event.
+     * @returns {{ key: string, ctrl?: boolean, alt?: boolean, shift?: boolean, meta?: boolean }} the binding.
+     */
+    function bindingOf(event) {
+      const binding = { key: event.key }
+      if (event.ctrlKey) binding.ctrl = true
+      if (event.altKey) binding.alt = true
+      if (event.shiftKey) binding.shift = true
+      if (event.metaKey) binding.meta = true
+      return binding
+    }
+
+    /**
+     * Normalize one stored value into a list of bindings.
+     * @param {unknown} value - array, single binding, or null.
+     * @returns {object[]} bindings (possibly empty).
+     */
+    function bindingList(value) {
+      const list = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value]
+      return list.filter(item => item !== null && typeof item === 'object' && typeof item.key === 'string' && item.key !== '')
+    }
+
+    /**
+     * The reader's current bindings: shipped defaults, then whatever the user
+     * stored (an explicit `null` keeps an action unbound).
+     * @returns {Record<string, object[]>} bindings by action id.
+     */
+    function readShortcutBindings() {
+      const bindings = {}
+      for (const action of SHORTCUT_ACTIONS) bindings[action.id] = bindingList(action.fallback).map(item => ({ ...item }))
+      try {
+        const raw = window.localStorage.getItem(SHORTCUTS_KEY)
+        if (raw !== null) {
+          const parsed = JSON.parse(raw)
+          const stored = parsed !== null && typeof parsed === 'object' && parsed.bindings !== null && typeof parsed.bindings === 'object'
+            ? parsed.bindings
+            : {}
+          for (const action of SHORTCUT_ACTIONS) {
+            if (!Object.prototype.hasOwnProperty.call(stored, action.id)) continue
+            bindings[action.id] = bindingList(stored[action.id])
+          }
+        }
+      } catch {
+        // unreadable storage falls back to the shipped defaults
+      }
+      return bindings
+    }
+
+    /**
+     * @param {Record<string, object[]>} bindings - bindings by action id.
+     * @returns {void}
+     */
+    function writeShortcutBindings(bindings) {
+      try {
+        window.localStorage.setItem(SHORTCUTS_KEY, JSON.stringify({ version: 1, bindings }))
+      } catch {
+        // storage unavailable: the choice lasts for this page only
+      }
+    }
+
+    /**
+     * Whether one event triggers one binding. Shift is only compared for letters,
+     * because punctuation that needs shift (`+`) reports the shifted character.
+     * @param {object} binding - the binding.
+     * @param {KeyboardEvent} event - the pressed key.
+     * @returns {boolean} match.
+     */
+    function bindingMatches(binding, event) {
+      if (binding === null || binding === undefined || typeof binding.key !== 'string') return false
+      const expected = binding.key.length === 1 ? binding.key.toLowerCase() : binding.key
+      const actual = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      if (expected !== actual) return false
+      if (Boolean(binding.ctrl) !== event.ctrlKey) return false
+      if (Boolean(binding.alt) !== event.altKey) return false
+      if (Boolean(binding.meta) !== event.metaKey) return false
+      if (/^[a-z]$/i.test(binding.key) && Boolean(binding.shift) !== event.shiftKey) return false
+      return true
+    }
+
+    /**
+     * @param {KeyboardEvent} event - the pressed key.
+     * @returns {string} the action id it triggers, or ''.
+     */
+    function shortcutActionOf(event) {
+      const bindings = readShortcutBindings()
+      for (const action of SHORTCUT_ACTIONS) {
+        if (bindings[action.id].some(binding => bindingMatches(binding, event))) return action.id
+      }
+      return ''
+    }
+
+    /** Printable names for the keys a reader binding usually uses. */
+    const KEY_LABELS = {
+      ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
+      PageUp: 'PgUp', PageDown: 'PgDn', Home: 'Home', End: 'End',
+      Escape: 'Esc', Enter: 'Enter', Backspace: 'Backspace', Delete: 'Del',
+      ' ': 'Space', Tab: 'Tab',
+    }
+
+    /**
+     * @param {object} binding - one binding.
+     * @returns {string} a compact label such as `Ctrl+←`.
+     */
+    function oneBindingLabel(binding) {
+      if (binding === null || binding === undefined || typeof binding.key !== 'string') return format('shortcutsUnbound')
+      const parts = []
+      if (binding.ctrl) parts.push('Ctrl')
+      if (binding.alt) parts.push('Alt')
+      if (binding.meta) parts.push('Meta')
+      if (binding.shift && binding.key.length > 1) parts.push('Shift')
+      const named = KEY_LABELS[binding.key]
+      parts.push(named !== undefined ? named : (binding.key.length === 1 ? binding.key.toUpperCase() : binding.key))
+      return parts.join('+')
+    }
+
+    /**
+     * @param {object[]} bindings - every binding of one action.
+     * @returns {string} their labels, or 未绑定.
+     */
+    function bindingLabel(bindings) {
+      const list = bindingList(bindings)
+      return list.length === 0 ? format('shortcutsUnbound') : list.map(oneBindingLabel).join(' / ')
+    }
+
     const deskStatus = { value: 'idle', job: '', listeners: new Set() }
 
     /** A chapter session the side preview asked the page to resume or create. */
@@ -2146,13 +2347,39 @@ window.__ModuleLoader__.load({
      */
     function SettingsDialog(props) {
       const envTools = props.envTools ?? { python: false, tex: false }
+      // The dialog is paged: reading switches, the keyboard table, the toolchain
+      // check, and the about/update row. Tabs keep it from becoming a long scroll.
+      const [tab, setTab] = useState('reading')
       const [apiKey, setApiKey] = useState('')
       const [apiKeyNote, setApiKeyNote] = useState('')
+      const [bindings, setBindingsState] = useState(() => readShortcutBindings())
+      // The action being recorded; a key press fills it, Escape cancels.
+      const [listening, setListening] = useState('')
       useEffect(() => {
         request('GET', 'deepseek-key')
           .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
           .catch(() => {})
       }, [])
+      useEffect(() => {
+        if (listening === '') return undefined
+        const onKey = event => {
+          event.preventDefault()
+          event.stopPropagation()
+          if (event.key === 'Escape') {
+            setListening('')
+            return
+          }
+          saveBinding(listening, [bindingOf(event)])
+          setListening('')
+        }
+        window.addEventListener('keydown', onKey, true)
+        return () => window.removeEventListener('keydown', onKey, true)
+      }, [listening])
+      const saveBinding = (id, list) => {
+        const next = { ...bindings, [id]: list }
+        setBindingsState(next)
+        writeShortcutBindings(next)
+      }
       const saveApiKey = async () => {
         try {
           const payload = await request('POST', 'deepseek-key', { key: apiKey })
@@ -2162,7 +2389,6 @@ window.__ModuleLoader__.load({
           setApiKeyNote(error !== null && error !== undefined && error.message ? String(error.message) : String(error))
         }
       }
-      const ready = envTools.python === true && envTools.tex === true
       const openLink = url => {
         try {
           window.open(url, '_blank', 'noopener')
@@ -2170,6 +2396,115 @@ window.__ModuleLoader__.load({
           // popup blocked
         }
       }
+      const tabs = [
+        { id: 'reading', label: format('settingsTabReading') },
+        { id: 'keys', label: format('settingsTabKeys') },
+        { id: 'env', label: format('settingsTabEnv') },
+        { id: 'about', label: format('settingsTabAbout') },
+      ]
+      const reading = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('settingsFeatures')),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('previewPdf')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onPreview,
+            }, props.previewPdf ? format('previewOn') : format('previewOff'))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('deleteNonPdf')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onNonPdf,
+            }, props.allowNonPdfDelete ? format('previewOn') : format('previewOff'))
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('settingsNotesTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('settingsNotesHint'))
+        )
+      )
+      const keys = h('div', { className: 'md-settings-section' },
+        h('h4', { className: 'md-settings-heading' }, format('shortcutsTitle')),
+        h('p', { className: 'md-shelf-sub' }, format('shortcutsHint')),
+        listening === ''
+          ? null
+          : h('p', { className: 'md-settings-note', role: 'status' }, format('shortcutsListening', { action: format(SHORTCUT_ACTIONS.find(item => item.id === listening)?.labelKey ?? 'shortcutsTitle') })),
+        h('div', { className: 'md-shortcut-list' },
+          SHORTCUT_ACTIONS.map(action => h('div', { className: 'md-settings-row md-shortcut-row', key: action.id },
+            h('span', { className: 'md-shortcut-name' }, format(action.labelKey)),
+            h('span', { className: 'md-shortcut-key' }, listening === action.id ? format('shortcutsRecording') : bindingLabel(bindings[action.id])),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              'aria-pressed': listening === action.id ? 'true' : 'false',
+              onClick: () => setListening(listening === action.id ? '' : action.id),
+            }, listening === action.id ? format('shortcutsCancel') : format('shortcutsRecord')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: bindingList(bindings[action.id]).length === 0,
+              onClick: () => saveBinding(action.id, []),
+            }, format('shortcutsClear'))
+          ))
+        ),
+        h('div', { className: 'md-settings-actions' },
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            onClick: () => {
+              const defaults = {}
+              for (const action of SHORTCUT_ACTIONS) defaults[action.id] = bindingList(action.fallback).map(item => ({ ...item }))
+              setBindingsState(defaults)
+              writeShortcutBindings(defaults)
+            },
+          }, format('shortcutsRestore')),
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            onClick: () => {
+              const empty = {}
+              for (const action of SHORTCUT_ACTIONS) empty[action.id] = []
+              setBindingsState(empty)
+              writeShortcutBindings(empty)
+            },
+          }, format('shortcutsClearAll'))
+        )
+      )
+      const env = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('envTitle')),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
+            envTools.python ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
+            envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
+          h('p', { className: 'md-shelf-sub' }, apiKeyNote),
+          h('div', { className: 'md-settings-row' },
+            h('input', {
+              className: 'md-settings-input', type: 'password',
+              value: apiKey, placeholder: 'sk-...',
+              onChange: event => setApiKey(event.target.value),
+            }),
+            h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
+          )
+        )
+      )
+      const about = h('div', { className: 'md-settings-section' },
+        h('h4', { className: 'md-settings-heading' }, format('githubRepo')),
+        h('button', {
+          type: 'button', className: 'md-btn md-btn-small',
+          onClick: () => openLink(GITHUB_URL),
+        }, format('githubRepo')),
+        h('button', {
+          type: 'button', className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
+          title: format('updateHint'),
+          onClick: props.onCheckUpdate,
+        }, props.updateBusy === true ? format('updateChecking') : format('updateCheck'))
+      )
       return h(React.Fragment, null,
         h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
         h('div', { className: 'md-picker md-settings-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('settings') },
@@ -2181,59 +2516,18 @@ window.__ModuleLoader__.load({
               'aria-label': format('previewClose'), onClick: props.onClose,
             }, '×')
           ),
-          h('div', { className: 'md-settings-section' },
-            h('h4', { className: 'md-settings-heading' }, format('envTitle')),
-            h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
-            h('div', { className: 'md-settings-row' },
-              h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
-              envTools.python ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
-            ),
-            h('div', { className: 'md-settings-row' },
-              h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
-              envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
-            )
+          h('div', { className: 'md-settings-tabs', role: 'tablist' },
+            tabs.map(item => h('button', {
+              key: item.id,
+              type: 'button',
+              role: 'tab',
+              className: 'md-btn md-btn-small md-tab-btn',
+              'data-on': tab === item.id ? 'true' : 'false',
+              'aria-selected': tab === item.id ? 'true' : 'false',
+              onClick: () => setTab(item.id),
+            }, item.label))
           ),
-          h('div', { className: 'md-settings-section' },
-            h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
-            h('p', { className: 'md-shelf-sub' }, apiKeyNote),
-            h('div', { className: 'md-settings-row' },
-              h('input', {
-                className: 'md-settings-input', type: 'password',
-                value: apiKey, placeholder: 'sk-...',
-                onChange: event => setApiKey(event.target.value),
-              }),
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
-            )
-          ),
-          h('div', { className: 'md-settings-section' },
-            h('h4', { className: 'md-settings-heading' }, format('githubRepo')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: () => openLink(GITHUB_URL),
-            }, format('githubRepo')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
-              title: format('updateHint'),
-              onClick: props.onCheckUpdate,
-            }, props.updateBusy === true ? format('updateChecking') : format('updateCheck'))
-          ),
-          h('div', { className: 'md-settings-section' },
-            h('h4', { className: 'md-settings-heading' }, format('settingsFeatures')),
-            h('div', { className: 'md-settings-row' },
-              h('span', null, format('previewPdf')),
-              h('button', {
-                type: 'button', className: 'md-btn md-btn-small',
-                onClick: props.onPreview,
-              }, props.previewPdf ? format('previewOn') : format('previewOff'))
-            ),
-            h('div', { className: 'md-settings-row' },
-              h('span', null, format('deleteNonPdf')),
-              h('button', {
-                type: 'button', className: 'md-btn md-btn-small',
-                onClick: props.onNonPdf,
-              }, props.allowNonPdfDelete ? format('previewOn') : format('previewOff'))
-            )
-          )
+          tab === 'reading' ? reading : tab === 'keys' ? keys : tab === 'env' ? env : about
         )
       )
     }
@@ -5265,6 +5559,15 @@ window.__ModuleLoader__.load({
 .md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .md-settings-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
+.md-settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
+.md-tab-btn[data-on='true'] { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-brand-primary); font-weight: 600; }
+.md-settings-note { margin: 0; font-size: 12px; color: var(--dsw-alias-brand-primary); }
+.md-settings-actions { display: flex; gap: 8px; padding-top: 4px; }
+.md-shortcut-list { display: flex; flex-direction: column; gap: 4px; }
+.md-shortcut-row { gap: 8px; }
+.md-shortcut-name { flex: 1 1 auto; min-width: 0; }
+.md-shortcut-key { flex: 0 0 auto; min-width: 88px; padding: 2px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; text-align: center; white-space: nowrap; }
+.md-shortcut-row .md-btn { flex: 0 0 auto; }
 .md-btn { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
 .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
 .md-btn:disabled { opacity: .55; cursor: default; }
@@ -6729,6 +7032,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const workRef = useRef(null)
 
       const pendingSave = useRef(null)
+      // Warm the vendored pdf.js (module + worker) while the page settles, so the
+      // first "open PDF" does not pay for the download.
+      useEffect(() => {
+        const warm = () => { loadPdfjs().catch(() => {}) }
+        if (typeof requestIdleCallback === 'function') {
+          const handle = requestIdleCallback(warm, { timeout: 4000 })
+          return () => {
+            if (typeof cancelIdleCallback === 'function') cancelIdleCallback(handle)
+          }
+        }
+        const timer = window.setTimeout(warm, 1500)
+        return () => window.clearTimeout(timer)
+      }, [])
       const freshPending = useRef(new Set())
       const creatingRef = useRef(false)
       const createSessionRef = useRef(null)
@@ -7278,46 +7594,35 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [readerLinkKey, readerPage])
 
-      // Reader keyboard: ↑/↓ scroll the page, ←/→ and PageUp/PageDown turn pages,
-      // +/- zoom, Escape out. A text field keeps its own keys.
+      // Reader keyboard: every binding comes from the user's shortcut table
+      // (Settings → 快捷键), whose defaults are the keys this reader has always
+      // used. A text field keeps its own keys, except for the close gesture.
       useEffect(() => {
         if (reader === null) return undefined
         const stage = readerStage
         const onKeyDown = event => {
+          const action = shortcutActionOf(event)
+          if (action === '') return
           const target = event.target
           const typing = target !== null && target !== undefined
             && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            event.stopPropagation()
-            closeReader()
-            return
-          }
-          if (typing) return
-          if (event.key === 'Home') {
-            event.preventDefault()
-            readerPage(1)
-          } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault()
+          if (typing && action !== 'closeReader') return
+          event.preventDefault()
+          if (action === 'closeReader') event.stopPropagation()
+          if (action === 'closeReader') closeReader()
+          else if (action === 'firstPage') readerPage(1)
+          else if (action === 'prevPage') readerPrev()
+          else if (action === 'nextPage') readerNext()
+          else if (action === 'scrollUp' || action === 'scrollDown') {
             const node = stage === undefined ? null : stage.current
-            if (node !== null) node.scrollBy({ top: event.key === 'ArrowDown' ? 96 : -96, behavior: 'auto' })
-          } else if (event.key === 'ArrowRight' || event.key === 'PageDown') {
-            event.preventDefault()
-            readerNext()
-          } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-            event.preventDefault()
-            readerPrev()
-          } else if (event.key === '+' || event.key === '=') {
-            event.preventDefault()
-            readerZoom(1.2)
-          } else if (event.key === '-') {
-            event.preventDefault()
-            readerZoom(1 / 1.2)
-          }
+            if (node !== null) node.scrollBy({ top: action === 'scrollDown' ? 96 : -96, behavior: 'auto' })
+          } else if (action === 'zoomIn') readerZoom(1.2)
+          else if (action === 'zoomOut') readerZoom(1 / 1.2)
+          else if (action === 'toggleMode') props.onMode(reader.mode === 'single' ? 'continuous' : 'single')
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-      }, [closeReader, reader, readerNext, readerPage, readerPrev, readerZoom])
+      }, [closeReader, reader, readerNext, readerPage, readerPrev, readerZoom, props.onMode])
 
       // Opening the reader moves focus into it; closing returns it to the chapter.
       useEffect(() => {
