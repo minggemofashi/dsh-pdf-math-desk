@@ -191,6 +191,8 @@ window.__ModuleLoader__.load({
       previewOn: '开',
       previewOff: '关',
       previewPdfHint: '创建会话时自动在右栏显示本章 PDF（只是预览，不进入上下文）',
+      deleteNonPdf: '非PDF删除',
+      deleteNonPdfHint: '开启后，md/txt 等非 PDF 产物也会显示「删除」按钮；关闭时只允许删除 PDF',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -433,6 +435,8 @@ window.__ModuleLoader__.load({
       previewOn: 'on',
       previewOff: 'off',
       previewPdfHint: 'Automatically show this chapter\'s PDF in the side column when creating a session (preview only, not context)',
+      deleteNonPdf: 'Delete non-PDF',
+      deleteNonPdfHint: 'When on, md/txt artifacts also show a Delete button; when off, only PDFs can be deleted',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -2124,14 +2128,16 @@ window.__ModuleLoader__.load({
             }, format('renderAction'))
             : null
           ),
-          h('span', {
-            className: 'md-file-action', role: 'button', tabIndex: 0,
-            title: format('trashFileHint'),
-            onClick: event => {
-              event.stopPropagation()
-              props.onTrashArtifact(item, props.code)
-            },
-          }, format('trashAction')),
+          (item.kind === 'pdf' || props.allowNonPdfDelete === true)
+            ? h('span', {
+              className: 'md-file-action', role: 'button', tabIndex: 0,
+              title: format('trashFileHint'),
+              onClick: event => {
+                event.stopPropagation()
+                props.onTrashArtifact(item, props.code)
+              },
+            }, format('trashAction'))
+            : null,
           h('div', { className: 'md-artifact-modes' },
             MODES.map(mode => h(React.Fragment, { key: mode },
               h('button', {
@@ -2727,6 +2733,7 @@ window.__ModuleLoader__.load({
             code: chapter.code,
             sessionIndex: props.sessionIndex,
             onArtifactSession: props.onArtifactSession,
+            allowNonPdfDelete: props.allowNonPdfDelete,
             onOpenSession: props.onOpenSession,
             state: props.artifacts,
             onOpen: item => props.onOpenArtifact(chapter, item),
@@ -2777,6 +2784,7 @@ window.__ModuleLoader__.load({
                 groups: props.sessionIndex.byChapter.get(key),
                 sessionIndex: props.sessionIndex,
                 onArtifactSession: props.onArtifactSession,
+                allowNonPdfDelete: props.allowNonPdfDelete,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
                 creatingMode: props.creatingKey === key ? props.creatingMode : '',
@@ -3160,6 +3168,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return window.localStorage.getItem('mathdesk:preview-pdf') !== '0'
         } catch {
           return true
+        }
+      })
+      const [allowNonPdfDelete, setAllowNonPdfDelete] = useState(() => {
+        try {
+          return window.localStorage.getItem('mathdesk:delete-non-pdf') === '1'
+        } catch {
+          return false
         }
       })
       const [sample, setSample] = useState(null)
@@ -5323,6 +5338,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
           onArtifactSession: newArtifactSession,
+          allowNonPdfDelete,
           onRenderArtifact: renderArtifact,
           onTrashArtifact: trashArtifact,
           onRetryArtifacts: retryArtifacts,
@@ -5463,6 +5479,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   })
                 },
               }, `${format('previewPdf')}：${previewPdf ? format('previewOn') : format('previewOff')}`),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-ghost',
+                title: format('deleteNonPdfHint'),
+                onClick: () => {
+                  setAllowNonPdfDelete(value => {
+                    const next = !value
+                    try {
+                      window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
+                    } catch {
+                      // storage unavailable: keep the in-memory choice
+                    }
+                    return next
+                  })
+                },
+              }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`),
               h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', disabled: updateBusy || catalog === null,
                 title: format('updateHint'),
