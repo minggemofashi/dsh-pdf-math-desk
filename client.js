@@ -133,6 +133,8 @@ window.__ModuleLoader__.load({
       readerMode: '阅读模式',
       readerModeSingle: '单页',
       readerModeContinuous: '连续',
+      blocksToggle: '块',
+      blocksHint: '显示/隐藏文本块边框（调试）',
       readerNewLabel: '从这一章开始：',
       readerNewHint: '接着本章该分组的会话并跳过去；快满时自动另起续会话；本章 PDF 会自动开在会话右侧',
       readerInSessionFailed: '会话已建好，但右侧 PDF 没打开（可能不在库工作区）。',
@@ -405,6 +407,8 @@ window.__ModuleLoader__.load({
       readerMode: 'Reading mode',
       readerModeSingle: 'Single page',
       readerModeContinuous: 'Continuous',
+      blocksToggle: 'Blocks',
+      blocksHint: 'Show or hide text block boxes (debug)',
       readerNewLabel: 'Start from this chapter:',
       readerNewHint: 'Continues this chapter’s conversation in this group and goes there; starts a continuation when it fills up. The chapter PDF opens on the session’s right.',
       readerInSessionFailed: 'The session was created, but the PDF could not open on its right side.',
@@ -2645,7 +2649,10 @@ window.__ModuleLoader__.load({
         },
       },
         h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(props.pageNumber)),
-        h('canvas', { className: 'md-reader-canvas', ref: canvas })
+        h('div', { className: 'md-reader-page-wrap' },
+          h('canvas', { className: 'md-reader-canvas', ref: canvas }),
+          h(BlockOverlay, { doc: props.doc, pageNumber: props.pageNumber, show: props.showBlocks === true })
+        )
       )
     }
 
@@ -2665,10 +2672,141 @@ window.__ModuleLoader__.load({
           rootRef: props.rootRef,
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
+          showBlocks: props.showBlocks,
           onError: props.onError,
         }))
       }
       return h('div', { className: 'md-reader-continuous' }, pages)
+    }
+
+    /**
+     * Split one PDF page into text blocks with normalized boxes (0..1).
+     * M1 debug helper: lines are merged into paragraphs by vertical gap;
+     * a block whose line height clearly exceeds the median is a heading.
+     * @param {object} page - a pdf.js page.
+     * @returns {Promise<object[]>} blocks with id/page/kind/bbox/text.
+     */
+    async function parsePageBlocks(page) {
+      const viewport = page.getViewport({ scale: 1 })
+      const width = viewport.width
+      const height = viewport.height
+      const content = await page.getTextContent()
+      const items = []
+      for (const item of content.items) {
+        if (typeof item.str !== 'string' || item.str.trim() === '') continue
+        const transform = item.transform
+        const fontHeight = Math.hypot(transform[2], transform[3]) || Math.abs(transform[3]) || 1
+        items.push({
+          text: item.str,
+          x: transform[4],
+          y: transform[5],
+          w: item.width || 0,
+          h: fontHeight,
+        })
+      }
+      if (items.length === 0) return []
+      items.sort((a, b) => (b.y - a.y) || (a.x - b.x))
+      const sizes = items.map(item => item.h).sort((a, b) => a - b)
+      const median = sizes[Math.floor(sizes.length / 2)] || 1
+      const lines = []
+      for (const item of items) {
+        const line = lines.find(candidate => Math.abs(candidate.y - item.y) <= Math.max(2, item.h * 0.5))
+        if (line === undefined) {
+          lines.push({ y: item.y, items: [item] })
+        } else {
+          line.items.push(item)
+          line.y = Math.min(line.y, item.y)
+        }
+      }
+      for (const line of lines) {
+        line.items.sort((a, b) => a.x - b.x)
+        line.text = line.items.map(item => item.text).join('').replace(/\s+/g, ' ').trim()
+        line.x = Math.min(...line.items.map(item => item.x))
+        line.x2 = Math.max(...line.items.map(item => item.x + item.w))
+        line.h = Math.max(...line.items.map(item => item.h))
+        line.top = height - line.y - line.h
+      }
+      lines.sort((a, b) => a.top - b.top)
+      const blocks = []
+      let current = null
+      for (const line of lines) {
+        if (line.text === '') continue
+        if (current !== null) {
+          const gap = line.top - current.bottom
+          if (gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.x <= current.right + line.h * 1.5) {
+            current.lines.push(line)
+            current.bottom = Math.max(current.bottom, line.top + line.h)
+            current.right = Math.max(current.right, line.x2)
+            current.h = Math.max(current.h, line.h)
+            continue
+          }
+        }
+        current = {
+          lines: [line],
+          top: line.top,
+          bottom: line.top + line.h,
+          left: line.x,
+          right: line.x2,
+          h: line.h,
+        }
+        blocks.push(current)
+      }
+      return blocks.map((block, index) => ({
+        id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
+        page: page.pageNumber,
+        kind: block.h > median * 1.25 ? 'heading' : 'paragraph',
+        bbox: [
+          block.left / width,
+          block.top / height,
+          (block.right - block.left) / width,
+          (block.bottom - block.top) / height,
+        ],
+        text: block.lines.map(line => line.text).join(' ').slice(0, 400),
+      }))
+    }
+
+    /**
+     * Debug overlay: draw parsed blocks over one rendered page.
+     * @param {{ doc: object, pageNumber: number, show: boolean }} props - document, page and visibility.
+     * @returns {import('react').ReactElement | null} the overlay.
+     */
+    function BlockOverlay(props) {
+      const [blocks, setBlocks] = useState([])
+      useEffect(() => {
+        if (props.show !== true || props.doc === null || props.doc === undefined) {
+          setBlocks([])
+          return undefined
+        }
+        let cancelled = false
+        const run = async () => {
+          try {
+            const page = await props.doc.getPage(props.pageNumber)
+            const parsed = await parsePageBlocks(page)
+            if (!cancelled) setBlocks(parsed)
+          } catch {
+            if (!cancelled) setBlocks([])
+          }
+        }
+        void run()
+        return () => {
+          cancelled = true
+        }
+      }, [props.doc, props.pageNumber, props.show])
+      if (props.show !== true || blocks.length === 0) return null
+      return h('div', { className: 'md-blocklayer', 'aria-hidden': true },
+        blocks.map(block => h('div', {
+          key: block.id,
+          className: 'md-blockbox',
+          'data-kind': block.kind,
+          title: block.text,
+          style: {
+            left: `${block.bbox[0] * 100}%`,
+            top: `${block.bbox[1] * 100}%`,
+            width: `${block.bbox[2] * 100}%`,
+            height: `${block.bbox[3] * 100}%`,
+          },
+        }))
+      )
     }
 
     /**
@@ -2681,6 +2819,7 @@ window.__ModuleLoader__.load({
     function ReaderView(props) {
       const reader = props.reader
       const [pageText, setPageText] = useState(String(reader.page))
+      const [showBlocks, setShowBlocks] = useState(false)
       const slotRefs = useRef(new Map())
       useEffect(() => setPageText(String(reader.page)), [reader.page])
 
@@ -2805,7 +2944,12 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
               onClick: () => props.onMode('continuous'),
-            }, format('readerModeContinuous'))
+            }, format('readerModeContinuous')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
+              title: format('blocksHint'),
+              onClick: () => setShowBlocks(value => !value),
+            }, format('blocksToggle'))
           ),
           false
             ? null
@@ -2842,6 +2986,7 @@ window.__ModuleLoader__.load({
               : reader.mode === 'continuous'
                 ? h(ContinuousView, {
                   doc: props.doc,
+                  showBlocks: props.showBlocks,
                   count: reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: props.stageRef,
@@ -2850,7 +2995,10 @@ window.__ModuleLoader__.load({
                   onError: props.onError,
                 })
                 : h('div', { className: 'md-reader-single' },
-                  h('canvas', { className: 'md-reader-canvas', ref: props.canvasRef }))
+                  h('div', { className: 'md-reader-single-page' },
+                    h('canvas', { className: 'md-reader-canvas', ref: props.canvasRef }),
+                    h(BlockOverlay, { doc: props.doc, pageNumber: reader.page, show: showBlocks })
+                  ))
         )
       )
     }
@@ -3300,8 +3448,13 @@ window.__ModuleLoader__.load({
 .md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 .md-reader-single { display: flex; justify-content: center; margin: 0 auto; }
+.md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
+.md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
+.md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.md-blockbox { position: absolute; box-sizing: border-box; border: 1px solid rgba(235, 70, 70, .8); background: rgba(235, 70, 70, .06); }
+.md-blockbox[data-kind="heading"] { border-color: rgba(60, 130, 235, .9); background: rgba(60, 130, 235, .08); }
 .md-reader-continuous { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
-.md-reader-slot { display: flex; flex-direction: column; align-items: center; min-height: 240px; }
+.md-reader-slot { display: flex; flex-direction: column; align-items: center; min-height: 240px; position: relative; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-modes { display: flex; align-items: center; gap: 4px; }
