@@ -197,6 +197,7 @@ window.__ModuleLoader__.load({
       version: '版本',
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
+      diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -445,6 +446,7 @@ window.__ModuleLoader__.load({
       version: 'Version',
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
+      diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -5598,7 +5600,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-content' },
             h('div', { className: 'md-body', ref: bodyRef, inert: covered ? '' : undefined },
               body,
-              catalog === null || blockingError !== '' ? null : h(Diagnostics, { catalog, books, unresolved: sessionIndex.unresolved })
+              catalog === null || blockingError !== '' ? null : h('details', { className: 'md-details' },
+                h('summary', { className: 'md-details-summary' }, format('diagnosticsTitle')),
+                h(Diagnostics, { catalog, books, unresolved: sessionIndex.unresolved })
+              )
             ),
             preview === null
               ? null
