@@ -261,7 +261,8 @@ export function createHandler(config, options = {}) {
             fail(response, 400, 'bad-name', '只支持渲染 .md 文件')
             return
           }
-          const dir = chapterArtifactDir(config, body.book, body.code)
+          const library = await activeLibrary()
+          const dir = join(library.libraryDir, '产物', body.book, body.code)
           const source = join(dir, name)
           try {
             await stat(source)
@@ -290,7 +291,10 @@ export function createHandler(config, options = {}) {
           return
         }
         const library = await activeLibrary()
-        const source = join(library.libraryDir, '分片', book)
+        const catalog = await loadCatalog(config)
+        const row = catalog.books.find(item => item.id === book)
+        const dirName = row !== undefined && typeof row.dir === 'string' && row.dir !== '' ? row.dir : book
+        const source = join(library.libraryDir, '分片', dirName)
         try {
           await stat(source)
         } catch {
@@ -317,7 +321,7 @@ export function createHandler(config, options = {}) {
           return
         }
         const library = await activeLibrary()
-        const source = join(chapterArtifactDir(config, body.book, body.code), name)
+        const source = join(library.libraryDir, '产物', body.book, body.code, name)
         try {
           await stat(source)
         } catch {
