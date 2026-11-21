@@ -1504,6 +1504,17 @@ window.__ModuleLoader__.load({
 
     /* ------------------------------------------------------------ elements -- */
 
+    const viewerBus = { token: 0, listeners: new Set() }
+
+    /**
+     * Ask the page to repaint its single-page canvas after a view swap.
+     * @returns {void}
+     */
+    function bumpViewer() {
+      viewerBus.token += 1
+      viewerBus.listeners.forEach(listener => listener(viewerBus.token))
+    }
+
     const deskStatus = { value: 'idle', job: '', listeners: new Set() }
 
     /**
@@ -3511,6 +3522,7 @@ window.__ModuleLoader__.load({
                   return
                 }
                 setOverlay(false)
+                setTimeout(bumpViewer, 80)
                 setDual(value => {
                   if (value) {
                     setDualDoc(null)
@@ -3530,6 +3542,7 @@ window.__ModuleLoader__.load({
                   setDual(false)
                   setDualDoc(null)
                 }
+                setTimeout(bumpViewer, 80)
                 setOverlay(value => !value)
               },
             }, format('overlayToggle')),
@@ -4345,6 +4358,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const readerTask = useRef(null)
       const readerRender = useRef(null)
       const readerCanvas = useRef(null)
+      const [viewToken, setViewToken] = useState(0)
+      useEffect(() => {
+        viewerBus.listeners.add(setViewToken)
+        return () => {
+          viewerBus.listeners.delete(setViewToken)
+        }
+      }, [])
       const readerStage = useRef(null)
       const readerPane = useRef(null)
       const pendingReaderFocus = useRef('')
@@ -4763,6 +4783,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // previous render; continuous mode paints each page in its own slot.
       useEffect(() => {
         if (reader === null || reader.phase !== 'ready' || reader.mode !== 'single') return undefined
+        void viewToken
         const doc = readerDoc.current
         const canvas = readerCanvas.current
         if (doc === null || canvas === null) return undefined
@@ -4813,7 +4834,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             readerRender.current = null
           }
         }
-      }, [fitScale, reader === null ? '' : `${reader.page}|${reader.scale}|${reader.phase}|${reader.mode}`])
+      }, [fitScale, viewToken, reader === null ? '' : `${reader.page}|${reader.scale}|${reader.phase}|${reader.mode}`])
 
       // Continuous mode starts at fit width too: without a single-page paint to
       // learn the page size from, measure page one here.
