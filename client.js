@@ -271,6 +271,9 @@ window.__ModuleLoader__.load({
       renderConfirm: '把 {name} 渲染为 PDF？会生成同名 PDF 放在 md 旁边。',
       renderAction: '转 PDF',
       renderActionHint: '渲染为 PDF，与 md 同目录',
+      trashAction: '删除',
+      trashFileHint: '移到 回收站\\（可恢复）',
+      archiveConfirm: '归档这个会话？归档后工作台不再列出，可在 DSH 侧栏恢复。',
       renderWorking: '正在渲染 PDF…（首次可能较慢）',
       renderDone: '已生成 {name}',
       renderFailed: '渲染失败：需要 Python 与 TeX Live（xelatex），详见 README',
@@ -510,6 +513,9 @@ window.__ModuleLoader__.load({
       renderConfirm: 'Render {name} to PDF next to the markdown file?',
       renderAction: 'To PDF',
       renderActionHint: 'Render to PDF in the same folder',
+      trashAction: 'Delete',
+      trashFileHint: 'Move to the library\'s 回收站\\ (restorable)',
+      archiveConfirm: 'Archive this conversation? The workbench will stop listing it; restore it from the DSH sidebar.',
       renderWorking: 'Rendering PDF… (the first run can be slow)',
       renderDone: 'Created {name}',
       renderFailed: 'Render failed: needs Python and TeX Live (xelatex), see README',
@@ -1846,6 +1852,12 @@ window.__ModuleLoader__.load({
               title,
               'aria-label': label,
               onClick: () => props.onOpenSession(item.id),
+              onContextMenu: event => {
+                event.preventDefault()
+                if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                  && !window.confirm(format('archiveConfirm'))) return
+                props.onArchiveSession(item.id)
+              },
             },
               h('span', { className: 'md-session-name' }, label),
               item.viaLink
@@ -2112,6 +2124,14 @@ window.__ModuleLoader__.load({
             }, format('renderAction'))
             : null
           ),
+          h('span', {
+            className: 'md-file-action', role: 'button', tabIndex: 0,
+            title: format('trashFileHint'),
+            onClick: event => {
+              event.stopPropagation()
+              props.onTrashArtifact(item, props.code)
+            },
+          }, format('trashAction')),
           h('div', { className: 'md-artifact-modes' },
             MODES.map(mode => h(React.Fragment, { key: mode },
               h('button', {
@@ -2690,6 +2710,7 @@ window.__ModuleLoader__.load({
             renaming: props.renaming,
             onNewSession: props.onNewSession,
             onOpenSession: props.onOpenSession,
+            onArchiveSession: props.onArchiveSession,
             onRetryRename: props.onRetryRename,
             onDigest: props.onDigest,
             onImport: props.onImport,
@@ -2767,6 +2788,7 @@ window.__ModuleLoader__.load({
                 onOpenPdf: props.onOpenPdf,
                 onNewSession: props.onNewSession,
                 onOpenSession: props.onOpenSession,
+                onArchiveSession: props.onArchiveSession,
                 onRetryRename: props.onRetryRename,
                 onDigest: props.onDigest,
                 onOpenArtifact: props.onOpenArtifact,
@@ -5296,6 +5318,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             })
           },
           onOpenSession: openSessionRow,
+          onArchiveSession: archiveSessionRow,
           onRetryRename: retryRename,
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,

@@ -354,8 +354,8 @@ export function createHandler(config, options = {}) {
         }
         const body = await readJson(request)
         const name = basename(String(body.name ?? ''))
-        if (!/\.pdf$/i.test(name)) {
-          fail(response, 400, 'bad-name', '只删除 PDF 产物')
+        if (name === '') {
+          fail(response, 400, 'bad-name', '文件名不能为空')
           return
         }
         const library = await activeLibrary()
