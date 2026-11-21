@@ -204,6 +204,8 @@ window.__ModuleLoader__.load({
       tipsLeftClick: '左键：单击书卡＝选中/取消选中，双击＝打开书本；单击章节名＝展开/收起。',
       tipsRightClick: '右键：书卡与章节没有右键操作；产物（转 PDF / 删除）与会话（归档）支持右键。',
       tipsTitle: '使用提示',
+      splitToolTitle: '拆分工具',
+      importToolTitle: '导入文件',
       diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
@@ -460,6 +462,8 @@ window.__ModuleLoader__.load({
       tipsLeftClick: 'Left click: a book cover selects/deselects, double click opens the book; a chapter row expands/collapses.',
       tipsRightClick: 'Right click: books and chapters have no menu; artifacts (To PDF / Delete) and sessions (Archive) do.',
       tipsTitle: 'Interaction tips',
+      splitToolTitle: 'Split toolkit',
+      importToolTitle: 'Import files',
       diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
@@ -1636,7 +1640,8 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-shelf-sub' }, format('libraryPathHint'))
           )
         ),
-        h('div', { className: 'md-library-samples', style: { order: 2 } },
+        h('div', { className: 'md-library-toolcell' },
+        h('div', { className: 'md-library-samples md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('sampleTitle')),
           props.sample === null
             ? h('p', { className: 'md-shelf-sub' }, format('sampleLoading'))
@@ -1656,16 +1661,22 @@ window.__ModuleLoader__.load({
                 }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad'))
               )
         ),
-        h('div', { className: 'md-library-tools', style: { order: 3 } },
+        h('div', { className: 'md-tool-card' },
+          h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('splitHint')),
           h('button', {
-            type: 'button', className: 'md-btn', disabled: busy, title: format('splitHint'),
+            type: 'button', className: 'md-btn', disabled: busy,
             onClick: props.onSplit,
-          }, busy ? format('libraryBusy') : format('splitStart')),
+          }, busy ? format('libraryBusy') : format('splitStart'))
+        ),
+        h('div', { className: 'md-tool-card' },
+          h('h3', { className: 'md-subheading' }, format('importToolTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('importFilesHint')),
           h('button', {
             type: 'button', className: 'md-btn', disabled: busy || props.importBusy,
-            title: format('importFilesHint'),
             onClick: props.onImport,
           }, props.importBusy ? format('importBusy') : format('importStart'))
+        )
         )
       )
     }
@@ -2996,6 +3007,9 @@ window.__ModuleLoader__.load({
 .md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: none; }
 .md-libraries > .md-shelf-head, .md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p, .md-libraries > .md-details, .md-libraries > .md-library-tools { grid-column: 1 / -1; }
 .md-libraries > .md-library-add { grid-column: 1; }
+.md-libraries > .md-library-toolcell { grid-column: 2; }
+.md-library-toolcell { display: flex; flex-direction: column; gap: 12px; }
+.md-tool-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
 .md-libraries > .md-library-samples { grid-column: 2; }
 .md-library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .md-library { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
@@ -3008,6 +3022,7 @@ window.__ModuleLoader__.load({
 .md-badge { font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 999px; color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 13%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent); }
 .md-badge-quiet { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border-color: var(--dsw-alias-border-l3); }
 .md-library-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.md-library-actions .md-icon-btn { font-size: 18px; line-height: 1.2; padding: 0 8px; }
 .md-subheading { margin: 0; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-library-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .md-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); flex: 1 1 200px; min-width: 0; }
