@@ -2823,23 +2823,31 @@ window.__ModuleLoader__.load({
         line.top = line.baseline - line.h
       }
       lines.sort((a, b) => a.top - b.top)
-      const marginLeft = Math.min(...lines.map(line => line.left))
-      const marginRight = Math.max(...lines.map(line => line.right))
-      const contentWidth = Math.max(1, marginRight - marginLeft)
+      const leftCounts = new Map()
+      const rightCounts = new Map()
+      for (const line of lines) {
+        const left = Math.round(line.left)
+        const right = Math.round(line.right)
+        leftCounts.set(left, (leftCounts.get(left) ?? 0) + 1)
+        rightCounts.set(right, (rightCounts.get(right) ?? 0) + 1)
+      }
+      const mode = counts => [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
+      const bodyLeft = mode(leftCounts)
+      const bodyRight = mode(rightCounts)
+      const contentWidth = Math.max(1, bodyRight - bodyLeft)
       for (const line of lines) {
         const width = line.right - line.left
-        line.formula = width < contentWidth * 0.78
-          && line.left - marginLeft > line.h * 2.5
-          && marginRight - line.right > line.h * 2.5
+        line.formula = width < contentWidth * 0.95
+          && (line.left - bodyLeft > line.h * 1.5 || bodyRight - line.right > line.h * 1.5)
       }
-      const blocks = []
+            const blocks = []
       let current = null
       for (const line of lines) {
         if (line.text === '') continue
         if (current !== null) {
           const gap = line.top - current.bottom
           const indented = line.left > current.lastLeft + Math.max(3, line.h * 0.8)
-          if (line.formula === current.formula && !indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
+          if (line.formula === current.formula && !indented && gap <= Math.max(current.h * 0.9, line.h * 1.2) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
             current.bottom = Math.max(current.bottom, line.baseline)
             current.left = Math.min(current.left, line.left)
@@ -2868,7 +2876,7 @@ window.__ModuleLoader__.load({
         return {
           id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
           page: page.pageNumber,
-          kind: block.formula === true ? 'formula' : (block.h > median * 1.25 ? 'heading' : 'paragraph'),
+          kind: block.formula === true ? 'formula' : (block.h > median * 1.25 && (block.right - block.left) < contentWidth * 0.62 ? 'heading' : 'paragraph'),
           bbox: [
             Math.max(0, (block.left - pad) / width),
             Math.max(0, (block.top - pad) / height),
