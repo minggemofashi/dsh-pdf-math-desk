@@ -187,6 +187,10 @@ window.__ModuleLoader__.load({
       renameFailed: '重命名失败',
       cleanup: '清理空会话',
       updateCheck: '检查更新',
+      previewPdf: '右侧预览',
+      previewOn: '开',
+      previewOff: '关',
+      previewPdfHint: '创建会话时自动在右栏显示本章 PDF（只是预览，不进入上下文）',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -422,6 +426,10 @@ window.__ModuleLoader__.load({
       renameFailed: 'Could not rename',
       cleanup: 'Clean unused',
       updateCheck: 'Check for updates',
+      previewPdf: 'Side preview',
+      previewOn: 'on',
+      previewOff: 'off',
+      previewPdfHint: 'Automatically show this chapter\'s PDF in the side column when creating a session (preview only, not context)',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -2054,7 +2062,10 @@ window.__ModuleLoader__.load({
         const groups = item.kind === 'pdf' && props.sessionIndex !== undefined && props.sessionIndex.byArtifact !== undefined
           ? props.sessionIndex.byArtifact.get(`${props.bookId}|${props.code}|${artifactStem(item)}`)
           : undefined
-        return h('li', { key: `${index}:${item.name}`, className: 'md-artifact-item' },
+        return h('li', {
+          key: `${index}:${item.name}`,
+          className: String(item.name).includes('__') ? 'md-artifact-item md-artifact-child' : 'md-artifact-item',
+        },
           h('button', {
             type: 'button',
             className: 'md-file',
@@ -2142,9 +2153,16 @@ window.__ModuleLoader__.load({
         )
       }
       const ordered = [...items].sort((left, right) => {
+        // `<parent>__<name>.md` groups under `<parent>` so derived files stay
+        // right below the artifact their session started from.
+        const base = entry => String(entry.name).replace(/\.(md|pdf)$/i, '').split('__')[0]
+        const delta = base(left).localeCompare(base(right))
+        if (delta !== 0) return delta
+        const isChild = entry => String(entry.name).includes('__')
+        if (isChild(left) !== isChild(right)) return isChild(left) ? 1 : -1
         const rank = entry => (/\.md$/i.test(entry.name) ? 0 : /\.pdf$/i.test(entry.name) ? 1 : 2)
-        const delta = rank(left) - rank(right)
-        return delta !== 0 ? delta : left.name.localeCompare(right.name)
+        const byRank = rank(left) - rank(right)
+        return byRank !== 0 ? byRank : left.name.localeCompare(right.name)
       })
       let body
       if (phase === 'error') {
@@ -2852,6 +2870,7 @@ window.__ModuleLoader__.load({
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-artifact-modes { display: flex; gap: 6px; padding: 2px 0 4px 52px; }
 .md-artifact-sessions { padding-left: 52px; }
+.md-artifact-child { padding-left: 40px; }
 .md-artifact-session-toggle { display: block; margin: 0 0 2px 52px; padding: 0; font: inherit; font-size: 11.5px; color: var(--dsw-alias-label-secondary); background: none; border: 0; cursor: pointer; }
 .md-artifact-session-toggle:hover { color: var(--dsw-alias-label-primary); }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
@@ -3099,6 +3118,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [libBusy, setLibBusy] = useState(false)
       const [libError, setLibError] = useState('')
       const [updateBusy, setUpdateBusy] = useState(false)
+      const [previewPdf, setPreviewPdf] = useState(() => {
+        try {
+          return window.localStorage.getItem('mathdesk:preview-pdf') !== '0'
+        } catch {
+          return true
+        }
+      })
       const [sample, setSample] = useState(null)
       const [sampleBusy, setSampleBusy] = useState(false)
       const [importBusy, setImportBusy] = useState(false)
@@ -4601,6 +4627,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (options !== undefined && options.jump === true) {
             await flushSave()
             openHostSession(sessionId)
+            if (previewPdf) void openPdfInSession(sessionId)
           }
           if (draftReference !== null) {
             try { draftReference.release() } catch { /* already released */ }
@@ -4611,7 +4638,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setCreatingKey('')
           setCreatingMode('')
         }
-      }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, refreshSessions, registerPending, seedFor, settlePending, showNotice])
+      }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
       createSessionRef.current = createSession
 
       /** The reader's three New buttons: create the session, leave for it. */
@@ -4649,6 +4676,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (ratio < limit) {
             await flushSave()
             openHostSession(current.id)
+            if (previewPdf) void openPdfInSession(current.id)
             showNotice(format('sessionResumed', {
               mode: format(`mode.${mode}`),
               pct: known ? Math.round(ratio * 100) : '?',
@@ -4669,7 +4697,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           jump: options !== undefined && options.jumpOnCreate === true,
           continuation: nextContinuation(book.id, chapter.code, mode),
         })
-      }, [book, catalog, createSession, findCurrentSession, flushSave, nextContinuation, openPdfInSession, showNotice])
+      }, [book, catalog, createSession, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
 
       /**
        * Summarize one chapter's conversations into an outline file.
@@ -5376,6 +5404,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               book === null ? null : h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', onClick: backToShelf,
               }, `‹ ${format('back')}`),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-ghost',
+                title: format('previewPdfHint'),
+                onClick: () => {
+                  setPreviewPdf(value => {
+                    const next = !value
+                    try {
+                      window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
+                    } catch {
+                      // storage unavailable: keep the in-memory choice
+                    }
+                    return next
+                  })
+                },
+              }, `${format('previewPdf')}：${previewPdf ? format('previewOn') : format('previewOff')}`),
               h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', disabled: updateBusy || catalog === null,
                 title: format('updateHint'),
