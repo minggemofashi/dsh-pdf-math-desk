@@ -293,12 +293,47 @@ export function createHandler(config, options = {}) {
         const library = await activeLibrary()
         const catalog = await loadCatalog(config)
         const row = catalog.books.find(item => item.id === book)
-        const dirName = row !== undefined && typeof row.dir === 'string' && row.dir !== '' ? row.dir : book
-        const source = join(library.libraryDir, '分片', dirName)
-        try {
-          await stat(source)
-        } catch {
-          fail(response, 404, 'missing', '这本书的分片目录不存在')
+        const fragmentRoot = join(library.libraryDir, '分片')
+        let source = ''
+        const candidates = []
+        if (row !== undefined && typeof row.dir === 'string' && row.dir !== '') candidates.push(join(fragmentRoot, row.dir))
+        candidates.push(join(fragmentRoot, book))
+        for (const candidate of candidates) {
+          try {
+            await stat(candidate)
+            source = candidate
+            break
+          } catch {
+            // try the next naming variant
+          }
+        }
+        if (source === '') {
+          // The hidden id may be a book title while the folder carries another
+          // suffix: accept a single unambiguous prefix match.
+          try {
+            const entries = await readdir(fragmentRoot, { withFileTypes: true })
+            const match = entries.find(entry => entry.isDirectory()
+              && (entry.name === book || book.startsWith(entry.name) || entry.name.startsWith(book)))
+            if (match !== undefined) source = join(fragmentRoot, match.name)
+          } catch {
+            // no fragment root at all: fall through to whole-book lookup
+          }
+        }
+        if (source === '') {
+          for (const sub of ['整本', '']) {
+            try {
+              const entries = await readdir(join(library.libraryDir, sub), { withFileTypes: true })
+              const match = entries.find(entry => entry.isFile() && /\.pdf$/i.test(entry.name)
+                && entry.name.replace(/\.pdf$/i, '') === book)
+              if (match !== undefined) source = join(library.libraryDir, sub, match.name)
+            } catch {
+              // that folder does not exist
+            }
+            if (source !== '') break
+          }
+        }
+        if (source === '') {
+          fail(response, 404, 'missing', `找不到这本书的分片目录或整本 PDF（书 id: ${book}）`)
           return
         }
         const trash = join(library.libraryDir, '回收站')
