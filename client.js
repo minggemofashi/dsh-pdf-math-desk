@@ -3042,9 +3042,8 @@ window.__ModuleLoader__.load({
 .md-chevron::before { content: ""; position: absolute; top: 50%; left: 40%; width: 6px; height: 6px; border-right: 1.5px solid var(--dsw-alias-label-secondary); border-bottom: 1.5px solid var(--dsw-alias-label-secondary); transform: translate(0, -50%) rotate(-45deg); transition: transform .16s ease; }
 .md-chapter[data-open="true"] .md-chevron::before { transform: translate(0, -50%) rotate(45deg); }
 .md-detail { display: flex; flex-direction: column; gap: 8px; padding: 2px 8px 16px 70px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
-.md-tips { display: flex; flex-direction: column; gap: 6px; margin-top: 22px; padding: 14px 4px 0; border-top: 1px dashed var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
-.md-tips-summary { cursor: pointer; font-size: 13px; font-weight: 550; color: var(--dsw-alias-label-primary); }
-.md-tips[open] .md-tips-summary { margin-bottom: 4px; }
+.md-tips { margin-top: 22px; }
+.md-tips-line { font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
 .md-detail-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .md-detail-open { margin-left: auto; }
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
@@ -5639,8 +5638,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-content' },
             h('div', { className: 'md-body', ref: bodyRef, inert: covered ? '' : undefined },
               body,
-              work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('details', { className: 'md-tips' },
-                h('summary', { className: 'md-tips-summary' }, format('tipsTitle')),
+              work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('details', { className: 'md-details md-tips' },
+                h('summary', { className: 'md-details-summary' }, format('tipsTitle')),
                 h('div', { className: 'md-tips-line' }, format('tipsLeftClick')),
                 h('div', { className: 'md-tips-line' }, format('tipsRightClick'))
               ),
