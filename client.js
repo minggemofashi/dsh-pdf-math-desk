@@ -3542,17 +3542,24 @@ window.__ModuleLoader__.load({
         }
       }, [annotKey, strokes])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
-      // so the same numbers work at any zoom.
+      // so the same numbers work at any zoom. The box width is remembered so the
+      // eraser can turn its pixel tolerance into page units.
+      const annotBox = useRef({ width: 400, height: 600 })
       const annotPoint = event => {
         const rect = event.currentTarget.getBoundingClientRect()
         if (rect.width === 0 || rect.height === 0) return null
+        annotBox.current = { width: rect.width, height: rect.height }
         return [
           Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
           Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
         ]
       }
+      // Tolerance in page units: ~8px of slack plus half the stroke's own width,
+      // so a thick line is as easy to hit as it looks.
+      const toleranceFor = widthPx => (8 + widthPx / 2) / Math.max(1, annotBox.current.width)
       const strokeHits = (stroke, point) => {
         const points = stroke.points ?? []
+        const reach = toleranceFor(Number(stroke.width) || 2)
         for (let index = 1; index < points.length; index += 1) {
           const [x1, y1] = points[index - 1]
           const [x2, y2] = points[index]
@@ -3561,26 +3568,29 @@ window.__ModuleLoader__.load({
           const length = dx * dx + dy * dy
           const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
           const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
-          if (dist < 0.012) return true
+          if (dist < reach) return true
         }
         return false
       }
       // A text note is hit inside its rough box: its left/top is the anchor, so
-      // the box grows with the number of characters.
+      // the box grows with the number of characters, plus the same slack.
       const annotHit = (entry, point) => {
         if (entry.kind === 'text') {
+          const slack = toleranceFor(2)
           const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
-          return point[0] >= entry.x - 0.01 && point[0] <= entry.x + width
-            && point[1] >= entry.y - 0.02 && point[1] <= entry.y + 0.035
+          return point[0] >= entry.x - slack && point[0] <= entry.x + width + slack
+            && point[1] >= entry.y - 0.02 - slack && point[1] <= entry.y + 0.035 + slack
         }
         return strokeHits(entry, point)
       }
+      const erasing = useRef(false)
       const annotDown = event => {
         if (annotTool === '') return
         const point = annotPoint(event)
         if (point === null) return
         event.preventDefault()
         if (annotTool === 'erase') {
+          erasing.current = true
           setStrokes(list => list.filter(entry => !annotHit(entry, point)))
           return
         }
@@ -3595,6 +3605,15 @@ window.__ModuleLoader__.load({
         setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
       }
       const annotMove = event => {
+        if (annotTool === 'erase' && erasing.current) {
+          // Dragging the eraser sweeps several strokes away, not just the one
+          // under the first press.
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setStrokes(list => list.filter(entry => !annotHit(entry, point)))
+          return
+        }
         if (draftStroke === null) return
         const point = annotPoint(event)
         if (point === null) return
@@ -3602,10 +3621,11 @@ window.__ModuleLoader__.load({
           if (current === null) return null
           const last = current.points[current.points.length - 1]
           if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return current
-          return { points: [...current.points, point] }
+          return { ...current, points: [...current.points, point] }
         })
       }
       const annotUp = () => {
+        erasing.current = false
         if (draftStroke === null) return
         if (draftStroke.points.length > 1) setStrokes(list => [...list, draftStroke])
         setDraftStroke(null)
@@ -4090,7 +4110,7 @@ window.__ModuleLoader__.load({
               'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
               title: format('annotEraseHint'), 'aria-label': format('annotErase'),
               onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
-            }, annotIcon('M20 20H9L4 15l11-11 5 5-8 8H20Z')),
+            }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'text' ? 'true' : 'false',
@@ -4784,7 +4804,10 @@ window.__ModuleLoader__.load({
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
-.md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; cursor: crosshair; }
+.md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
+.md-annot[data-tool="pen"] { cursor: crosshair; }
+.md-annot[data-tool="text"] { cursor: text; }
+.md-annot[data-tool="erase"] { cursor: cell; }
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; text-shadow: 0 0 3px var(--dsw-alias-bg-base); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
