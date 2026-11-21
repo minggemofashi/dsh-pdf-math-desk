@@ -1,5 +1,16 @@
 # 数学书库拆分工具包
 
+## 零、把 Markdown 排成 PDF（可选）
+
+`md2tex.py` 用 XeLaTeX + ctex 把 Markdown（含 `$...$` / `$$...$$` 公式）排成 PDF：
+
+```bash
+python md2tex.py 报告.md 报告.pdf "报告标题"
+```
+
+需要 TeX Live（`ctex`、`xeCJK`、`amsmath`、`tabularx`、`booktabs`、`fancyvrb`）与中文字体；
+`XELATEX` 环境变量可指定 `xelatex` 路径。没有 TeX 时不必用这一步。
+
 ## 一、先说清楚：分片是干什么的
 
 一本整书 PDF 几百页，直接丢给工作台会有两个问题：
