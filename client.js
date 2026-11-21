@@ -178,6 +178,7 @@ window.__ModuleLoader__.load({
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
+      translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
       translating: '翻译中…',
       translateDone: '已生成',
       translateFailed: '翻译失败',
@@ -480,6 +481,7 @@ window.__ModuleLoader__.load({
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
+      translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
       translating: 'Translating…',
       translateDone: 'Created',
       translateFailed: 'Translation failed',
@@ -3426,6 +3428,7 @@ window.__ModuleLoader__.load({
               disabled: translating || reader.phase !== 'ready',
               title: format('translateHint'),
               onClick: () => {
+                if (!window.confirm(format('translateCostConfirm'))) return
                 if (hasTranslation && !window.confirm(format('translateOverwriteConfirm'))) return
                 void runTranslate()
               },
