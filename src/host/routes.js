@@ -398,6 +398,7 @@ async function activeLibrary() {
           const outPath = join(dirname(source), `${basename(source, '.pdf')}_translated.pdf`)
           const jobId = await startChapterJob({
             jobDir: join(config.dataDir, 'translate-jobs'),
+            cacheDir: join(config.dataDir, 'translation', body.book, body.code),
             rasterScript: join(config.toolsDir, 'pdf_raster.py'),
             md2texScript: options.md2texScript,
             apiKey: await deepseekKey(),

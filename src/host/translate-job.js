@@ -83,6 +83,13 @@ export async function startChapterJob(options) {
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
+      if (typeof options.cacheDir === 'string' && options.cacheDir !== '') {
+        await mkdir(options.cacheDir, { recursive: true })
+        for (let index = 0; index < chunks.length; index += 1) {
+          const name = `page-${String(index + 1).padStart(3, '0')}.md`
+          await writeFile(join(options.cacheDir, name), chunks[index], 'utf8').catch(() => {})
+        }
+      }
       const markdown = chunks.join('\n\n\\newpage\n\n')
       savedMarkdown = markdown
       const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
