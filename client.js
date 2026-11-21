@@ -3039,6 +3039,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const pendingSave = useRef(null)
       const freshPending = useRef(new Set())
       const creatingRef = useRef(false)
+      const createSessionRef = useRef(null)
       const fileRefs = useRef(new Map())
       const previewRef = useRef(null)
       const previewToken = useRef(0)
@@ -3713,17 +3714,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       /** New session owned by one artifact file (M7.2). */
       const newArtifactSession = useCallback((chapter, item, mode) => {
-        showNotice('M7.2 click')
         const stem = String(item.name).replace(/\.(md|pdf)$/i, '')
-        try {
-          if (typeof createSession !== 'function') {
-            showNotice('M7.2: createSession unavailable')
-            return
-          }
-          void createSession(chapter, mode, { jump: true, continuation: 0, artifact: stem })
-        } catch (error) {
-          showNotice(`M7.2: ${error !== null && error !== undefined && error.message ? error.message : String(error)}`)
+        const create = createSessionRef.current
+        if (typeof create !== 'function') {
+          showNotice('M7.2: session creator not ready')
+          return
         }
+        void create(chapter, mode, { jump: true, continuation: 0, artifact: stem })
       }, [showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
@@ -4482,15 +4479,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [showNotice])
 
       const createSession = useCallback(async (chapter, mode, options) => {
-        if (book === null || catalog === null || creatingRef.current) {
-          if (options !== undefined && typeof options.artifact === 'string') {
-            showNotice(`M7.2 guard: book=${book === null} catalog=${catalog === null} busy=${creatingRef.current}`)
-          }
-          return
-        }
+        if (book === null || catalog === null || creatingRef.current) return
         const target = catalog.target
         if (target.workspaceId === null && target.cwd === '') {
-          if (options !== undefined && typeof options.artifact === 'string') showNotice('M7.2 guard: target missing')
           setCreateError({ bookId: book.id, code: chapter.code, message: format('targetMissing') })
           return
         }
@@ -4598,6 +4589,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setCreatingMode('')
         }
       }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, refreshSessions, registerPending, seedFor, settlePending, showNotice])
+      createSessionRef.current = createSession
 
       /** The reader's three New buttons: create the session, leave for it. */
       /**
