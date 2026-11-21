@@ -166,6 +166,8 @@ window.__ModuleLoader__.load({
       readerModeContinuous: '连续',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
+      dualToggle: '双语',
+      dualHint: '原文与译文并排显示（需要先生成译文）',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translating: '翻译中…',
@@ -458,6 +460,8 @@ window.__ModuleLoader__.load({
       readerModeContinuous: 'Continuous',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
+      dualToggle: 'Bilingual',
+      dualHint: 'Show the original and the translation side by side (translate the chapter first)',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
@@ -2949,10 +2953,63 @@ window.__ModuleLoader__.load({
       const slotRefs = useRef(new Map())
       const switchingMode = useRef(false)
       const visibleTimer = useRef(null)
+      const [dual, setDual] = useState(false)
+      const [dualDoc, setDualDoc] = useState(null)
+      const dualLeft = useRef(null)
+      const dualRight = useRef(null)
       useEffect(() => setPageText(String(reader.page)), [reader.page])
       useEffect(() => {
         saveReaderPage(reader.bookId, reader.code, reader.page)
       }, [reader.bookId, reader.code, reader.page])
+      useEffect(() => {
+        if (!dual) return undefined
+        let cancelled = false
+        const load = async () => {
+          try {
+            const lib = await loadPdfjs()
+            const params = new URLSearchParams({ book: reader.bookId, code: reader.code, variant: 'translated' })
+            const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
+            const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+            const doc = await task.promise
+            if (!cancelled) setDualDoc(doc)
+          } catch {
+            if (!cancelled) {
+              setTranslateNote(format('translateFailed'))
+              setDual(false)
+            }
+          }
+        }
+        void load()
+        return () => {
+          cancelled = true
+        }
+      }, [dual, reader.bookId, reader.code])
+
+      // Keep the two columns scrolled to the same relative position.
+      useEffect(() => {
+        if (!dual || dualDoc === null) return undefined
+        const left = dualLeft.current
+        const right = dualRight.current
+        if (left === null || right === null) return undefined
+        let locked = false
+        const sync = (from, to) => {
+          if (locked) return
+          locked = true
+          const span = Math.max(1, from.scrollHeight - from.clientHeight)
+          const ratio = from.scrollTop / span
+          to.scrollTop = ratio * Math.max(0, to.scrollHeight - to.clientHeight)
+          locked = false
+        }
+        const onLeft = () => sync(left, right)
+        const onRight = () => sync(right, left)
+        left.addEventListener('scroll', onLeft, { passive: true })
+        right.addEventListener('scroll', onRight, { passive: true })
+        return () => {
+          left.removeEventListener('scroll', onLeft)
+          right.removeEventListener('scroll', onRight)
+        }
+      }, [dual, dualDoc])
+
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
       useEffect(() => {
@@ -3210,6 +3267,11 @@ window.__ModuleLoader__.load({
               title: format('blocksHint'),
               onClick: () => setShowBlocks(value => !value),
             }, format('blocksToggle')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': dual ? 'true' : 'false',
+              title: format('dualHint'),
+              onClick: () => setDual(value => !value),
+            }, format('dualToggle')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
@@ -3252,7 +3314,42 @@ window.__ModuleLoader__.load({
         ),
         translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
         h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
-          reader.phase === 'loading'
+          dual && dualDoc !== null
+            ? h('div', { className: 'md-reader-dual' },
+              h('div', { className: 'md-reader-column', ref: dualLeft },
+                h(ContinuousView, {
+                  doc: props.doc,
+                  showBlocks,
+                  bookId: reader.bookId,
+                  code: reader.code,
+                  count: reader.count,
+                  scale: reader.scale ?? 1,
+                  rootRef: dualLeft,
+                  onVisible: page => {
+                    if (switchingMode.current) return
+                    if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+                    visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
+                  },
+                  registerSlot,
+                  onError: props.onError,
+                })
+              ),
+              h('div', { className: 'md-reader-column', ref: dualRight },
+                h(ContinuousView, {
+                  doc: dualDoc,
+                  showBlocks: false,
+                  bookId: reader.bookId,
+                  code: reader.code,
+                  count: dualDoc.numPages || 0,
+                  scale: reader.scale ?? 1,
+                  rootRef: dualRight,
+                  onVisible: () => {},
+                  registerSlot: () => {},
+                  onError: props.onError,
+                })
+              )
+            )
+            : reader.phase === 'loading'
             ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
             : reader.phase === 'error'
               ? h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
@@ -3774,6 +3871,8 @@ window.__ModuleLoader__.load({
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
+.md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
+.md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: transparent; }
