@@ -2760,35 +2760,36 @@ window.__ModuleLoader__.load({
         if (typeof item.str !== 'string' || item.str.trim() === '') continue
         const transform = item.transform
         const fontHeight = Math.hypot(transform[2], transform[3]) || Math.abs(transform[3]) || 1
+        const start = viewport.convertToViewportPoint(transform[4], transform[5])
+        const finish = viewport.convertToViewportPoint(transform[4] + (item.width || 0), transform[5])
         items.push({
           text: item.str,
-          x: transform[4],
-          y: transform[5],
-          w: item.width || 0,
+          x: Math.min(start[0], finish[0]),
+          right: Math.max(start[0], finish[0]),
+          baseline: start[1],
           h: fontHeight,
         })
       }
       if (items.length === 0) return []
-      items.sort((a, b) => (b.y - a.y) || (a.x - b.x))
       const sizes = items.map(item => item.h).sort((a, b) => a - b)
       const median = sizes[Math.floor(sizes.length / 2)] || 1
       const lines = []
       for (const item of items) {
-        const line = lines.find(candidate => Math.abs(candidate.y - item.y) <= Math.max(2, item.h * 0.5))
+        const line = lines.find(candidate => Math.abs(candidate.baseline - item.baseline) <= Math.max(2, item.h * 0.5))
         if (line === undefined) {
-          lines.push({ y: item.y, items: [item] })
+          lines.push({ baseline: item.baseline, items: [item] })
         } else {
           line.items.push(item)
-          line.y = Math.min(line.y, item.y)
+          line.baseline = Math.min(line.baseline, item.baseline)
         }
       }
       for (const line of lines) {
         line.items.sort((a, b) => a.x - b.x)
         line.text = line.items.map(item => item.text).join('').replace(/\s+/g, ' ').trim()
-        line.x = Math.min(...line.items.map(item => item.x))
-        line.x2 = Math.max(...line.items.map(item => item.x + item.w))
+        line.left = Math.min(...line.items.map(item => item.x))
+        line.right = Math.max(...line.items.map(item => item.right))
         line.h = Math.max(...line.items.map(item => item.h))
-        line.top = height - line.y - line.h
+        line.top = line.baseline - line.h
       }
       lines.sort((a, b) => a.top - b.top)
       const blocks = []
@@ -2797,10 +2798,10 @@ window.__ModuleLoader__.load({
         if (line.text === '') continue
         if (current !== null) {
           const gap = line.top - current.bottom
-          if (gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.x <= current.right + line.h * 1.5) {
+          if (gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
-            current.bottom = Math.max(current.bottom, line.top + line.h)
-            current.right = Math.max(current.right, line.x2)
+            current.bottom = Math.max(current.bottom, line.baseline)
+            current.right = Math.max(current.right, line.right)
             current.h = Math.max(current.h, line.h)
             continue
           }
@@ -2808,9 +2809,9 @@ window.__ModuleLoader__.load({
         current = {
           lines: [line],
           top: line.top,
-          bottom: line.top + line.h,
-          left: line.x,
-          right: line.x2,
+          bottom: line.baseline,
+          left: line.left,
+          right: line.right,
           h: line.h,
         }
         blocks.push(current)
@@ -2913,6 +2914,15 @@ window.__ModuleLoader__.load({
           stage.scrollLeft = 0
         }
       }, [reader.mode, props.stageRef])
+      // Entering continuous mode keeps the page you were reading instead of
+      // starting at the top of the chapter.
+      useEffect(() => {
+        if (reader.mode !== 'continuous') return
+        const node = slotRefs.current.get(reader.page)
+        if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
+          node.scrollIntoView({ block: 'start' })
+        }
+      }, [reader.mode])
 
       const commitPage = () => {
         const value = Number.parseInt(pageText, 10)
@@ -3140,8 +3150,8 @@ window.__ModuleLoader__.load({
               }, `＋ ${format(`mode.${mode}`)}`))
             )
         ),
+        translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
         h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
-          translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
           reader.phase === 'loading'
             ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
             : reader.phase === 'error'
