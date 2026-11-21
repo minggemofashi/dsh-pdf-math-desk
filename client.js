@@ -1500,6 +1500,32 @@ window.__ModuleLoader__.load({
 
     /* ------------------------------------------------------------ elements -- */
 
+    const deskStatus = { value: 'idle', listeners: new Set() }
+
+    /**
+     * Publish the plugin's busy/done state to the sidebar icon.
+     * @param {'idle'|'busy'|'done'|'error'} next - the new state.
+     * @returns {void}
+     */
+    function setDeskStatus(next) {
+      deskStatus.value = next
+      deskStatus.listeners.forEach(listener => listener(next))
+    }
+
+    /**
+     * @returns {string} the current sidebar state.
+     */
+    function useDeskStatus() {
+      const [value, setValue] = useState(deskStatus.value)
+      useEffect(() => {
+        deskStatus.listeners.add(setValue)
+        return () => {
+          deskStatus.listeners.delete(setValue)
+        }
+      }, [])
+      return value
+    }
+
     /**
      * The sidebar icon; `size` and `active` come from the sidebar owner. The
      * geometry matches `icon.svg`: three upright books on a shelf line.
@@ -1508,7 +1534,13 @@ window.__ModuleLoader__.load({
      */
     function DeskIcon(props) {
       const size = typeof props.size === 'number' && props.size > 0 ? props.size : 18
-      return h('svg', {
+      const status = useDeskStatus()
+      const mark = status === 'idle' ? null : h('span', {
+        className: status === 'busy' ? 'md-desk-mark md-desk-spin' : status === 'error' ? 'md-desk-mark md-desk-error' : 'md-desk-mark md-desk-done',
+        'aria-hidden': true,
+      })
+      return h('span', { style: { position: 'relative', display: 'inline-flex' } },
+        h('svg', {
         width: size,
         height: size,
         viewBox: '0 0 24 24',
@@ -1520,6 +1552,8 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M9.8 3.8h4v16.6h-4z', fill: 'currentColor' }),
         h('path', { d: 'M16.8 8.6h4v11.8h-4z', fill: 'currentColor', opacity: 0.86 }),
         h('path', { d: 'M2.2 21.4h19.6', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', fill: 'none' })
+        ),
+        mark
       )
     }
 
@@ -3248,6 +3282,7 @@ window.__ModuleLoader__.load({
       const runTranslate = async () => {
         if (translating || reader.phase !== 'ready') return
         setTranslating(true)
+        setDeskStatus('busy')
         setTranslateNote(format('translating'))
         try {
           const started = await request('POST', 'translate-chapter', {
@@ -3281,6 +3316,8 @@ window.__ModuleLoader__.load({
           }
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
+          setDeskStatus('error')
+          setTimeout(() => setDeskStatus('idle'), 8000)
           setTranslateNote(`${format('translateFailed')}：${message}`)
         } finally {
           setTranslating(false)
@@ -4112,6 +4149,11 @@ window.__ModuleLoader__.load({
 .md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .12s ease; }
 .md-reader-colhead:hover { opacity: 1; }
 .md-hidden { display: none; }
+.md-desk-mark { position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 50%; }
+.md-desk-done { background: #2ecc71; }
+.md-desk-error { background: #e74c3c; }
+.md-desk-spin { background: transparent; border: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); border-top-color: var(--dsw-alias-brand-primary); width: 8px; height: 8px; animation: md-desk-spin .8s linear infinite; }
+@keyframes md-desk-spin { to { transform: rotate(360deg); } }
 .md-reader-coltitle { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-right: auto; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
