@@ -258,6 +258,8 @@ window.__ModuleLoader__.load({
       artifactsScope: '只列这一层的文件；子文件夹不会显示。',
       artifactsBookId: '路径里的「{id}」是书 id，不是书名。',
       artifactsReload: '重新读取',
+      artifactsExpand: '展开',
+      artifactsCollapse: '收起',
       renderConfirm: '把 {name} 渲染为 PDF？会生成同名 PDF 放在 md 旁边。',
       renderAction: '转 PDF',
       renderActionHint: '渲染为 PDF，与 md 同目录',
@@ -487,6 +489,8 @@ window.__ModuleLoader__.load({
       artifactsScope: 'Only files directly in this directory are listed; subfolders are not shown.',
       artifactsBookId: 'The “{id}” in the path is the book id, not the book title.',
       artifactsReload: 'Reload',
+      artifactsExpand: 'Expand',
+      artifactsCollapse: 'Collapse',
       renderConfirm: 'Render {name} to PDF next to the markdown file?',
       renderAction: 'To PDF',
       renderActionHint: 'Render to PDF in the same folder',
@@ -1997,6 +2001,8 @@ window.__ModuleLoader__.load({
       const phase = state === undefined ? 'loading' : state.phase
       const items = state !== undefined && Array.isArray(state.items) ? state.items : []
       const truncated = state !== undefined && state.truncated === true
+      // Long chapters get a lot of products; collapse long lists by default.
+      const [collapsed, setCollapsed] = useState(() => items.length > 5)
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
       const row = (item, index) => h('li', { key: `${index}:${item.name}` },
         h('button', {
@@ -2084,6 +2090,12 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'md-artifacts-head' },
           h('span', { className: 'md-artifacts-title' }, format('artifactsTitle')),
+          items.length > 5
+            ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              onClick: () => setCollapsed(value => !value),
+            }, collapsed ? format('artifactsExpand') : format('artifactsCollapse'))
+            : null,
           phase === 'ready' && items.length > 0 && !truncated
             ? h('span', { className: 'md-session-count' }, format('filesCount', { n: items.length }))
             : null,
@@ -2098,7 +2110,7 @@ window.__ModuleLoader__.load({
             onClick: () => props.onReload(props.code),
           }, format('artifactsReload'))
         ),
-        body
+        collapsed ? null : body
       )
     }
 
