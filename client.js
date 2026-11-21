@@ -215,6 +215,8 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter 保存 · Shift+Enter 换行 · Esc 取消',
       annotTextEditHint: '双击编辑；清空内容再保存即删除',
       annotTextActiveHint: '文本框：点页面任意位置写字，Enter 保存，Esc 取消',
+      annotSingleOnly: '标注画在单页上：已切回单页，读完可以再切回双语',
+      annotSingleOnlyHint: '标注只在单页模式可用，先从菜单切到单页',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       exportPage: '导出本页',
@@ -614,6 +616,8 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter saves · Shift+Enter newline · Esc cancels',
       annotTextEditHint: 'Double-click to edit; save it empty to delete',
       annotTextActiveHint: 'Text box: click anywhere on the page and type; Enter saves, Esc cancels',
+      annotSingleOnly: 'Notes are drawn on the single page, so the view switched back to it; bilingual is one click away',
+      annotSingleOnlyHint: 'Notes only work in single-page view; switch to it from the menu',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       exportPage: 'Export page',
@@ -4100,6 +4104,18 @@ window.__ModuleLoader__.load({
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
       const jobRef = useRef('')
+      // A one-off hint about the tool just picked, shown for a few seconds: it
+      // explains a view switch, so it does not need to stay.
+      const [annotNote, setAnnotNote] = useState('')
+      const annotNoteTimer = useRef(null)
+      const flashAnnot = text => {
+        setAnnotNote(text)
+        if (annotNoteTimer.current !== null) clearTimeout(annotNoteTimer.current)
+        annotNoteTimer.current = setTimeout(() => { setAnnotNote('') }, 6000)
+      }
+      useEffect(() => () => {
+        if (annotNoteTimer.current !== null) clearTimeout(annotNoteTimer.current)
+      }, [])
       const noteKey = `mathdesk:translate-note:${reader.bookId}:${reader.code}`
       const updateNote = value => {
         setTranslateNote(value)
@@ -4535,6 +4551,25 @@ window.__ModuleLoader__.load({
         // Nothing typed into a brand-new note: nothing to store.
         if (draft.index < 0 && noteText.current.trim() === '') return
         savePageAnnots(applyNote(strokesRef.current, draft, noteText.current))
+      }
+      // A tool draws on the single-page box: continuous and bilingual views have
+      // no page-sized layer. Picking one leaves those views, exactly as "叠加"
+      // already does, and says so — a click that only flips an invisible mode
+      // reads as a broken button.
+      const ensureAnnotatable = () => {
+        if (reader.mode === 'single' && !dual) return false
+        if (reader.mode !== 'single') props.onMode('single')
+        if (dual) {
+          setDual(false)
+          setDualDoc(null)
+        }
+        setTimeout(bumpViewer, 80)
+        return true
+      }
+      const pickTool = name => {
+        const next = annotTool === name ? '' : name
+        setAnnotTool(next)
+        if (next !== '' && ensureAnnotatable()) flashAnnot(format('annotSingleOnly'))
       }
       const erasing = useRef(false)
       const annotDown = event => {
@@ -5239,19 +5274,19 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'pen' ? 'true' : 'false',
               title: format('annotHint'), 'aria-label': format('annotPen'),
-              onClick: () => setAnnotTool(value => (value === 'pen' ? '' : 'pen')),
+              onClick: () => pickTool('pen'),
             }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
               title: format('annotEraseHint'), 'aria-label': format('annotErase'),
-              onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
+              onClick: () => pickTool('erase'),
             }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'text' ? 'true' : 'false',
               title: format('annotTextHint'), 'aria-label': format('annotText'),
-              onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
+              onClick: () => pickTool('text'),
             }, annotIcon('M4 6h16M12 6v13M9 19h6')),
             ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
               key: color,
@@ -5357,10 +5392,13 @@ window.__ModuleLoader__.load({
             : null
         ),
         // While the text tool is picked, say what to do with it: an icon-only
-        // button otherwise looks dead until the page is clicked.
-        annotTool === 'text' && noteEdit === null && reader.mode === 'single'
-          ? h('div', { className: 'md-reader-note' }, format('annotTextActiveHint'))
-          : null,
+        // button otherwise looks dead until the page is clicked. A view-change
+        // hint wins over it, because that is the more surprising thing to say.
+        annotNote !== ''
+          ? h('div', { className: 'md-reader-note', role: 'status' }, annotNote)
+          : annotTool === 'text' && noteEdit === null && reader.mode === 'single'
+            ? h('div', { className: 'md-reader-note' }, format('annotTextActiveHint'))
+            : null,
         overlay && (overlayNote !== '' || translatedImage === '')
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
             overlayNote === '' ? format('overlayLoading') : overlayNote)
@@ -7230,7 +7268,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'pen' ? 'true' : 'false',
-            title: format('annotHint'),
+            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotHint'),
             'aria-label': format('annotPen'),
             disabled: mode !== 'single',
             onClick: () => toggleTool('pen'),
@@ -7239,7 +7277,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'erase' ? 'true' : 'false',
-            title: format('annotEraseHint'),
+            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotEraseHint'),
             'aria-label': format('annotErase'),
             disabled: mode !== 'single',
             onClick: () => toggleTool('erase'),
@@ -7248,7 +7286,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'text' ? 'true' : 'false',
-            title: format('annotTextHint'),
+            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotTextHint'),
             'aria-label': format('annotText'),
             disabled: mode !== 'single',
             onClick: () => toggleTool('text'),
@@ -7257,7 +7295,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'mask' ? 'true' : 'false',
-            title: format('overlayHint'),
+            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('overlayHint'),
             'aria-label': format('overlayToggle'),
             disabled: mode !== 'single',
             onClick: () => toggleTool('mask'),

@@ -134,7 +134,7 @@ dsh plugin add dsh-pdf-math-desk@0.35.3
 DSH → Plugins → Add plugin → 选择本目录。
 
 
-> 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**。插件启动时会检测；**没检测到就不显示「转 PDF」按钮**，读书、会话、预览 md 均不受影响。安装可在书库页说明书里点「下载 TeX Live（约 5 GB）」，装好后把 TeX 的 in 加入 PATH 并重启 DSH。
+> 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**。插件启动时会检测；**没检测到就不显示「转 PDF」按钮**，读书、会话、预览 md 均不受影响。安装可在书库页说明书里点「下载 TeX Live（约 5 GB）」，装好后把 TeX 的 bin 加入 PATH 并重启 DSH。
 
 ## 开始使用
 
@@ -196,7 +196,7 @@ DSH → Plugins → Add plugin → 选择本目录。
 
 - 工作流面向「按章拆开的 PDF」；数学书最顺，其它书也能读；
 - 标注/遮罩**不写回 PDF**：浏览器 `localStorage` 是活数据，同时自动镜像到 `<库根>\.mathdesk\annotations\<书>\<章>.json`（随库走、清浏览器数据也能恢复）；需要单独留档仍可用「导出本页/整章」（PDF + sidecar JSON，可再导入）；
-- 右侧预览只在单页模式显示标注（连续模式不叠标注，与阅读器现状一致）；
+- 标注与框选只画在**单页模式**上（连续 / 双语视图没有单页页面盒）：阅读器里点笔、擦、文本框会自动切回单页并提示一句；右侧预览在连续模式下把四个工具置灰；
 - Markdown→PDF 需本机 Python + TeX Live（xelatex），插件运行时不依赖；
 - 书 id 由目录/文件名推导，改名会使旧会话/产物失联；
 - 界面显示本机真实路径，跨机器需重新添加书库；
