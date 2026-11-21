@@ -1,0 +1,55 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Math workbench",
+    "zh": "数学工作台"
+  },
+  "description": {
+    "en": "A single-plugin index for dsh-pdf-math-desk.",
+    "zh": "dsh-pdf-math-desk 的单插件索引。"
+  },
+  "metadata": {
+    "categories": {
+      "docs": {
+        "title": {
+          "en": "Docs & Rendering",
+          "zh": "文档与渲染"
+        }
+      }
+    },
+    "labels": {},
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-pdf-math-desk",
+      "title": "minggemofashi/dsh-pdf-math-desk",
+      "description": {
+        "en": "A full-page math workbench for DSH with multiple book libraries, chapter conversations for extraction, Q&A and exercises, artifact preview with Markdown-to-PDF rendering, and a built-in pdf.js reader.",
+        "zh": "面向数学书阅读的整页工作台：多书库与书架、章节提取/答疑/习题会话、产物预览与 Markdown 转 PDF，以及内置 pdf.js 阅读器。"
+      },
+      "homepage": "https://github.com/minggemofashi/dsh-pdf-math-desk",
+      "repository": {
+        "url": "https://github.com/minggemofashi/dsh-pdf-math-desk"
+      },
+      "metadata": {
+        "category": "docs",
+        "keywords": [],
+        "labels": [],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.35.3",
+          "publishTimestamp": 1795253779,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.5"
+          }
+        }
+      ]
+    }
+  ]
+}
