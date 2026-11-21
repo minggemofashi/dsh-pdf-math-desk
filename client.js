@@ -197,6 +197,7 @@ window.__ModuleLoader__.load({
       version: '版本',
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
+      libraryPathHint: '这里统一显示为 <库根>：绝对路径只在本机有效，不随插件或仓库迁移。',
       diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
@@ -446,6 +447,7 @@ window.__ModuleLoader__.load({
       version: 'Version',
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
+      libraryPathHint: 'Shown as <root> here: absolute paths are local to this machine and never travel with the plugin.',
       diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
@@ -1606,7 +1608,8 @@ window.__ModuleLoader__.load({
           }, format('aiPromptCopy')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
-            h('code', { className: 'md-path' }, props.libraryDir)
+            h('code', { className: 'md-path' }, '<库根>'),
+            h('span', { className: 'md-shelf-sub' }, format('libraryPathHint'))
           )
         ),
         h('div', { className: 'md-library-samples', style: { order: 2 } },
