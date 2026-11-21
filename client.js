@@ -4595,6 +4595,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // belongs to; a continuation also starts from the chapter outline.
           const parts = [seedFor(book, chapter)]
           if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
+          parts.push('新生成的文件请命名为“<父产物名>__<标题>.md”，这样会排在父产物下面。')
           if (catalog !== null && typeof catalog.libraryDir === 'string' && catalog.libraryDir !== '') {
             parts.push(`产物目录：${catalog.libraryDir}\\产物\\${book.id}\\${chapter.code}\\（报告/笔记的 md 请写到这里，才会出现在「产物」里）`)
           }
