@@ -3510,8 +3510,12 @@ window.__ModuleLoader__.load({
                   }
                   return
                 }
+                setOverlay(false)
                 setDual(value => {
-                  if (value) setDualDoc(null)
+                  if (value) {
+                    setDualDoc(null)
+                    setOverlay(false)
+                  }
                   return !value
                 })
               },
@@ -3522,6 +3526,10 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (reader.variant === 'translated') return
                 if (reader.mode !== 'single') props.onMode('single')
+                if (dual) {
+                  setDual(false)
+                  setDualDoc(null)
+                }
                 setOverlay(value => !value)
               },
             }, format('overlayToggle')),
