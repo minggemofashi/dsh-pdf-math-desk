@@ -3003,6 +3003,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const importInput = useRef(null)
       const [shelfGroups, setShelfGroups] = useState({ hidden: [], shelves: [] })
       const [group, setGroup] = useState(null)
+      const groupRef = useRef(null)
+      groupRef.current = group
       const [selected, setSelected] = useState(() => new Set())
       const [shelfName, setShelfName] = useState(null)
       const [marquee, setMarquee] = useState(null)
@@ -4678,11 +4680,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (selected.size === 0) return
+        const current = groupRef.current
         const shelf = {
           id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
           name: title.slice(0, 60),
           books: [...selected],
-          ...(group === null || group === 'hidden' ? {} : { parent: group }),
+          ...(current === null || current === 'hidden' ? {} : { parent: current }),
         }
         saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
         setShelfName(null)
@@ -5122,7 +5125,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             ? []
             : [{ id: 'hidden', name: format('hiddenShelf'), count: shelfGroups.hidden.filter(id => books.some(book => book.id === id)).length }]),
           ...shelfGroups.shelves
-            .filter(shelf => (shelf.parent ?? null) === group && shelf.books.length > 0)
+            .filter(shelf => (shelf.parent ?? null) === group)
             .map(shelf => ({ id: shelf.id, name: shelf.name, count: shelf.books.filter(id => books.some(book => book.id === id)).length })),
         ]
         body = h(Shelf, {
