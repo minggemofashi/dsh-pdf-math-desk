@@ -3395,7 +3395,10 @@ window.__ModuleLoader__.load({
                   }
                   return
                 }
-                setDual(value => !value)
+                setDual(value => {
+                  if (value) setDualDoc(null)
+                  return !value
+                })
               },
             }, format('dualToggle')),
             h('button', {
@@ -3452,7 +3455,9 @@ window.__ModuleLoader__.load({
         ),
         translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
         h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
-          dual && dualDoc !== null
+          dual && dualDoc === null
+            ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
+            : dual && dualDoc !== null
             ? h('div', { className: 'md-reader-dual' },
               h('div', { className: 'md-reader-column', ref: dualLeft },
                 h('div', { className: 'md-reader-colhead' },
