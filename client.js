@@ -202,6 +202,7 @@ window.__ModuleLoader__.load({
       importingAnnots: '正在导入标注…',
       importAnnotsDone: '已导入 {n} 页的遮罩与标注',
       importAnnotsFailed: '导入标注失败',
+      retryAction: '重试',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -543,6 +544,7 @@ window.__ModuleLoader__.load({
       importingAnnots: 'Importing notes…',
       importAnnotsDone: 'Restored masks and notes for {n} page(s)',
       importAnnotsFailed: 'Importing notes failed',
+      retryAction: 'Retry',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3301,6 +3303,9 @@ window.__ModuleLoader__.load({
       }
       const partialKey = `mathdesk:partial:${reader.bookId}:${reader.code}`
       const [partialPages, setPartialPages] = useState([])
+      // Last failed action, so a failure in export/import gets a retry button
+      // instead of a dead-end message.
+      const [retryAction, setRetryAction] = useState(null)
       const rememberPartial = state => {
         const missing = Array.isArray(state.failedPages) ? state.failedPages : []
         setPartialPages(missing)
@@ -3689,9 +3694,11 @@ window.__ModuleLoader__.load({
             count += 1
           }
           updateNote(format('importAnnotsDone', { n: count }))
+          setRetryAction(null)
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('importAnnotsFailed')}：${message}`)
+          setRetryAction(() => importAnnots)
         }
       }
 
@@ -3727,10 +3734,12 @@ window.__ModuleLoader__.load({
             pages,
           })
           updateNote(`${format('exportDone')}：${payload.pdf}（${format('exportAnnotatedPages', { n: payload.pages })}，附 ${payload.json}）`)
+          setRetryAction(null)
           if (typeof props.onExported === 'function') props.onExported()
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('exportFailed')}：${message}`)
+          setRetryAction(() => exportChapter)
         }
       }
 
@@ -3748,12 +3757,14 @@ window.__ModuleLoader__.load({
             annots: strokes,
           })
           updateNote(`${format('exportDone')}：${payload.pdf}`)
+          setRetryAction(null)
           // The new PDF lands in the chapter's artifact list; refresh it so the
           // file shows up as soon as the reader closes instead of on reopen.
           if (typeof props.onExported === 'function') props.onExported()
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('exportFailed')}：${message}`)
+          setRetryAction(() => exportPage)
         }
       }
 
@@ -4343,6 +4354,16 @@ window.__ModuleLoader__.load({
               title: format('translateResumeHint'),
               onClick: () => { void runTranslate(true) },
             }, format('translateResume'))
+            : null,
+          !translating && retryAction !== null
+            ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                const run = retryAction
+                setRetryAction(null)
+                void run()
+              },
+            }, format('retryAction'))
             : null
         ),
         overlay && (overlayNote !== '' || translatedImage === '')
