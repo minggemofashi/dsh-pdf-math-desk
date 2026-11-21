@@ -339,7 +339,7 @@ async function scanFragments(fragmentDir) {
     for (const file of files) {
       if (!file.toLowerCase().endsWith('.pdf')) continue
       // Translation output lives beside the chapter PDF; it is not a chapter.
-      if (/_translated\.pdf$/i.test(file)) continue
+      if (/_translated\.pdf$/i.test(file) || /_overlay\.pdf$/i.test(file)) continue
       pdfCount += 1
       const parsed = parseChapterFile(file)
       if (parsed === null) {
