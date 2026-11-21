@@ -101,6 +101,7 @@ export function resolveConfig(rawConfig) {
     samplesDir,
     resumeRatio,
     updateProxy: textField(source, 'updateProxy'),
+    deepseekApiKey: textField(source, 'deepseekApiKey') ?? process.env.DEEPSEEK_API_KEY,
     statePath: join(dataDir, 'state.json'),
     pendingPath: join(dataDir, 'pending.json'),
     linksPath: join(dataDir, 'links.json'),

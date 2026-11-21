@@ -135,6 +135,13 @@ window.__ModuleLoader__.load({
       readerModeContinuous: '连续',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
+      translateAction: '翻译本页',
+      translating: '翻译中…',
+      translateDone: '已生成',
+      translateFailed: '翻译失败',
+      translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
+      translateToEn: '译为英文',
+      translateToZh: '译为中文',
       readerNewLabel: '从这一章开始：',
       readerNewHint: '接着本章该分组的会话并跳过去；快满时自动另起续会话；本章 PDF 会自动开在会话右侧',
       readerInSessionFailed: '会话已建好，但右侧 PDF 没打开（可能不在库工作区）。',
@@ -409,6 +416,13 @@ window.__ModuleLoader__.load({
       readerModeContinuous: 'Continuous',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
+      translateAction: 'Translate page',
+      translating: 'Translating…',
+      translateDone: 'Created',
+      translateFailed: 'Translation failed',
+      translateHint: 'Translate the current page; needs a DeepSeek API key',
+      translateToEn: 'to English',
+      translateToZh: 'to Chinese',
       readerNewLabel: 'Start from this chapter:',
       readerNewHint: 'Continues this chapter’s conversation in this group and goes there; starts a continuation when it fills up. The chapter PDF opens on the session’s right.',
       readerInSessionFailed: 'The session was created, but the PDF could not open on its right side.',
@@ -2820,6 +2834,9 @@ window.__ModuleLoader__.load({
       const reader = props.reader
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
+      const [translateTarget, setTranslateTarget] = useState('en')
+      const [translating, setTranslating] = useState(false)
+      const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
       useEffect(() => setPageText(String(reader.page)), [reader.page])
 
@@ -2854,6 +2871,51 @@ window.__ModuleLoader__.load({
           return
         }
         props.onPage(value)
+      }
+      const runTranslate = async () => {
+        if (translating || props.doc === null || props.doc === undefined) return
+        setTranslating(true)
+        setTranslateNote('')
+        try {
+          const page = await props.doc.getPage(reader.page)
+          const base = page.getViewport({ scale: 1 })
+          const scale = Math.min(2, Math.max(1, 1400 / base.width))
+          const viewport = page.getViewport({ scale })
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.floor(viewport.width)
+          canvas.height = Math.floor(viewport.height)
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+          const image = canvas.toDataURL('image/jpeg', 0.86)
+          const controller = typeof AbortController === 'function' ? new AbortController() : null
+          const timer = controller === null ? null : setTimeout(() => controller.abort(), 240000)
+          const response = await fetch(ENDPOINT + 'translate-page', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { accept: 'application/json', 'content-type': 'application/json' },
+            body: JSON.stringify({
+              book: reader.bookId,
+              code: reader.code,
+              name: `${reader.fileName}.pdf`,
+              target: translateTarget,
+              image,
+            }),
+            signal: controller === null ? undefined : controller.signal,
+          })
+          if (timer !== null) clearTimeout(timer)
+          const payload = await response.json().catch(() => null)
+          if (!response.ok || payload === null || payload.ok !== true) {
+            const message = payload !== null && payload.error !== undefined && payload.error.message !== undefined
+              ? payload.error.message
+              : `HTTP ${response.status}`
+            throw new Error(message)
+          }
+          setTranslateNote(`${format('translateDone')}：${payload.pdf}`)
+        } catch (error) {
+          const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
+          setTranslateNote(`${format('translateFailed')}：${message}`)
+        } finally {
+          setTranslating(false)
+        }
       }
       const label = reader.name === '' ? `${reader.fileName}.pdf` : reader.name
       const ready = reader.phase === 'ready'
@@ -2949,7 +3011,23 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
               title: format('blocksHint'),
               onClick: () => setShowBlocks(value => !value),
-            }, format('blocksToggle'))
+            }, format('blocksToggle')),
+            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+            h('select', {
+              className: 'md-reader-lang',
+              value: translateTarget,
+              title: format('translateHint'),
+              onChange: event => setTranslateTarget(event.target.value),
+            },
+              h('option', { value: 'en' }, format('translateToEn')),
+              h('option', { value: 'zh' }, format('translateToZh'))
+            ),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: translating || reader.phase !== 'ready',
+              title: format('translateHint'),
+              onClick: () => { void runTranslate() },
+            }, translating ? format('translating') : format('translateAction'))
           ),
           false
             ? null
@@ -2974,6 +3052,7 @@ window.__ModuleLoader__.load({
             )
         ),
         h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
+          translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
           reader.phase === 'loading'
             ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
             : reader.phase === 'error'
@@ -3448,6 +3527,8 @@ window.__ModuleLoader__.load({
 .md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 .md-reader-single { display: flex; justify-content: center; margin: 0 auto; }
+.md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }

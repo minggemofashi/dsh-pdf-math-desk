@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.39.0
+
+- M2：阅读器新增语言选择与「翻译本页」：当前页渲染为图片 → DeepSeek 视觉模型转 Markdown（公式保留 LaTeX）→ md2tex 渲染；产物为 `<原文件名>_translated.pdf`，中间 md 不保留。
+- 新增 `src/host/translate.js` 与 `POST /translate-page`；API Key 读 `deepseekApiKey` 配置或 `DEEPSEEK_API_KEY` 环境变量。
+
 ## v0.38.0
 
 - M1：PDF 阅读器新增「块」调试开关，用 pdf.js 把当前页解析成文本块并在页面上画出边框（单页与连续模式都支持）；块解析结果包含 id/page/kind/bbox，为后续翻译对齐做准备。

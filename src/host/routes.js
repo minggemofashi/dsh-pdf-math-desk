@@ -21,13 +21,14 @@
  *
  * @module dsh-pdf-math-desk/routes
  */
-import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
+import { translatePage } from './translate.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
 import { checkForUpdate } from './update.js'
 import { detectEnvironment } from './environment.js'
@@ -292,6 +293,53 @@ export function createHandler(config, options = {}) {
           sendJson(response, 200, { ok: true, path: out })
         } catch (error) {
           fail(response, 503, 'render-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/translate-page`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const image = typeof body.image === 'string' ? body.image : ''
+          if (!image.startsWith('data:image/')) {
+            fail(response, 400, 'bad-image', '缺少页面图片')
+            return
+          }
+          if (image.length > 24 * 1024 * 1024) {
+            fail(response, 413, 'image-too-large', '页面图片过大，请降低渲染倍率')
+            return
+          }
+          const target = body.target === 'zh' ? 'zh' : 'en'
+          const catalog = await loadCatalog(config)
+          const chapter = resolveChapter(catalog, body.book, body.code)
+          if (chapter === null) {
+            fail(response, 404, 'no-chapter', '找不到这一章')
+            return
+          }
+          const name = basename(String(body.name ?? ''))
+          if (!/\.pdf$/i.test(name)) {
+            fail(response, 400, 'bad-name', '只支持 PDF 章节')
+            return
+          }
+          const library = await activeLibrary()
+          const dir = join(library.libraryDir, '产物', body.book, body.code)
+          await mkdir(dir, { recursive: true })
+          const markdown = await translatePage({ apiKey: config.deepseekApiKey, image, target })
+          const mdPath = join(dir, `.translate-${Date.now()}.md`)
+          await writeFile(mdPath, markdown, 'utf8')
+          const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
+          try {
+            await renderMarkdown(options.md2texScript, mdPath, out)
+          } finally {
+            await unlink(mdPath).catch(() => {})
+          }
+          sendJson(response, 200, { ok: true, pdf: basename(out) })
+        } catch (error) {
+          fail(response, 502, 'translate-failed', String(error && error.message ? error.message : error))
         }
         return
       }
