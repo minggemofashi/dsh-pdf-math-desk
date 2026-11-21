@@ -2954,6 +2954,7 @@ window.__ModuleLoader__.load({
       const switchingMode = useRef(false)
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
+      const [rightScale, setRightScale] = useState(null)
       const [dualDoc, setDualDoc] = useState(null)
       const dualLeft = useRef(null)
       const dualRight = useRef(null)
@@ -3272,6 +3273,20 @@ window.__ModuleLoader__.load({
               title: format('dualHint'),
               onClick: () => setDual(value => !value),
             }, format('dualToggle')),
+            dual
+              ? h(React.Fragment, null,
+                h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+                h('button', {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
+                }, '−'),
+                h('span', { className: 'md-reader-scale', 'aria-hidden': true }, String(Math.round((rightScale ?? reader.scale ?? 1) * 100)) + '%'),
+                h('button', {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  onClick: () => setRightScale(value => Math.min(3, (value ?? reader.scale ?? 1) + 0.1)),
+                }, '+')
+              )
+              : null,
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
@@ -3341,7 +3356,7 @@ window.__ModuleLoader__.load({
                   bookId: reader.bookId,
                   code: reader.code,
                   count: dualDoc.numPages || 0,
-                  scale: reader.scale ?? 1,
+                  scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
                   onVisible: () => {},
                   registerSlot: () => {},
