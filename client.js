@@ -2829,12 +2829,13 @@ window.__ModuleLoader__.load({
         if (line.text === '') continue
         if (current !== null) {
           const gap = line.top - current.bottom
-          const indented = line.left > current.left + Math.max(4, line.h * 1.1)
+          const indented = line.left > current.lastLeft + Math.max(3, line.h * 0.8)
           if (!indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
             current.bottom = Math.max(current.bottom, line.baseline)
             current.right = Math.max(current.right, line.right)
             current.h = Math.max(current.h, line.h)
+            current.lastLeft = line.left
             continue
           }
         }
@@ -2845,13 +2846,14 @@ window.__ModuleLoader__.load({
           left: line.left,
           right: line.right,
           h: line.h,
+          lastLeft: line.left,
         }
         blocks.push(current)
       }
       return blocks.map((block, index) => {
         // Text items under-report ink: headings and the left edge need a
         // margin proportional to the line height, not a fixed 3pt.
-        const pad = Math.max(5, block.h * 0.9)
+        const pad = Math.max(2, Math.min(6, block.h * 0.3))
         return {
           id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
           page: page.pageNumber,
