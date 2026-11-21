@@ -2,6 +2,14 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.54.0
+
+- 整章导出 + sidecar（M6-2）：工具条新增 **「导出整章」**。
+  - 客户端从 localStorage 汇总每一页的遮罩与标注（`mathdesk:masks|annots:<书>:<章>:<页>`），只把有内容的页发给 Host；
+  - Host 新增 `tools/export_chapter.py`：逐页合成（原文 + 框选译文 + 笔画/文本框），未标注的页保持原页，输出到产物目录 `<章代码>_export.pdf`；
+  - 同时写一份 `<章代码>_export.annots.json`（归一化 masks/annots，带 version/book/code），换机器或后续版本可据此重导；
+  - 完成后自动刷新该章产物列表。
+
 ## v0.53.1
 
 - 导出本页后立刻刷新该章的产物列表（`loadArtifacts(..., true)`），不用收起再展开章节就能看到新 PDF。

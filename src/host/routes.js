@@ -504,6 +504,45 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/export-chapter`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request, 8 * 1024 * 1024)
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const pages = Array.isArray(body.pages) ? body.pages : []
+          const tmpDir = join(config.dataDir, 'tmp')
+          await mkdir(tmpDir, { recursive: true })
+          const specPath = join(tmpDir, `export-chapter-${Date.now().toString(36)}.json`)
+          await writeFile(specPath, JSON.stringify({ pages }), 'utf8')
+          const overlayPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
+          const outDir = join(library.artifactDir, body.book, body.code)
+          await mkdir(outDir, { recursive: true })
+          const outName = `${body.code}_export.pdf`
+          const jsonName = `${body.code}_export.annots.json`
+          // The sidecar carries the same normalized masks and notes, so another
+          // machine (or a later release) can re-export without the browser.
+          await writeFile(join(outDir, jsonName),
+            JSON.stringify({ version: 1, book: body.book, code: body.code, pages }, null, 2), 'utf8')
+          try {
+            await runTool(join(config.toolsDir, 'export_chapter.py'), [source, overlayPath, specPath, join(outDir, outName)])
+          } finally {
+            await unlink(specPath).catch(() => {})
+          }
+          sendJson(response, 200, { ok: true, pdf: outName, json: jsonName, pages: pages.length })
+        } catch (error) {
+          fail(response, 500, 'export-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/export-page`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
