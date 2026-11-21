@@ -204,7 +204,6 @@ window.__ModuleLoader__.load({
       undoHint: '撤销上一步标注或框选',
       redoHint: '重做刚撤销的一步',
       maskBoxHint: '拖顶部圆点移动 · 拖角改大小 · 右键删除',
-      maskMoveHint: '拖动移动这个框',
       overlayBlocks: '框住本页块',
       overlayBlocksHint: '按文本块自动画框；再点一次取消（需先翻译）',
       overlayBlocksCancel: '取消框住',
@@ -620,7 +619,6 @@ window.__ModuleLoader__.load({
       undoHint: 'Undo the last stroke or box',
       redoHint: 'Redo the step just undone',
       maskBoxHint: 'Drag the dot to move · drag a handle to resize · right-click to delete',
-      maskMoveHint: 'Drag to move this box',
       overlayBlocks: 'Box the page blocks',
       overlayBlocksHint: 'Box each text block automatically; press again to clear them (translate first)',
       overlayBlocksCancel: 'Clear block boxes',
@@ -3805,42 +3803,111 @@ window.__ModuleLoader__.load({
       const root = useRef(null)
       const drag = useRef(null)
       const [preview, setPreview] = useState(null)
+      const [hover, setHover] = useState(-1)
+      const [cursor, setCursor] = useState('')
       const MIN_SIZE = 0.02
+      // Pixel-sized marks: hit tests in normalized space need the page size.
+      const HANDLE_HIT_PX = 9
+      const GRIP_HIT_PX = 22
 
-      const pointOf = event => {
+      const rectOf = () => {
         const node = root.current
         if (node === null) return null
         const rect = node.getBoundingClientRect()
         if (rect.width === 0 || rect.height === 0) return null
-        return [
-          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-        ]
+        return rect
+      }
+      const pointOf = (event, rect) => [
+        Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+        Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+      ]
+      const handleAt = (mask, point, rect) => {
+        const sx = HANDLE_HIT_PX / rect.width
+        const sy = HANDLE_HIT_PX / rect.height
+        const left = mask.x
+        const top = mask.y
+        const right = mask.x + mask.w
+        const bottom = mask.y + mask.h
+        const middleX = mask.x + mask.w / 2
+        const middleY = mask.y + mask.h / 2
+        const spots = {
+          nw: [left, top],
+          n: [middleX, top],
+          ne: [right, top],
+          e: [right, middleY],
+          se: [right, bottom],
+          s: [middleX, bottom],
+          sw: [left, bottom],
+          w: [left, middleY],
+        }
+        for (const position of MASK_HANDLES) {
+          const spot = spots[position]
+          if (Math.abs(point[0] - spot[0]) <= sx && Math.abs(point[1] - spot[1]) <= sy) return position
+        }
+        return ''
+      }
+      const gripAt = (mask, point, rect) => {
+        const halfWidth = (GRIP_HIT_PX / 2) / rect.width
+        const top = mask.y + 6 / rect.height
+        const centre = mask.x + mask.w / 2
+        return Math.abs(point[0] - centre) <= halfWidth
+          && point[1] >= top && point[1] <= top + GRIP_HIT_PX / rect.height
+      }
+      // What is under the point: a resize handle, the move grip, or just the
+      // box body. Topmost box wins, so overlapping boxes behave predictably.
+      const hitAt = (point, rect, altKey) => {
+        for (let index = props.masks.length - 1; index >= 0; index -= 1) {
+          const mask = props.masks[index]
+          const handle = handleAt(mask, point, rect)
+          if (handle !== '') return { index, handle }
+          if (gripAt(mask, point, rect)) return { index, handle: 'move' }
+          const inside = point[0] >= mask.x && point[0] <= mask.x + mask.w
+            && point[1] >= mask.y && point[1] <= mask.y + mask.h
+          if (inside && altKey) return { index, handle: 'move' }
+          if (inside) return { index, handle: 'body' }
+        }
+        return null
       }
       const clamp = mask => {
         const w = Math.max(MIN_SIZE, Math.min(1, mask.w))
         const h = Math.max(MIN_SIZE, Math.min(1, mask.h))
         return { x: Math.min(1 - w, Math.max(0, mask.x)), y: Math.min(1 - h, Math.max(0, mask.y)), w, h }
       }
-      const start = (event, index, handle) => {
-        const mask = props.masks[index]
-        const point = pointOf(event)
-        if (mask === undefined || point === null) return
+      // Any press that is not on a handle/grip belongs to the page: it must not
+      // be swallowed here, so the layer below can draw the next box even when
+      // this box covers the whole paragraph.
+      const down = event => {
+        const rect = rectOf()
+        if (rect === null) return
+        const point = pointOf(event, rect)
+        const hit = hitAt(point, rect, event.altKey === true)
+        if (hit === null || hit.handle === 'body') return
         event.preventDefault()
         event.stopPropagation()
-        const node = event.currentTarget
-        if (typeof node.setPointerCapture === 'function') {
+        const node = root.current
+        if (node !== null && typeof node.setPointerCapture === 'function') {
           try { node.setPointerCapture(event.pointerId) } catch { /* not supported */ }
         }
-        drag.current = { index, handle, startMask: { ...mask }, start: point, latest: { ...mask } }
-        setPreview({ index, mask: { ...mask } })
+        const base = props.masks[hit.index]
+        if (base === undefined) return
+        drag.current = { index: hit.index, handle: hit.handle, startMask: { ...base }, start: point, latest: { ...base } }
+        setPreview({ index: hit.index, mask: { ...base } })
       }
       const move = event => {
+        const rect = rectOf()
+        if (rect === null) return
+        const point = pointOf(event, rect)
         const state = drag.current
-        if (state === null) return
-        const point = pointOf(event)
-        if (point === null) return
+        if (state === null) {
+          const hit = hitAt(point, rect, false)
+          const next = hit === null ? -1 : hit.index
+          setHover(current => (current === next ? current : next))
+          const nextCursor = hit === null ? '' : ({ nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', move: 'move', body: 'crosshair' })[hit.handle] ?? ''
+          setCursor(current => (current === nextCursor ? current : nextCursor))
+          return
+        }
         event.preventDefault()
+        event.stopPropagation()
         const dx = point[0] - state.start[0]
         const dy = point[1] - state.start[1]
         const base = state.startMask
@@ -3865,8 +3932,8 @@ window.__ModuleLoader__.load({
         const state = drag.current
         if (state === null) return
         drag.current = null
-        const node = event.currentTarget
-        if (typeof node.releasePointerCapture === 'function') {
+        const node = root.current
+        if (node !== null && typeof node.releasePointerCapture === 'function') {
           try { node.releasePointerCapture(event.pointerId) } catch { /* already gone */ }
         }
         const latest = state.latest
@@ -3876,35 +3943,45 @@ window.__ModuleLoader__.load({
           && Math.abs(latest.w - base.w) < 0.002 && Math.abs(latest.h - base.h) < 0.002) return
         props.onChange(state.index, latest)
       }
+      const menu = event => {
+        const rect = rectOf()
+        if (rect === null) return
+        const point = pointOf(event, rect)
+        const hit = hitAt(point, rect, false)
+        if (hit === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        props.onDelete(hit.index)
+      }
 
-      return h('div', { className: 'md-mask-boxes', ref: root },
+      return h('div', {
+        className: 'md-mask-boxes',
+        ref: root,
+        style: cursor === '' ? undefined : { cursor },
+        title: hover >= 0 ? format('maskBoxHint') : undefined,
+        onPointerDown: down,
+        onPointerMove: move,
+        onPointerUp: end,
+        onPointerCancel: end,
+        onPointerLeave: () => {
+          setHover(-1)
+          setCursor('')
+        },
+        onContextMenu: menu,
+      },
         props.masks.map((mask, index) => {
           const shown = preview !== null && preview.index === index ? preview.mask : mask
           const active = drag.current !== null && drag.current.index === index
+          const marked = active || hover === index
           return h('div', {
             key: index,
             className: `md-mask${active ? ' md-mask-active' : ''}`,
+            'data-hover': marked ? 'true' : undefined,
             style: {
               left: `${shown.x * 100}%`,
               top: `${shown.y * 100}%`,
               width: `${shown.w * 100}%`,
               height: `${shown.h * 100}%`,
-            },
-            title: format('maskBoxHint'),
-            // A plain drag is how the next box is drawn, even on top of this one;
-            // moving needs the grip (or Alt+drag) so one big box cannot turn the
-            // whole page into "nothing draws any more".
-            onPointerDown: event => {
-              if (!event.altKey) return
-              start(event, index, 'move')
-            },
-            onPointerMove: move,
-            onPointerUp: end,
-            onPointerCancel: end,
-            onContextMenu: event => {
-              event.preventDefault()
-              event.stopPropagation()
-              props.onDelete(index)
             },
           },
             h('div', { className: 'md-mask-clip' },
@@ -3924,22 +4001,11 @@ window.__ModuleLoader__.load({
                     backgroundRepeat: 'no-repeat',
                   },
                 })),
-            h('span', {
-              className: 'md-mask-grip',
-              title: format('maskMoveHint'),
-              'aria-label': format('maskMoveHint'),
-              onPointerDown: event => start(event, index, 'move'),
-              onPointerMove: move,
-              onPointerUp: end,
-              onPointerCancel: end,
-            }, annotIcon('M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3')),
+            h('span', { className: 'md-mask-grip', 'aria-hidden': true }, annotIcon('M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3')),
             MASK_HANDLES.map(position => h('span', {
               key: position,
               className: `md-mask-handle md-mask-handle-${position}`,
-              onPointerDown: event => start(event, index, position),
-              onPointerMove: move,
-              onPointerUp: end,
-              onPointerCancel: end,
+              'aria-hidden': true,
             }))
           )
         })
@@ -6481,11 +6547,11 @@ window.__ModuleLoader__.load({
    not cut off. */
 .md-mask-clip { position: absolute; inset: 0; overflow: hidden; }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
-.md-mask-boxes { position: absolute; inset: 0; pointer-events: none; }
-.md-mask-boxes .md-mask { pointer-events: auto; cursor: move; }
+.md-mask-boxes { position: absolute; inset: 0; pointer-events: auto; }
+.md-mask-boxes .md-mask { pointer-events: none; }
 .md-mask-boxes .md-mask-active { border-style: solid; }
 .md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--dsw-alias-bg-base); border: 1px solid rgba(40, 140, 235, .95); box-shadow: 0 1px 2px rgba(0, 0, 0, .18); pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
-.md-mask:hover .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; }
+.md-mask[data-hover='true'] .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; }
 .md-mask-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
 .md-mask-handle-n { left: 50%; top: 0; cursor: ns-resize; }
 .md-mask-handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
@@ -6497,7 +6563,7 @@ window.__ModuleLoader__.load({
 /* A drag on the box body draws the next box, so moving has its own grip: it
    appears on hover and is the only target that starts a move besides Alt+drag. */
 .md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid rgba(40, 140, 235, .9); color: rgba(40, 140, 235, .95); cursor: move; pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
-.md-mask:hover .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; }
+.md-mask[data-hover='true'] .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; }
 .md-mask-grip .md-icon { width: 12px; height: 12px; }
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
