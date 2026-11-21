@@ -98,7 +98,7 @@ window.__ModuleLoader__.load({
       splitHint: '把工具复制到当前书库的 工具\\，并新建一个带预设提示词的会话。',
       importStart: '导入文件',
       importBusy: '导入中…',
-      importFilesHint: '导入 md/txt/pdf：md/txt 自动渲染为 PDF 放进 <库根>\\整本\\（当作整本书）；PDF 直接放进 整本\\。',
+      importFilesHint: '导入 md/txt/pdf：md/txt 自动渲染为 PDF 放进当前书库的 整本\\（当作整本书）；PDF 直接放进 整本\\。',
       importFilesDone: '已导入 {n} 个文件到 库根\\整本\\',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
       splitFailed: '拆分工具启动失败',
@@ -356,7 +356,7 @@ window.__ModuleLoader__.load({
       splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
       importStart: 'Import files',
       importBusy: 'Importing…',
-      importFilesHint: 'Import md/txt/pdf: md/txt are rendered to PDF in <root>\\整本\\ as a whole book; PDFs go there directly.',
+      importFilesHint: 'Import md/txt/pdf: md/txt are rendered to PDF in this library\'s 整本\\ as a whole book; PDFs go there directly.',
       importFilesDone: 'Imported {n} file(s) into the library\'s 整本\\ folder',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
       splitFailed: 'Could not start the split conversation',
@@ -1634,12 +1634,7 @@ window.__ModuleLoader__.load({
           }, format('aiPromptCopy')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
-            h('code', { className: 'md-path' }, showLocalPath ? props.libraryDir : '<库根>'),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              onClick: () => setShowLocalPath(value => !value),
-            }, showLocalPath ? format('hideLocalPath') : format('readLocalPath')),
-            h('span', { className: 'md-shelf-sub' }, format('libraryPathHint'))
+            h('code', { className: 'md-path' }, props.libraryDir)
           )
         ),
         h('div', { className: 'md-library-toolcell' },
@@ -2281,7 +2276,7 @@ window.__ModuleLoader__.load({
         body = h('div', { className: 'md-artifacts-empty' },
           h('span', null, state.missing === true ? format('artifactsMissing') : format('artifactsEmpty')),
           h('span', { className: 'md-artifacts-hint' }, format('artifactsEmptyHint')),
-          h('code', { className: 'md-path' }, `<库根>\\产物\\${props.bookId}\\${props.code}`),
+          h('code', { className: 'md-path' }, state.dir),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-btn-ghost',
@@ -2894,11 +2889,11 @@ window.__ModuleLoader__.load({
       const lines = []
       lines.push(catalog.source === 'index.json' ? format('sourceIndex') : format('sourceScan'))
       if (catalog.indexIgnored) lines.push(format('indexIgnored'))
-      lines.push(format('libraryAt', { dir: '<库根>' }))
+      lines.push(format('libraryAt', { dir: catalog.libraryDir }))
       if (typeof catalog.artifactDir === 'string' && catalog.artifactDir !== '') {
-        lines.push(format('artifactAt', { dir: '<库根>\\产物' }))
+        lines.push(format('artifactAt', { dir: catalog.artifactDir }))
       }
-      if (catalog.target.cwd !== '') lines.push(format('sessionTarget', { dir: '<库根>' }))
+      if (catalog.target.cwd !== '') lines.push(format('sessionTarget', { dir: catalog.target.cwd }))
       for (const book of props.books) {
         if (typeof book.unparsed === 'number' && book.unparsed > 0) {
           lines.push(format('bookUnparsed', { title: book.title, n: book.unparsed }))
