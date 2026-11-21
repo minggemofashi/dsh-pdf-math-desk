@@ -3417,10 +3417,12 @@ window.__ModuleLoader__.load({
             const w = Number(block.bbox[2])
             const h = Number(block.bbox[3])
             if (![x, y, w, h].every(Number.isFinite)) continue
-            const left = Math.max(0, x - 0.01)
-            const top = Math.max(0, y - 0.006)
-            const right = Math.min(1, x + w + 0.01)
-            const bottom = Math.min(1, y + h + 0.012)
+            const left = Math.max(0, x - 0.004)
+            const top = Math.max(0, y - 0.004)
+            const right = Math.min(1, x + w + 0.004)
+            // A paragraph may borrow the gap below its block, so the box reaches
+            // a line further down; the text never leaves the block horizontally.
+            const bottom = Math.min(1, y + h + 0.022)
             next.push({ x: left, y: top, w: right - left, h: bottom - top })
           }
           if (next.length > 0) setMasks(next)

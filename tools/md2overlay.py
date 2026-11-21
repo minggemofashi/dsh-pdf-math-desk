@@ -119,7 +119,19 @@ for block in blocks:
     x, y, width, _height = [float(value) for value in bbox]
     room = room_below(block)
     body = ""
-    if room < font_pt * 2.6 and "$$" in md:
+    left = start_x(block)
+    x_pt = max(0.0, left * page_width)
+    y_pt = max(0.0, y * page_height)
+    # Keep every block inside its own box width. Borrowing the space to the
+    # right made the translation wider than the box the reader draws around the
+    # original text, so the reveal clipped whole words; wrapping (and, when
+    # really tight, scaling) stays inside the block instead.
+    w_pt = max(40.0, min(width * page_width, page_width - x_pt - 4.0))
+    # Very narrow boxes ("if dim V = n.") cannot hold one Chinese line at body
+    # size and used to collapse to 4pt after wrapping. A slightly smaller face
+    # keeps them on one line and inside the box.
+    body_pt = font_pt * 0.8 if w_pt < 90.0 else font_pt
+    if room < body_pt * 2.6 and "$$" in md:
         # Too little room for a display equation: keep the math inline, including
         # prose that carries an inline `$$...$$` fragment.
         body = inline_formula(md)
@@ -129,14 +141,6 @@ for block in blocks:
         body = convert(md.split("\n"), "")
     if body.strip() == "":
         continue
-    left = start_x(block)
-    x_pt = max(0.0, left * page_width)
-    y_pt = max(0.0, y * page_height)
-    # Display math centers itself, so widening its box would slide the equation
-    # away from where the original sat. Only text blocks may borrow free space
-    # beside them.
-    wide = not "\\[" in body
-    w_pt = max(40.0, ((room_right(block) - left) if wide else width) * page_width)
     # Cap the block at the white space below it: a Chinese paragraph is often
     # taller than the English it replaces. Text may borrow a paragraph gap but
     # never runs into the next block, and adjustbox only shrinks when the text
@@ -148,7 +152,7 @@ for block in blocks:
         "\\begin{minipage}[t]{%.2fpt}\\raggedright\\fontsize{%.1f}{%.1f}\\selectfont\n%s\n\\end{minipage}\n"
         "\\end{adjustbox}\n"
         "\\end{textblock}\n"
-        % (w_pt, x_pt, y_pt, w_pt, h_pt, w_pt, font_pt, font_pt * 1.25, body)
+        % (w_pt, x_pt, y_pt, w_pt, h_pt, w_pt, body_pt, body_pt * 1.25, body)
     )
 
 tex = r"""\documentclass[UTF8,%s]{ctexart}
