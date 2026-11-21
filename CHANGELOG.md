@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.45.0
+
+- M3-2c：翻译任务额外生成 `_overlay.pdf`：每页按**原文页面尺寸**重新排版（`MATH_DESK_PAPER` 环境变量），再用 PyMuPDF 合并成 1:1 页数；
+- 新增 `tools/pdf_pagesizes.py`、`tools/pdf_merge.py`；`/pdf?variant=overlay`；
+- 叠加模式优先加载 `_overlay.pdf`（页框与原文一致），缺失时回退到 `_translated.pdf`。
+
 ## v0.44.3
 
 - M3-2c 前置：翻译任务现在按页把译文 Markdown 缓存到 `~/.dsh/mathdesk/translation/<书>/<章>/page-NNN.md`，供“对齐版叠加 PDF”与逐段翻译复用。

@@ -25,8 +25,16 @@ CHAPTERS = [
     ("c90", "附录_教材页码符号表自测", "附录 A　教材页码与定理编号"),
 ]
 
+def page_options():
+    raw = os.environ.get("MATH_DESK_PAPER", "").strip()
+    if "," in raw:
+        width, height = raw.split(",", 1)
+        return f"paperwidth={float(width):.3f}in,paperheight={float(height):.3f}in,margin=1.2cm"
+    return "margin=2.4cm"
+
+
 PREAMBLE = r"""\documentclass[UTF8,11pt,a4paper]{ctexart}
-\usepackage[margin=2.4cm]{geometry}
+\usepackage[%s]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs,tabularx,array}
 \usepackage{fancyvrb}
@@ -228,7 +236,7 @@ def convert(lines, chapter_title):
 
 def write_tex(path, body):
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(PREAMBLE)
+        handle.write(PREAMBLE % page_options())
         handle.write(body)
         handle.write("\\end{document}\n")
 

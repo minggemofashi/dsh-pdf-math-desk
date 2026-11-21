@@ -399,6 +399,8 @@ async function activeLibrary() {
           const jobId = await startChapterJob({
             jobDir: join(config.dataDir, 'translate-jobs'),
             cacheDir: join(config.dataDir, 'translation', body.book, body.code),
+            toolsDir: config.toolsDir,
+            overlayPath: join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`),
             rasterScript: join(config.toolsDir, 'pdf_raster.py'),
             md2texScript: options.md2texScript,
             apiKey: await deepseekKey(),
@@ -990,19 +992,21 @@ async function activeLibrary() {
           fail(response, 400, source.reason, '这个文件不能作为 PDF 打开')
           return
         }
-        if (url.searchParams.get('variant') === 'translated') {
-          const translated = join(dirname(source.path), `${basename(source.path, '.pdf')}_translated.pdf`)
-          let translatedBytes = null
+        const variant = url.searchParams.get('variant') ?? ''
+        if (variant === 'translated' || variant === 'overlay') {
+          const suffix = variant === 'overlay' ? '_overlay' : '_translated'
+          const target = join(dirname(source.path), `${basename(source.path, '.pdf')}${suffix}.pdf`)
+          let bytes = null
           try {
-            translatedBytes = await readPdf(translated)
+            bytes = await readPdf(target)
           } catch {
-            translatedBytes = null
+            bytes = null
           }
-          if (translatedBytes === null || !translatedBytes.ok) {
+          if (bytes === null || !bytes.ok) {
             fail(response, 404, 'missing-file', '还没有这一页/章的译文')
             return
           }
-          sendBytes(response, 200, translatedBytes.bytes, 'application/pdf')
+          sendBytes(response, 200, bytes.bytes, 'application/pdf')
           return
         }
         const file = await readPdf(source.path)

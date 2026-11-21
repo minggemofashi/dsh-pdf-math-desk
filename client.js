@@ -2995,11 +2995,25 @@ window.__ModuleLoader__.load({
         const load = async () => {
           try {
             const lib = await loadPdfjs()
-            const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
-            if (reader.variant !== 'translated') params.set('variant', 'translated')
-            const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
-            const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
-            const doc = await task.promise
+            const make = variant => {
+              const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
+              if (variant !== '') params.set('variant', variant)
+              const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
+              return lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+            }
+            let doc = null
+            if (overlay && reader.variant !== 'translated') {
+              try {
+                doc = await make('overlay').promise
+              } catch {
+                doc = null
+              }
+              if (doc === null) doc = await make('translated').promise
+            } else if (reader.variant !== 'translated') {
+              doc = await make('translated').promise
+            } else {
+              doc = await make('').promise
+            }
             if (!cancelled) setDualDoc(doc)
           } catch {
             if (!cancelled) {

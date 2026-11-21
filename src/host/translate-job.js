@@ -37,6 +37,27 @@ function rasterize(script, source, outDir) {
   })
 }
 
+function capture(script, args, env) {
+  return new Promise((resolve, reject) => {
+    const tryNext = index => {
+      if (index >= PYTHONS.length) {
+        reject(new Error('没有可用的 Python'))
+        return
+      }
+      execFile(
+        PYTHONS[index],
+        [script, ...args],
+        { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...(env ?? {}) } },
+        (error, stdout) => {
+          if (error === null) resolve(stdout)
+          else tryNext(index + 1)
+        }
+      )
+    }
+    tryNext(0)
+  })
+}
+
 /**
  * Start a chapter translation; resolves nothing, writes progress to `jobPath`.
  * @param {{ rasterScript: string, md2texScript: string, apiKey: string, source: string, outPath: string, jobPath: string, target: 'zh'|'en', book: string, code: string }} options - job inputs.
@@ -92,6 +113,26 @@ export async function startChapterJob(options) {
       }
       const markdown = chunks.join('\n\n\\newpage\n\n')
       savedMarkdown = markdown
+      if (typeof options.overlayPath === 'string' && typeof options.toolsDir === 'string') {
+        try {
+          const sizes = JSON.parse(await capture(join(options.toolsDir, 'pdf_pagesizes.py'), [options.source]))
+          const parts = []
+          for (let index = 0; index < chunks.length; index += 1) {
+            const size = sizes[index] ?? sizes[sizes.length - 1] ?? [595, 842]
+            const miniMd = join(tmpdir(), `md-${jobId}-${index}.md`)
+            const miniPdf = join(tmpdir(), `pg-${jobId}-${index}.pdf`)
+            await writeFile(miniMd, chunks[index], 'utf8')
+            await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
+              MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
+            })
+            parts.push(miniPdf)
+          }
+          await capture(join(options.toolsDir, 'pdf_merge.py'), [options.overlayPath, ...parts])
+          state.overlay = basename(options.overlayPath)
+        } catch {
+          // The overlay PDF is optional; the natural reading PDF still exists.
+        }
+      }
       const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
       const markdownPath = join(tmpdir(), `${title}.md`)
       await writeFile(markdownPath, markdown, 'utf8')
