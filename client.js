@@ -1435,6 +1435,7 @@ window.__ModuleLoader__.load({
      */
     function BookCard(props) {
       const book = props.book
+      const clickTimer = useRef(null)
       const chapters = Array.isArray(book.chapters) ? book.chapters.length : 0
       const sub = book.whole === true
         ? `${format('wholeBadge')} · ${format('wholeHint')}`
@@ -1442,8 +1443,20 @@ window.__ModuleLoader__.load({
       return h('button', {
         type: 'button',
         className: props.selected ? 'md-card md-card-selected' : 'md-card',
-        onClick: () => props.onSelect(book.id),
-        onDoubleClick: () => props.onOpen(book.id),
+        onClick: () => {
+          // A single click toggles selection, but wait briefly: a second click is
+          // "open the book", and must not flash the selection first.
+          if (clickTimer.current !== null) {
+            window.clearTimeout(clickTimer.current)
+            clickTimer.current = null
+            props.onOpen(book.id)
+            return
+          }
+          clickTimer.current = window.setTimeout(() => {
+            clickTimer.current = null
+            props.onSelect(book.id)
+          }, 220)
+        },
         onContextMenu: props.onContextMenu === undefined ? undefined : event => {
           event.preventDefault()
           props.onContextMenu()
