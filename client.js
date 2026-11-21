@@ -4482,9 +4482,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [showNotice])
 
       const createSession = useCallback(async (chapter, mode, options) => {
-        if (book === null || catalog === null || creatingRef.current) return
+        if (book === null || catalog === null || creatingRef.current) {
+          if (options !== undefined && typeof options.artifact === 'string') {
+            showNotice(`M7.2 guard: book=${book === null} catalog=${catalog === null} busy=${creatingRef.current}`)
+          }
+          return
+        }
         const target = catalog.target
         if (target.workspaceId === null && target.cwd === '') {
+          if (options !== undefined && typeof options.artifact === 'string') showNotice('M7.2 guard: target missing')
           setCreateError({ bookId: book.id, code: chapter.code, message: format('targetMissing') })
           return
         }
