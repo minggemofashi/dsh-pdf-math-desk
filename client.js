@@ -1842,7 +1842,11 @@ window.__ModuleLoader__.load({
               'aria-label': format('digestOf'),
               onClick: () => props.onDigest(props.chapter),
             }, format('digest'))
-            : null
+            : null,
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+            onClick: props.onToggle,
+          }, props.open === false ? format('artifactsExpand') : format('artifactsCollapse'))
         ),
         props.error === '' ? null : h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error),
@@ -2547,14 +2551,12 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-detail-actions' },
             h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => props.onOpenPdf(chapter) }, format('openPdf'))
           ),
-          h('div', { className: 'md-section-bar' },
-            h('span', { className: 'md-detail-key' }, format('sessionsTitle')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              onClick: () => setSessionsOpen(value => !value),
-            }, sessionsOpen ? format('artifactsCollapse') : format('artifactsExpand'))
-          ),
-          sessionsOpen ? h(ChapterSessions, {
+          h('div', {
+            className: 'md-sessions-wrap',
+            'data-collapsed': sessionsOpen ? 'false' : 'true',
+          }, h(ChapterSessions, {
+            open: sessionsOpen,
+            onToggle: () => setSessionsOpen(value => !value),
             chapter,
             groups: props.groups,
             creatingMode: props.creatingMode,
@@ -2573,7 +2575,7 @@ window.__ModuleLoader__.load({
             onRenameInput: props.onRenameInput,
             onCommitRename: props.onCommitRename,
             onCancelRename: props.onCancelRename,
-          }) : null,
+          })),
           h(ChapterArtifacts, {
             bookId: props.bookId,
             bookTitle: props.bookTitle,
@@ -2830,6 +2832,7 @@ window.__ModuleLoader__.load({
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .md-sessions-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.md-sessions-wrap[data-collapsed="true"] .md-session-group { display: none; }
 .md-sessions-title { font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-session-state { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-session-group { display: flex; flex-direction: column; gap: 2px; }
