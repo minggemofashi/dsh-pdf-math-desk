@@ -4718,8 +4718,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const deleteShelf = useCallback(id => {
         if (typeof window !== 'undefined' && typeof window.confirm === 'function'
           && !window.confirm(format('shelfDeleteConfirm'))) return
-        saveShelfGroups({ hidden: shelfGroups.hidden, shelves: shelfGroups.shelves.filter(shelf => shelf.id !== id) })
-        if (group === id) setGroup(null)
+        // Removing a shelf must also remove its nested shelves, otherwise their
+        // parent id points at nothing and their books never return to the library.
+        const doomed = new Set([id])
+        let grew = true
+        while (grew) {
+          grew = false
+          for (const shelf of shelfGroups.shelves) {
+            if (!doomed.has(shelf.id) && typeof shelf.parent === 'string' && doomed.has(shelf.parent)) {
+              doomed.add(shelf.id)
+              grew = true
+            }
+          }
+        }
+        saveShelfGroups({
+          hidden: shelfGroups.hidden,
+          shelves: shelfGroups.shelves.filter(shelf => !doomed.has(shelf.id)),
+        })
+        if (group !== null && doomed.has(group)) setGroup(null)
         setSelected(new Set())
       }, [group, saveShelfGroups, shelfGroups])
 
