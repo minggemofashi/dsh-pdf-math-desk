@@ -4431,6 +4431,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // Every new conversation starts knowing which book, chapter and PDF it
           // belongs to; a continuation also starts from the chapter outline.
           const parts = [seedFor(book, chapter)]
+          if (catalog !== null && typeof catalog.libraryDir === 'string' && catalog.libraryDir !== '') {
+            parts.push(`产物目录：${catalog.libraryDir}\\产物\\${book.id}\\${chapter.code}\\（报告/笔记的 md 请写到这里，才会出现在「产物」里）`)
+          }
           let hasOutline = false
           if (continuation >= 2) {
             const outline = await loadOutline(book.id, chapter.code)
