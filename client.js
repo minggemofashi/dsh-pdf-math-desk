@@ -2119,7 +2119,9 @@ window.__ModuleLoader__.load({
               className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
               onClick: event => {
                 event.stopPropagation()
-                props.onArtifactSession(props.chapter, item, mode)
+                const rows = groups === undefined ? [] : (Array.isArray(groups[mode]) ? groups[mode] : [])
+                const highest = rows.reduce((top, entry) => Math.max(top, continuationOf(entry.title)), 1)
+                props.onArtifactSession(props.chapter, item, mode, rows.length === 0 ? 0 : highest + 1)
               },
             }, format(`mode.${mode}`)))
           ),
@@ -3763,14 +3765,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [selected, shelfGroups, showNotice])
 
       /** New session owned by one artifact file (M7.2). */
-      const newArtifactSession = useCallback((chapter, item, mode) => {
+      const newArtifactSession = useCallback((chapter, item, mode, continuation) => {
         const stem = String(item.name).replace(/\.(md|pdf)$/i, '')
         const create = createSessionRef.current
         if (typeof create !== 'function') {
           showNotice('M7.2: session creator not ready')
           return
         }
-        void create(chapter, mode, { jump: true, continuation: 0, artifact: stem, skipPdf: true })
+        void create(chapter, mode, {
+          jump: true,
+          continuation: Number.isFinite(continuation) && continuation >= 2 ? continuation : 0,
+          artifact: stem,
+          skipPdf: true,
+        })
       }, [showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
