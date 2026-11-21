@@ -158,6 +158,7 @@ window.__ModuleLoader__.load({
       readerZoomIn: '放大',
       readerZoomOut: '缩小',
       readerFit: '适应宽度',
+      readerFitScreen: '适应屏幕',
       readerBack: '返回章节',
       readerShelf: '书架',
       readerShelfHint: '回到书架',
@@ -574,6 +575,7 @@ window.__ModuleLoader__.load({
       readerZoomIn: 'Zoom in',
       readerZoomOut: 'Zoom out',
       readerFit: 'Fit width',
+      readerFitScreen: 'Fit screen',
       readerBack: 'Back to the chapter',
       readerShelf: 'Shelf',
       readerShelfHint: 'Back to the shelf (the book list)',
@@ -4147,13 +4149,18 @@ window.__ModuleLoader__.load({
         draftRef.current = value
         setDraft(value)
       }
+      const noteRef = useRef(null)
+      const setNoteBoth = value => {
+        noteRef.current = value
+        setNote(value)
+      }
       const openNote = point => {
         const list = strokesRef.current
         const index = list.findIndex(entry => entry.kind === 'text' && within(entry, point))
         noteSeq.current += 1
         const entry = index >= 0 ? list[index] : null
         noteText.current = entry === null ? '' : String(entry.text ?? '')
-        setNote({
+        setNoteBoth({
           id: noteSeq.current,
           index,
           x: entry === null ? point[0] : entry.x,
@@ -4162,13 +4169,20 @@ window.__ModuleLoader__.load({
           color: entry === null ? props.color : (entry.color ?? props.color),
         })
       }
-      const saveNote = () => {
-        const current = note
-        if (current === null) return
-        const next = applyNote(strokesRef.current, { ...current, text: noteText.current }, noteText.current)
+      const saveNote = id => {
+        const current = noteRef.current
+        if (current === null || current.id !== id) return
+        noteRef.current = null
+        setNote(null)
+        const text = noteText.current
+        noteText.current = ''
+        if (current.index < 0 && text.trim() === '') return
+        commit(applyNote(strokesRef.current, { ...current, text }, text))
+      }
+      const cancelNote = () => {
+        noteRef.current = null
         setNote(null)
         noteText.current = ''
-        commit(next)
       }
       const down = event => {
         if (props.tool === '') return
@@ -4182,6 +4196,9 @@ window.__ModuleLoader__.load({
           return
         }
         if (props.tool === 'text') {
+          // A click always starts a note where it lands: an editor left open is
+          // saved first, so a page can hold as many notes as the reader places.
+          if (noteRef.current !== null) saveNote(noteRef.current.id)
           openNote(point)
           return
         }
@@ -4258,7 +4275,7 @@ window.__ModuleLoader__.load({
               event.stopPropagation()
               noteSeq.current += 1
               noteText.current = String(entry.text ?? '')
-              setNote({
+              setNoteBoth({
                 id: noteSeq.current,
                 index: strokesRef.current.indexOf(entry),
                 x: entry.x,
@@ -4273,11 +4290,8 @@ window.__ModuleLoader__.load({
           key: `note-${note.id}`,
           draft: note,
           onChange: value => { noteText.current = value },
-          onSave: saveNote,
-          onCancel: () => {
-            setNote(null)
-            noteText.current = ''
-          },
+          onSave: () => saveNote(note.id),
+          onCancel: cancelNote,
         })
       )
     }
@@ -5322,10 +5336,10 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'text') {
-          // A click outside the open editor only finishes it: making a new note
-          // where the user merely clicked to dismiss would surprise them.
+          // A click always starts a note where it lands: an open editor is saved
+          // first, so a page can hold as many notes as the reader places.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          else openNote(point, side)
+          openNote(point, side)
           return
         }
         setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
@@ -5569,6 +5583,56 @@ window.__ModuleLoader__.load({
       const rightSlots = useRef(new Map())
       const registerRightSlot = useCallback((page, node) => { rightSlots.current.set(page, node) }, [])
       const [dualRightPage, setDualRightPage] = useState(reader.page)
+      // Per-column fit: in the bilingual view each column is its own viewport, so
+      // "auto" must fit both the width and the height of that column, not the
+      // whole stage (which made 100% pages overflow sideways).
+      const [dualFit, setDualFit] = useState({ left: null, right: null })
+      useEffect(() => {
+        if (!dual || dualDoc === null) return undefined
+        const leftDoc = reader.variant === 'translated' ? dualDoc : props.doc
+        const rightDoc = reader.variant === 'translated' ? props.doc : dualDoc
+        if (leftDoc === null || leftDoc === undefined || rightDoc === null || rightDoc === undefined) return undefined
+        let cancelled = false
+        let observer = null
+        let leftBase = null
+        let rightBase = null
+        const fitOf = (column, base) => {
+          if (column === null || base === null || base.width === 0 || base.height === 0) return null
+          const width = (column.clientWidth - 24) / base.width
+          const height = (column.clientHeight - 52) / base.height
+          return Math.max(0.15, Math.min(3, Math.min(width, height)))
+        }
+        const measure = () => {
+          if (cancelled) return
+          setDualFit(current => {
+            const next = {
+              left: fitOf(dualLeft.current, leftBase),
+              right: fitOf(dualRight.current, rightBase),
+            }
+            return current.left === next.left && current.right === next.right ? current : next
+          })
+        }
+        void (async () => {
+          try {
+            const [leftPage, rightPage] = await Promise.all([leftDoc.getPage(1), rightDoc.getPage(1)])
+            if (cancelled) return
+            leftBase = leftPage.getViewport({ scale: 1 })
+            rightBase = rightPage.getViewport({ scale: 1 })
+            measure()
+            if (typeof ResizeObserver === 'function') {
+              observer = new ResizeObserver(measure)
+              if (dualLeft.current !== null) observer.observe(dualLeft.current)
+              if (dualRight.current !== null) observer.observe(dualRight.current)
+            }
+          } catch {
+            // keep 1:1 when the page cannot be measured
+          }
+        })()
+        return () => {
+          cancelled = true
+          if (observer !== null) observer.disconnect()
+        }
+      }, [dual, dualDoc, reader.variant, props.doc])
       useEffect(() => {
         setDualRightPage(reader.page)
         // The right column starts on the reader's page but then keeps its own; it
@@ -6229,10 +6293,25 @@ window.__ModuleLoader__.load({
               h('div', { className: 'md-reader-column', ref: dualLeft },
                 h('div', { className: 'md-reader-colhead' },
                   h('span', { className: 'md-reader-coltitle' }, format('dualOriginal')),
-                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onZoomOut }, '−'),
-                  h('span', { className: 'md-reader-scale' }, String(Math.round((reader.scale ?? 1) * 100)) + '%'),
-                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onZoomIn }, '+'),
-                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onFit }, format('readerFit'))
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => {
+                      if (dual) props.onScale(Math.max(0.2, (reader.scale ?? dualFit.left ?? 1) / 1.2))
+                      else props.onZoomOut()
+                    },
+                  }, '−'),
+                  h('span', { className: 'md-reader-scale' }, String(Math.round((reader.scale ?? dualFit.left ?? 1) * 100)) + '%'),
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => {
+                      if (dual) props.onScale(Math.min(3, (reader.scale ?? dualFit.left ?? 1) * 1.2))
+                      else props.onZoomIn()
+                    },
+                  }, '+'),
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => { if (dual) props.onScale(null); else props.onFit() },
+                  }, format(dual ? 'readerFitScreen' : 'readerFit'))
                 ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? dualDoc : props.doc,
@@ -6241,7 +6320,7 @@ window.__ModuleLoader__.load({
                   code: reader.code,
                   count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
                   page: reader.page,
-                  scale: reader.scale ?? 1,
+                  scale: reader.scale ?? dualFit.left ?? 1,
                   rootRef: dualLeft,
                   onVisible: notifyVisible,
                   registerSlot,
@@ -6258,27 +6337,15 @@ window.__ModuleLoader__.load({
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
                   }, '−'),
-                  h('span', { className: 'md-reader-scale' }, String(Math.round((rightScale ?? reader.scale ?? 1) * 100)) + '%'),
+                  h('span', { className: 'md-reader-scale' }, String(Math.round((rightScale ?? dualFit.right ?? 1) * 100)) + '%'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => setRightScale(value => Math.min(3, (value ?? reader.scale ?? 1) + 0.1)),
+                    onClick: () => setRightScale(value => Math.max(0.5, (value ?? dualFit.right ?? 1) - 0.1)),
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => {
-                      void (async () => {
-                        try {
-                          const node = dualRight.current
-                          const page = await (reader.variant === 'translated' ? props.doc : dualDoc).getPage(1)
-                          if (node === null) return
-                          const base = page.getViewport({ scale: 1 }).width
-                          setRightScale(Math.max(0.2, Math.min(3, (node.clientWidth - 28) / base)))
-                        } catch {
-                          // keep the current scale
-                        }
-                      })()
-                    },
-                  }, format('readerFit'))
+                    onClick: () => setRightScale(null),
+                  }, format('readerFitScreen'))
                 ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? props.doc : dualDoc,
@@ -6287,7 +6354,7 @@ window.__ModuleLoader__.load({
                   code: reader.code,
                   count: reader.variant === 'translated' ? reader.count : (dualDoc.numPages || 0),
                   page: dualRightPage,
-                  scale: rightScale ?? reader.scale ?? 1,
+                  scale: rightScale ?? dualFit.right ?? 1,
                   rootRef: dualRight,
                   onVisible: onVisibleRight,
                   registerSlot: registerRightSlot,
