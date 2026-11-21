@@ -3333,6 +3333,9 @@ window.__ModuleLoader__.load({
       // instead of a dead-end message.
       const [retryAction, setRetryAction] = useState(null)
       const [exportJob, setExportJob] = useState('')
+      // Bumped whenever the translated/overlay file on disk changes, so the
+      // reader (and later the side preview) reloads the same new bytes.
+      const [docRev, setDocRev] = useState(0)
       const cancelExport = () => {
         if (exportJob === '') return
         void request('POST', 'export-cancel', { job: exportJob }).catch(() => {})
@@ -3406,6 +3409,9 @@ window.__ModuleLoader__.load({
             const make = variant => {
               const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
               if (variant !== '') params.set('variant', variant)
+              // A fresh translation or overlay rebuild must be fetched again; the
+              // revision defeats any document cache inside pdf.js or the browser.
+              if (docRev > 0) params.set('rev', String(docRev))
               const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
               return lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             }
@@ -3474,7 +3480,7 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true
         }
-      }, [dual, overlay, reader.bookId, reader.code])
+      }, [dual, overlay, reader.bookId, reader.code, docRev])
 
 
       useEffect(() => {
@@ -3749,6 +3755,7 @@ window.__ModuleLoader__.load({
           }
           updateNote(format('importAnnotsDone', { n: count }))
           setRetryAction(null)
+          setDocRev(value => value + 1)
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('importAnnotsFailed')}：${message}`)
@@ -3867,6 +3874,7 @@ window.__ModuleLoader__.load({
               setDeskStatus('done')
               setTimeout(() => setDeskStatus('idle'), 8000)
               rememberPartial(state)
+              setDocRev(value => value + 1)
               updateNote(doneNote(state))
               window.localStorage.removeItem(key)
               return
@@ -4041,6 +4049,7 @@ window.__ModuleLoader__.load({
             }
             if (state.status === 'done') {
               rememberPartial(state)
+              setDocRev(value => value + 1)
               updateNote(doneNote(state))
               break
             }
