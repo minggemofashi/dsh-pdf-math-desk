@@ -34,6 +34,7 @@ window.__ModuleLoader__.load({
 
     /** The mode word written into a session title (data, not UI copy). */
     const TITLE_MODE = { extract: '提取', qa: '答疑', exercise: '习题' }
+    const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-math-desk'
 
     /** A workbench session title: `[<book> cNN] <mode>`, half- or full-width brackets. */
     const SESSION_TITLE = /^[\[【](.+?)[\s\u3000]+(c\d{2,3})[\]】][\s\u3000]*(.+?)[\s\u3000]*$/i
@@ -196,6 +197,7 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: '开启后，md/txt 等非 PDF 产物也会显示「删除」按钮；关闭时只允许删除 PDF',
       settings: '设置',
       version: '版本',
+      githubRepo: 'GitHub 仓库',
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
       libraryPathHint: '这里统一显示为 {root}：绝对路径只在本机有效，不随插件或仓库迁移。',
@@ -454,6 +456,7 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: 'When on, md/txt artifacts also show a Delete button; when off, only PDFs can be deleted',
       settings: 'Settings',
       version: 'Version',
+      githubRepo: 'GitHub repository',
       manualIdNote: 'A book id is its folder name / filename prefix. Do not rename it after adding the library: session titles and artifact folders key off it, so renaming breaks old sessions and artifacts (display names may change; keep the folder stable).',
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
@@ -5585,6 +5588,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 settingsOpen
                   ? h('div', { className: 'md-settings-menu', role: 'menu' },
                     h('div', { className: 'md-settings-version' }, `${format('version')} ${catalog === null ? '' : catalog.version}`),
+                    h('button', {
+                      type: 'button', className: 'md-settings-item',
+                      onClick: () => {
+                        try {
+                          window.open(GITHUB_URL, '_blank', 'noopener')
+                        } catch {
+                          // popup blocked: ignore
+                        }
+                      },
+                    }, format('githubRepo')),
                     h('button', {
                       type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
                       'aria-checked': previewPdf ? 'true' : 'false',
