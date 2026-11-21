@@ -164,6 +164,11 @@ window.__ModuleLoader__.load({
       readerMode: '阅读模式',
       readerModeSingle: '单页',
       readerModeContinuous: '连续',
+      sideTabTitle: '{book} · {code}',
+      sideOpenInDesk: '在工作台打开',
+      sideOpenInDeskHint: '回到数学工作台的阅读器，停在同一页',
+      sideForeign: '这个地址不属于数学工作台，无法预览',
+      sideHint: '与工作台阅读器同步：翻页、阅读模式与文件版本都跟着变',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
@@ -511,6 +516,11 @@ window.__ModuleLoader__.load({
       readerMode: 'Reading mode',
       readerModeSingle: 'Single page',
       readerModeContinuous: 'Continuous',
+      sideTabTitle: '{book} · {code}',
+      sideOpenInDesk: 'Open in workbench',
+      sideOpenInDeskHint: 'Return to the workbench reader at the same page',
+      sideForeign: 'This address is not a math workbench chapter, so it cannot be previewed',
+      sideHint: 'Follows the workbench reader: page, reading mode and file version',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
@@ -1597,6 +1607,161 @@ window.__ModuleLoader__.load({
     function bumpViewer() {
       viewerBus.token += 1
       viewerBus.listeners.forEach(listener => listener(viewerBus.token))
+    }
+
+    /* --------------------------------------------------------------- side -- */
+
+    /** The right column's tab type id: its body and its title register under this key. */
+    const SIDE_TAB_ID = 'dsh-pdf-math-desk/pdf'
+    /** The tab kind that type opens under; one chapter is one tab. */
+    const SIDE_TAB_KIND = 'mathdesk-pdf'
+    /** Every side-preview address starts here: `dsh-resource://mathdesk/chapter/<book>/<code>`. */
+    const SIDE_ADDRESS = 'dsh-resource://mathdesk/chapter/'
+
+    /** Whether this build has the right column and our tab type is registered in it. */
+    let sideTabsReady = false
+
+    /**
+     * The side preview's address for one chapter.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {string} the resource address the right column claims.
+     */
+    function sideAddress(bookId, code) {
+      return `${SIDE_ADDRESS}${encodeURIComponent(bookId)}/${encodeURIComponent(code)}`
+    }
+
+    /**
+     * Read a side-preview address back into the chapter it names.
+     * @param {string} address - a tab's content id.
+     * @returns {{ bookId: string, code: string } | null} the chapter, or null for an address this type does not own.
+     */
+    function sideTarget(address) {
+      if (typeof address !== 'string' || !address.startsWith(SIDE_ADDRESS)) return null
+      const rest = address.slice(SIDE_ADDRESS.length).split('?')[0].split('/')
+      if (rest.length < 2 || rest[0] === '' || rest[1] === '') return null
+      try {
+        return { bookId: decodeURIComponent(rest[0]), code: decodeURIComponent(rest[1]) }
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * What each end may publish. The reader owns the view (page, zoom, mode,
+     * variant) and the file's version counters; the side preview owns nothing
+     * but where it is, so its zoom and file revisions never travel back.
+     */
+    const VIEW_PUBLISHED = {
+      reader: ['page', 'scale', 'mode', 'variant', 'docRev', 'annotRev'],
+      side: ['page', 'mode'],
+    }
+
+    /** One chapter's shared view state, keyed `book:code`. */
+    const viewLinks = new Map()
+
+    /**
+     * The link record for one chapter, created on first use.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {{ state: object, listeners: Set<Function> }} the shared record.
+     */
+    function viewLink(bookId, code) {
+      const key = `${bookId}:${code}`
+      let link = viewLinks.get(key)
+      if (link === undefined) {
+        link = { state: {}, listeners: new Set() }
+        viewLinks.set(key, link)
+      }
+      return link
+    }
+
+    /**
+     * Merge one end's view into the chapter's shared state.
+     *
+     * Only fields that differ are published, which is what stops an echo: an
+     * end that just applied the other's change has nothing left to say.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {object} state - the publishing end's current view.
+     * @param {'reader'|'side'} origin - which end publishes.
+     * @returns {void}
+     */
+    function syncView(bookId, code, state, origin) {
+      const link = viewLink(bookId, code)
+      const patch = {}
+      const fields = VIEW_PUBLISHED[origin] ?? []
+      for (const name of fields) {
+        const value = state[name]
+        if (value !== undefined && link.state[name] !== value) patch[name] = value
+      }
+      if (Object.keys(patch).length === 0) return
+      Object.assign(link.state, patch, { origin })
+      const snapshot = { ...link.state }
+      link.listeners.forEach(listener => {
+        try {
+          listener(snapshot)
+        } catch (error) {
+          // A broken end must not break the other one.
+          trace('side', 'listener failed', String(error))
+        }
+      })
+    }
+
+    /**
+     * Listen for the other end's view changes.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {Function} listener - receives the merged state.
+     * @returns {Function} the disposer.
+     */
+    function subscribeView(bookId, code, listener) {
+      const link = viewLink(bookId, code)
+      link.listeners.add(listener)
+      return () => { link.listeners.delete(listener) }
+    }
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {object} the last published state for the chapter (empty before either end publishes).
+     */
+    function readView(bookId, code) {
+      return viewLink(bookId, code).state
+    }
+
+    /** A chapter the side preview asked the page to open; the page consumes it on mount. */
+    let pendingDeskOpen = null
+    const deskOpenListeners = new Set()
+
+    /**
+     * Ask for a chapter's reader page, switching the main panel back to the workbench.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {number} page - 1-based page.
+     * @returns {void}
+     */
+    function requestDeskOpen(bookId, code, page) {
+      const layout = clientContext === null ? null : clientContext.get('layout')
+      if (layout !== null && layout !== undefined && typeof layout.selectPanel === 'function') {
+        try {
+          layout.selectPanel(PANEL_ID)
+        } catch (error) {
+          // The panel is not registered yet; the request below still reaches a
+          // mounted page, and the click can simply be repeated.
+          trace('side', 'selectPanel failed', String(error))
+        }
+      }
+      const target = { bookId, code, page }
+      pendingDeskOpen = target
+      const listeners = [...deskOpenListeners]
+      listeners.forEach(listener => {
+        try {
+          listener(target)
+        } catch (error) {
+          trace('side', 'desk open failed', String(error))
+        }
+      })
     }
 
     const deskStatus = { value: 'idle', job: '', listeners: new Set() }
@@ -3336,6 +3501,21 @@ window.__ModuleLoader__.load({
       // Bumped whenever the translated/overlay file on disk changes, so the
       // reader (and later the side preview) reloads the same new bytes.
       const [docRev, setDocRev] = useState(0)
+      // Bumped on every annotation/mask edit; the side preview redraws from it.
+      const [annotRev, setAnnotRev] = useState(0)
+      const maskWritten = useRef('')
+      const annotWritten = useRef('')
+      // Both counters travel to the right column as they change. They are state
+      // here, so a bump from any handler reaches the preview without touching
+      // every call site.
+      useEffect(() => {
+        if (docRev === 0) return
+        syncView(reader.bookId, reader.code, { docRev }, 'reader')
+      }, [docRev, reader.bookId, reader.code])
+      useEffect(() => {
+        if (annotRev === 0) return
+        syncView(reader.bookId, reader.code, { annotRev }, 'reader')
+      }, [annotRev, reader.bookId, reader.code])
       const cancelExport = () => {
         if (exportJob === '') return
         void request('POST', 'export-cancel', { job: exportJob }).catch(() => {})
@@ -3509,6 +3689,13 @@ window.__ModuleLoader__.load({
         } catch {
           // storage unavailable
         }
+        // The first write of a page is the load above re-saving it; only an edit
+        // after that is a change the side preview has to redraw.
+        if (maskWritten.current !== maskKey) {
+          maskWritten.current = maskKey
+          return
+        }
+        setAnnotRev(value => value + 1)
       }, [maskKey, masks])
       useEffect(() => {
         if (!overlay || dualDoc === null) {
@@ -3633,6 +3820,12 @@ window.__ModuleLoader__.load({
         } catch {
           // storage unavailable
         }
+        // Same rule as the masks: the page's first write is its own load.
+        if (annotWritten.current !== annotKey) {
+          annotWritten.current = annotKey
+          return
+        }
+        setAnnotRev(value => value + 1)
       }, [annotKey, strokes])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
@@ -5118,6 +5311,17 @@ window.__ModuleLoader__.load({
 .md-empty-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--dsw-alias-label-primary); word-break: break-all; }
 .md-diag { display: flex; flex-direction: column; gap: 4px; margin-top: 28px; padding-top: 14px; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .md-diag-line { margin: 0; font-size: 12px; color: var(--dsw-alias-label-secondary); word-break: break-word; }
+/* The right column's chapter preview: the reader's stage, in a narrow pane. */
+.md-side { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; background: var(--dsw-alias-bg-base); }
+.md-side-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
+.md-side-bar .md-btn { white-space: nowrap; flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
+.md-side-count { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+.md-side-gap { flex: 1 1 auto; }
+.md-side-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.md-side-body > .md-reader-stage { padding: 8px 10px 16px; }
+.md-side .md-reader-state { margin: 16px; }
+.md-annot-readonly { pointer-events: none; }
 .md-root :focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-clearance, 48px) + 4px); }
 @container mathdesk (max-width: 620px) {
@@ -5142,6 +5346,415 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 }
 `
 
+    /* ------------------------------------------------------------ side view -- */
+
+    /**
+     * One chapter in the right column: the same document the workbench reader
+     * shows, with the reader's page and reading mode, and the page's freehand
+     * annotations drawn read-only. Zoom stays local because the column is much
+     * narrower than the page.
+     * @param {{ useTabInfo: Function }} props - the slot's tab information hook.
+     * @returns {import('react').ReactElement} the preview.
+     */
+    function SidePdfView(props) {
+      useT()
+      const info = props.useTabInfo()
+      const target = sideTarget(info.tab.contentId)
+      const params = info.tab.navigation.params
+      const variant = params !== null && typeof params === 'object' && params.variant === 'translated' ? 'translated' : ''
+      const bookId = target === null ? '' : target.bookId
+      const code = target === null ? '' : target.code
+      const revision = info.tab.navigation.revision
+      const [doc, setDoc] = useState(null)
+      const [count, setCount] = useState(0)
+      const [page, setPage] = useState(1)
+      const [jump, setJump] = useState(0)
+      const [scale, setScale] = useState(null)
+      const [mode, setMode] = useState('single')
+      // What the tab was opened with, then what the reader switched to.
+      const [shownVariant, setShownVariant] = useState(variant)
+      const [phase, setPhase] = useState('loading')
+      const [error, setError] = useState('')
+      const [docRev, setDocRev] = useState(0)
+      const [annotRev, setAnnotRev] = useState(0)
+      const [strokes, setStrokes] = useState([])
+      // Publishing starts only after the opening view has been adopted, so the
+      // first render cannot push a default page 1 over the reader's page.
+      const [started, setStarted] = useState(false)
+      // Bumped when the column's width changes, so a page measured in a hidden
+      // or half-laid-out pane fits once the real width exists.
+      const [fitTick, setFitTick] = useState(0)
+      const stage = useRef(null)
+      const slots = useRef(new Map())
+      const visibleTimer = useRef(null)
+      const jumping = useRef(false)
+      const limits = useRef(0)
+      const pageRef = useRef(1)
+      limits.current = count
+      pageRef.current = page
+
+      // Start where the reader is; the opener's page is the fallback for a tab
+      // restored before either end has published anything.
+      useEffect(() => {
+        const shared = bookId === '' || code === '' ? {} : readView(bookId, code)
+        const wanted = params !== null && typeof params === 'object' ? Number(params.page) : NaN
+        const fromBus = typeof shared.page === 'number' && shared.page > 0 ? shared.page : NaN
+        const start = Number.isFinite(fromBus)
+          ? fromBus
+          : Number.isFinite(wanted) && wanted > 0 ? Math.round(wanted) : 1
+        setPage(Math.max(1, start))
+        setJump(value => value + 1)
+        if (typeof shared.scale === 'number') setScale(shared.scale)
+        if (shared.mode === 'single' || shared.mode === 'continuous') setMode(shared.mode)
+        if (typeof shared.docRev === 'number' && shared.docRev > 0) setDocRev(shared.docRev)
+        setShownVariant(shared.variant === 'translated' || variant === 'translated' ? 'translated' : '')
+        setStarted(true)
+      }, [revision, bookId, code])
+
+      // The document itself: the reader's route, the reader's revision.
+      useEffect(() => {
+        if (bookId === '' || code === '') {
+          setPhase('error')
+          setError(format('sideForeign'))
+          return undefined
+        }
+        let cancelled = false
+        let task = null
+        setPhase('loading')
+        setError('')
+        void (async () => {
+          try {
+            const lib = await loadPdfjs()
+            if (cancelled) return
+            const query = new URLSearchParams({ book: bookId, code })
+            if (shownVariant !== '') query.set('variant', shownVariant)
+            if (docRev > 0) query.set('rev', String(docRev))
+            const url = new URL(`mathdesk/pdf?${query.toString()}`, document.baseURI).href
+            task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+            const loaded = await task.promise
+            if (cancelled) {
+              try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+              return
+            }
+            setDoc(loaded)
+            setCount(loaded.numPages || 0)
+            setPage(current => Math.max(1, Math.min(loaded.numPages || 1, current)))
+            setPhase('ready')
+          } catch (failure) {
+            if (cancelled) return
+            const name = failure !== null && failure !== undefined ? String(failure.name) : ''
+            if (name === 'AbortException' || name === 'RenderingCancelledException') return
+            setPhase('error')
+            setError(errorText(failure))
+          }
+        })()
+        return () => {
+          cancelled = true
+          if (task !== null) {
+            try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+          }
+        }
+      }, [bookId, code, shownVariant, docRev])
+
+      // The page's annotations: the reader's storage is the single source.
+      useEffect(() => {
+        if (bookId === '' || code === '') return
+        try {
+          const raw = window.localStorage.getItem(`mathdesk:annots:${bookId}:${code}:${page}`)
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          setStrokes(Array.isArray(parsed) ? parsed : [])
+        } catch {
+          setStrokes([])
+        }
+      }, [bookId, code, page, annotRev])
+
+      const fitScale = useCallback(baseWidth => {
+        const node = stage.current
+        const available = node === null ? 0 : Math.max(0, node.clientWidth - 24)
+        const used = available > 0 && baseWidth > 0 ? available / baseWidth : 1
+        return Math.max(0.2, Math.min(3, Math.round(used * 100) / 100))
+        // `fitTick` is the real dependency: a width change must hand PdfViewer a
+        // new callback, which is what makes it repaint at the new fit.
+      }, [fitTick])
+      const onScale = useCallback(value => {
+        // A pane measured at zero width says nothing about the right zoom.
+        const node = stage.current
+        if (node === null || node.clientWidth <= 0) return
+        setScale(current => (current === null ? value : current))
+      }, [])
+      const onError = useCallback(failure => {
+        setPhase('error')
+        setError(errorText(failure))
+      }, [])
+      // The dock gives the tab its real width only after the first layout, so
+      // watch the stage and refit when that width lands (or the column is resized).
+      useEffect(() => {
+        const node = stage.current
+        if (node === null || typeof ResizeObserver !== 'function') return undefined
+        let last = node.clientWidth
+        const observer = new ResizeObserver(entries => {
+          const width = entries[0] !== undefined && entries[0].contentRect !== undefined
+            ? entries[0].contentRect.width
+            : node.clientWidth
+          if (width <= 0 || Math.abs(width - last) <= 2) return
+          last = width
+          setFitTick(value => value + 1)
+        })
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [phase])
+      const registerSlot = useCallback((number, node) => {
+        if (node === null) slots.current.delete(number)
+        else slots.current.set(number, node)
+      }, [])
+      const goPage = useCallback(number => {
+        const limit = limits.current > 0 ? limits.current : 1
+        const next = Math.max(1, Math.min(limit, Math.round(number)))
+        if (pageRef.current === next) return
+        setPage(next)
+        setJump(value => value + 1)
+      }, [])
+
+      // Scrolling reports a page; it must not echo back as a programmatic jump.
+      const onVisible = useCallback(number => {
+        if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+        visibleTimer.current = setTimeout(() => {
+          if (jumping.current) return
+          setPage(current => (current === number ? current : number))
+        }, 350)
+      }, [])
+
+      const scrollToPage = useCallback(number => {
+        jumping.current = true
+        const jumpTo = () => {
+          const node = slots.current.get(number)
+          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
+            node.scrollIntoView({ block: 'start' })
+          }
+        }
+        jumpTo()
+        setTimeout(jumpTo, 320)
+        setTimeout(() => { jumping.current = false }, 700)
+      }, [])
+
+      useEffect(() => {
+        if (mode !== 'continuous' || phase !== 'ready') return
+        scrollToPage(page)
+        // `page` is read but not watched: pages reported by scrolling must not
+        // scroll the column again. `jump` marks the explicit moves.
+      }, [jump, mode, phase, scrollToPage])
+
+      // Where this preview is, for the reader; its zoom never travels back.
+      useEffect(() => {
+        if (!started || bookId === '' || code === '') return
+        syncView(bookId, code, { page, mode }, 'side')
+      }, [started, bookId, code, page, mode])
+
+      useEffect(() => {
+        if (bookId === '' || code === '') return undefined
+        return subscribeView(bookId, code, state => {
+          if (state.origin === 'side') return
+          if (typeof state.page === 'number') {
+            const limit = limits.current > 0 ? limits.current : 1
+            const next = Math.max(1, Math.min(limit, state.page))
+            if (pageRef.current !== next) {
+              setPage(next)
+              setJump(value => value + 1)
+            }
+          }
+          if (state.scale === null || typeof state.scale === 'number') setScale(state.scale)
+          if (state.mode === 'single' || state.mode === 'continuous') setMode(state.mode)
+          if (state.variant === '' || state.variant === 'translated') setShownVariant(state.variant)
+          if (typeof state.docRev === 'number') setDocRev(current => (state.docRev > current ? state.docRev : current))
+          if (typeof state.annotRev === 'number') setAnnotRev(current => (state.annotRev > current ? state.annotRev : current))
+        })
+      }, [bookId, code])
+
+      useEffect(() => () => {
+        if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+      }, [])
+
+      // The reader's annotation layer without its pointer handlers: this side
+      // only shows what the workbench holds.
+      const ink = strokes.filter(entry => entry.kind !== 'text')
+      const notes = strokes.filter(entry => entry.kind === 'text')
+      const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'aria-hidden': true },
+        h('svg', {
+          className: 'md-annot-ink',
+          viewBox: '0 0 1 1',
+          preserveAspectRatio: 'none',
+        },
+          ink.map((stroke, index) => h('polyline', {
+            key: index,
+            points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+            fill: 'none',
+            stroke: stroke.color ?? '#e0554a',
+            strokeWidth: stroke.width ?? 2,
+            vectorEffect: 'non-scaling-stroke',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          }))),
+        notes.map((entry, index) => h('div', {
+          key: `text-${index}`,
+          className: 'md-annot-text',
+          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+        }, entry.text)))
+
+      const shown = scale ?? 1
+      const body = target === null
+        ? h('div', { className: 'md-reader-state', role: 'alert' }, format('sideForeign'))
+        : phase === 'error'
+          ? h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
+            h('div', null, error === '' ? format('readerFailed') : error),
+            h('div', { className: 'md-state-actions' },
+              h('button', {
+                type: 'button',
+                className: 'md-btn md-btn-small',
+                onClick: () => setDocRev(value => value + 1),
+              }, format('readerRetry'))))
+          : doc === null
+            ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
+            : h(PdfViewer, {
+              variant: 'stage',
+              mode,
+              doc,
+              page,
+              count,
+              scale,
+              fitScale,
+              stageRef: stage,
+              onScale,
+              showBlocks: false,
+              bookId,
+              code,
+              onVisible,
+              registerSlot,
+              onError,
+              children: annotLayer,
+            })
+
+      return h('div', { className: 'md-side', 'data-mode': mode },
+        h('div', { className: 'md-side-bar' },
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerPrev'),
+            'aria-label': format('readerPrev'),
+            disabled: page <= 1 || phase !== 'ready',
+            onClick: () => goPage(page - 1),
+          }, '‹'),
+          h('span', { className: 'md-side-count' }, count === 0 ? String(page) : `${page} / ${count}`),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerNext'),
+            'aria-label': format('readerNext'),
+            disabled: count === 0 || page >= count || phase !== 'ready',
+            onClick: () => goPage(page + 1),
+          }, '›'),
+          h('span', { className: 'md-side-gap' }),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerZoomOut'),
+            'aria-label': format('readerZoomOut'),
+            onClick: () => setScale(current => Math.max(0.2, Math.round((current ?? 1) / 1.2 * 100) / 100)),
+          }, '−'),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerFit'),
+            onClick: () => setScale(null),
+          }, format('readerFit')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerZoomIn'),
+            'aria-label': format('readerZoomIn'),
+            onClick: () => setScale(current => Math.min(4, Math.round((current ?? 1) * 1.2 * 100) / 100)),
+          }, '+'),
+          h('span', { className: 'md-side-zoom' }, `${Math.round(shown * 100)}%`),
+          h('span', { className: 'md-side-gap' }),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerMode'),
+            onClick: () => setMode(mode === 'single' ? 'continuous' : 'single'),
+          }, format(mode === 'single' ? 'readerModeContinuous' : 'readerModeSingle')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('sideOpenInDeskHint'),
+            disabled: target === null,
+            onClick: () => requestDeskOpen(bookId, code, page),
+          }, format('sideOpenInDesk'))),
+        h('div', { className: 'md-side-body' }, body))
+    }
+
+    /**
+     * The tab chip: the chapter this preview shows.
+     * @param {{ useTabInfo: Function }} props - the slot's tab information hook.
+     * @returns {import('react').ReactNode} the chip text.
+     */
+    function SideTitle(props) {
+      useT()
+      const info = props.useTabInfo()
+      const target = sideTarget(info.tab.contentId)
+      if (target === null) return format('sideForeign')
+      return format('sideTabTitle', { book: target.bookId, code: target.code })
+    }
+
+    /**
+     * Contribute the side preview: a tab type that claims math desk chapter
+     * addresses, its body, and its chip title. A build without the right column
+     * never calls back, and the reader keeps opening the plain file tab.
+     * @param {import('@deepseek-ai/cordis').Context} ctx - client root context.
+     * @returns {void}
+     */
+    function registerSidePreview(ctx) {
+      const start = scope => {
+        if (sideTabsReady) return
+        // The slot service must be read as a property so the registration's
+        // effect lands in this scope's fiber; the tab registry is a plain object
+        // whose own disposer we keep instead.
+        const tabs = typeof scope.get === 'function' ? scope.get('sidebarRightTabs') : undefined
+        if (tabs === null || tabs === undefined) return
+        const slots = scope.slots
+        if (slots === null || slots === undefined) return
+        scope.effect(() => tabs.register({
+          id: SIDE_TAB_ID,
+          kind: SIDE_TAB_KIND,
+          patterns: [`${SIDE_ADDRESS}**`],
+          keepMounted: true,
+          title: address => {
+            const target = sideTarget(address)
+            return target === null
+              ? format('sideForeign')
+              : format('sideTabTitle', { book: target.bookId, code: target.code })
+          },
+        }), 'mathdesk: side preview type')
+        scope.effect(() => slots.inject('sidebar.right.pane.tab', () => slots.register({
+          name: 'sidebar.right.pane.tab',
+          key: SIDE_TAB_ID,
+        }, SidePdfView)), 'mathdesk: side preview body')
+        scope.effect(() => slots.inject('sidebar.right.pane.tab.title', () => slots.register({
+          name: 'sidebar.right.pane.tab.title',
+          key: SIDE_TAB_ID,
+        }, SideTitle)), 'mathdesk: side preview title')
+        sideTabsReady = true
+        trace('side', 'tab type registered')
+      }
+      // Take it now when the column is already up, and again when it arrives.
+      start(ctx)
+      if (typeof ctx.inject === 'function') {
+        try {
+          ctx.inject(['sidebarRightTabs', 'slots'], start)
+        } catch (error) {
+          trace('side', 'inject failed', String(error))
+        }
+      }
+    }
+
     /* ----------------------------------------------------------------- page -- */
 
     /**
@@ -5156,6 +5769,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [error, setError] = useState('')
       const [notice, setNotice] = useState('')
       const [reloadKey, setReloadKey] = useState(0)
+      // A chapter the right column asked to open, held until the catalog knows it.
+      const [deskRequest, setDeskRequest] = useState(null)
       const saveTimer = useRef(null)
       const noticeTimer = useRef(null)
       const bodyRef = useRef(null)
@@ -5517,7 +6132,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       /**
        * Open the in-page PDF reader for a chapter PDF or a produced PDF. Opening
        * the same document again keeps its page and zoom; `force` reloads it.
-       * @param {{ bookId: string, code: string, title: string, fileName: string, name?: string, bookTitle?: string }} target - what to open.
+       * @param {{ bookId: string, code: string, title: string, fileName: string, name?: string, bookTitle?: string, page?: number }} target - what to open, optionally at a page.
        * @param {boolean} [force] - reload even when it is already open.
        * @returns {void}
        */
@@ -5527,12 +6142,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setPicker(null)
         setRenaming(null)
         const name = target.name ?? ''
+        const wanted = Number(target.page)
+        const page = Number.isFinite(wanted) && wanted > 0 ? Math.round(wanted) : readReaderPage(target.bookId, target.code)
         setReader(previous => {
           const same = previous !== null && previous.bookId === target.bookId
             && previous.code === target.code && previous.name === name
             && previous.variant === (target.variant ?? '')
           if (same && force !== true && previous.phase !== 'error') {
-            return { ...previous, title: target.title, bookTitle: target.bookTitle ?? previous.bookTitle }
+            const limit = previous.count > 0 ? previous.count : page
+            const next = Math.max(1, Math.min(limit, page))
+            if (next === previous.page) return { ...previous, title: target.title, bookTitle: target.bookTitle ?? previous.bookTitle }
+            return {
+              ...previous,
+              title: target.title,
+              bookTitle: target.bookTitle ?? previous.bookTitle,
+              page: next,
+              jump: (previous.jump ?? 0) + 1,
+            }
           }
           return {
             bookId: target.bookId,
@@ -5542,7 +6168,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fileName: target.fileName ?? '',
             name,
             variant: target.variant ?? '',
-            page: readReaderPage(target.bookId, target.code),
+            page,
             count: 0,
             scale: null,
             mode: target.mode === 'continuous' ? 'continuous' : 'single',
@@ -5671,6 +6297,39 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       const closeReader = useCallback(() => setReader(null), [])
+
+      // Keep the right column's chapter preview on this page and reading mode.
+      // The key is a string so a scroll that only re-reports the same page does
+      // not re-publish; zoom travels one way (reader -> preview).
+      const readerViewKey = reader === null
+        ? ''
+        : `${reader.bookId}|${reader.code}|${reader.page}|${reader.scale}|${reader.mode}|${reader.variant}`
+      useEffect(() => {
+        const shown = readerRef.current
+        if (shown === null) return
+        syncView(shown.bookId, shown.code, {
+          page: shown.page,
+          scale: shown.scale,
+          mode: shown.mode,
+          variant: shown.variant,
+        }, 'reader')
+      }, [readerViewKey])
+
+      // The preview's page and reading mode come back here; its zoom never does.
+      const readerLinkKey = reader === null ? '' : `${reader.bookId}|${reader.code}`
+      useEffect(() => {
+        const shown = readerRef.current
+        if (shown === null) return undefined
+        return subscribeView(shown.bookId, shown.code, state => {
+          if (state.origin === 'reader') return
+          if (typeof state.page === 'number') readerPage(state.page)
+          if (state.mode === 'single' || state.mode === 'continuous') {
+            setReader(previous => (previous === null || previous.mode === state.mode
+              ? previous
+              : { ...previous, mode: state.mode, jump: (previous.jump ?? 0) + 1 }))
+          }
+        })
+      }, [readerLinkKey, readerPage])
 
       // Reader keyboard: ↑/↓ scroll the page, ←/→ and PageUp/PageDown turn pages,
       // +/- zoom, Escape out. A text field keeps its own keys.
@@ -6179,6 +6838,52 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [book, commit, openReader, work])
 
+      /**
+       * Open the chapter the right column asked for: switch the page to its book
+       * when needed, so 返回章节 lands next to it, then open the reader at the
+       * requested page.
+       * @param {{ bookId: string, code: string, page: number }} target - the request.
+       * @returns {void}
+       */
+      const openFromSide = useCallback(target => {
+        if (catalog === null) return
+        const entry = catalog.books.find(candidate => candidate.id === target.bookId)
+        const chapter = entry === undefined
+          ? undefined
+          : (entry.chapters ?? []).find(candidate => candidate.code === target.code)
+        if (entry === undefined || chapter === undefined) {
+          showNotice(format('sideForeign'))
+          return
+        }
+        if (workRef.current === null || workRef.current.bookId !== target.bookId) openBook(target.bookId)
+        openReader({
+          bookId: target.bookId,
+          code: chapter.code,
+          title: chapter.title ?? '',
+          fileName: chapter.file ?? '',
+          bookTitle: entry.title ?? '',
+          page: target.page,
+        })
+      }, [catalog, openBook, openReader, showNotice])
+
+      // The right column's 在工作台打开 arrives here; a request made while the
+      // catalog was still loading is replayed once it lands.
+      useEffect(() => {
+        const listener = target => setDeskRequest(target)
+        deskOpenListeners.add(listener)
+        if (pendingDeskOpen !== null) {
+          const target = pendingDeskOpen
+          pendingDeskOpen = null
+          listener(target)
+        }
+        return () => { deskOpenListeners.delete(listener) }
+      }, [])
+      useEffect(() => {
+        if (deskRequest === null || catalog === null) return
+        setDeskRequest(null)
+        openFromSide(deskRequest)
+      }, [catalog, deskRequest, openFromSide])
+
       // A double click's first click already toggled the row; `detail > 1` is its second click.
       const onClickRow = useCallback((event, chapter) => {
         if (Date.now() < clickGuardRef.current) return
@@ -6548,6 +7253,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       /**
+       * Whether the right column would open our own chapter tab. An address no
+       * type claims would throw inside `openResource`, so ask the registry first.
+       * @param {string} address - the chapter address.
+       * @returns {boolean} true when our tab type is in force.
+       */
+      const sideTabAvailable = address => {
+        const tabs = clientContext === null ? null : clientContext.get('sidebarRightTabs')
+        if (tabs === null || tabs === undefined) return false
+        if (typeof tabs.candidates === 'function') {
+          try {
+            return tabs.candidates(address).length > 0
+          } catch {
+            return false
+          }
+        }
+        if (typeof tabs.claim === 'function') {
+          try {
+            tabs.claim(address)
+            return true
+          } catch {
+            return false
+          }
+        }
+        return false
+      }
+
+      /**
        * After leaving for a conversation, show the chapter PDF in that session's
        * right column. The column only accepts an open once the conversation's
        * seat has mounted, so this waits for it briefly instead of failing.
@@ -6569,7 +7301,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (rel === '') return
         const sidebar = clientContext === null ? null : clientContext.get('sidebarRight')
         if (sidebar === null || sidebar === undefined || typeof sidebar.openResource !== 'function') return
-        const address = `dsh-resource://file/session/${sessionId}/${rel}`
+        // Our own tab type has the reader's page navigation and follows it; the
+        // plain file tab stays as the fallback for a build without that column.
+        const own = sideAddress(shown.bookId, shown.code)
+        const useOwn = sideTabsReady && sideTabAvailable(own)
+        const address = useOwn ? own : `dsh-resource://file/session/${sessionId}/${rel}`
+        const options = useOwn
+          ? {
+            destination: 'sidebar',
+            params: { page: shown.page, variant: shown.variant === 'translated' ? 'translated' : '' },
+          }
+          : { destination: 'sidebar' }
         let attempts = 0
         const tryOpen = () => {
           attempts += 1
@@ -6578,7 +7320,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             : undefined
           if (mounted === sessionId) {
             try {
-              sidebar.openResource(address, { destination: 'sidebar' })
+              sidebar.openResource(address, options)
               return
             } catch {
               // The seat is mounted but not adopted yet; try again.
@@ -7801,6 +8543,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return () => { for (const dispose of disposers) dispose() }
       }, 'mathdesk: dictionaries')
 
+      // The right column's preview is visible while this page is not mounted, so
+      // the stylesheet lives in the document head for the plugin's lifetime; the
+      // page keeps its own copy for the frames before this effect runs.
+      ctx.effect(() => {
+        if (typeof document === 'undefined' || document.head === undefined) return () => {}
+        const style = document.createElement('style')
+        style.dataset.mathdesk = 'stylesheet'
+        style.textContent = CSS
+        document.head.appendChild(style)
+        return () => { style.remove() }
+      }, 'mathdesk: stylesheet')
+
       ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
         name: 'sidebar.panellist',
         id: PANEL_ID,
@@ -7812,6 +8566,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         name: 'main',
         key: PANEL_ID,
       }, WorkbenchRoot)), 'mathdesk: page')
+
+      // The right column's chapter tab. It is optional wiring: without that
+      // column the reader keeps opening the plain file tab instead.
+      try {
+        registerSidePreview(ctx)
+      } catch (error) {
+        trace('side', 'registration failed', String(error))
+      }
     }
 
     return {
