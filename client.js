@@ -3714,8 +3714,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       /** New session owned by one artifact file (M7.2). */
       const newArtifactSession = useCallback((chapter, item, mode) => {
         const stem = String(item.name).replace(/\.(md|pdf)$/i, '')
-        void createSession(chapter, mode, { jump: true, continuation: 0, artifact: stem })
-      }, [])
+        try {
+          if (typeof createSession !== 'function') {
+            showNotice('M7.2: createSession unavailable')
+            return
+          }
+          void createSession(chapter, mode, { jump: true, continuation: 0, artifact: stem })
+        } catch (error) {
+          showNotice(`M7.2: ${error !== null && error !== undefined && error.message ? error.message : String(error)}`)
+        }
+      }, [showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
