@@ -123,9 +123,9 @@ export function createHandler(config, options = {}) {
  * @returns {Promise<string|null>} absolute path, or null when missing.
  */
 async function chapterPdf(library, bookId, code) {
-  const catalog = await loadCatalog(config)
-  const book = Array.isArray(catalog.books) ? catalog.books.find(item => item.id === bookId) : undefined
-  const chapter = resolveChapter(catalog, bookId, code)
+  const current = await catalog()
+  const book = Array.isArray(current.books) ? current.books.find(item => item.id === bookId) : undefined
+  const chapter = resolveChapter(current, bookId, code)
   if (book === undefined || chapter === null) return null
   const source = chapterPdfPath(library, book, chapter)
   return source.ok ? source.path : null
