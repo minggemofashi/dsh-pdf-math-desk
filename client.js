@@ -3829,13 +3829,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             : { items: [], activeId: '' })
           setLibrary(data.library !== null && typeof data.library === 'object' ? data.library : null)
           const groups = data.shelves !== null && typeof data.shelves === 'object' ? data.shelves : {}
-          setShelfGroups({
-            hidden: Array.isArray(groups.hidden) ? groups.hidden.filter(id => typeof id === 'string') : [],
-            shelves: Array.isArray(groups.shelves)
-              ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
-              : [],
+          const hidden = Array.isArray(groups.hidden) ? groups.hidden.filter(id => typeof id === 'string') : []
+          const shelves = Array.isArray(groups.shelves)
+            ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
+            : []
+          setShelfGroups({ hidden, shelves })
+          // Refresh re-reads data; it must not lose the shelf you are looking at.
+          setGroup(previous => {
+            if (previous === null) return previous
+            if (previous === 'hidden') return hidden.length === 0 ? null : 'hidden'
+            return shelves.some(shelf => shelf.id === previous) ? previous : null
           })
-          setGroup(null)
           setSelected(new Set())
           const emptyLibrary = books.length === 0
           const forced = forcedView
@@ -3845,15 +3849,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               ? 'shelf'
               : forced === 'libraries'
                 ? 'libraries'
-                : stored.view === 'book' && known
-                  ? 'book'
-                  : stored.view === 'libraries'
-                    ? 'libraries'
-                    : 'shelf'
+                : workRef.current !== null
+                  ? (workRef.current.view === 'book' && !known ? 'shelf' : workRef.current.view)
+                  : stored.view === 'book' && known
+                    ? 'book'
+                    : stored.view === 'libraries'
+                      ? 'libraries'
+                      : 'shelf'
           trace('bootstrap', 'forced=', forced, 'stored=', stored.view, 'books=', books.length, 'view=', nextView)
           setWork({
             view: nextView,
-            bookId: stored.view === 'book' && known && !emptyLibrary && nextView === 'book' ? stored.bookId : null,
+            bookId: nextView === 'book'
+              ? (workRef.current !== null && typeof workRef.current.bookId === 'string' && known ? workRef.current.bookId : stored.bookId)
+              : null,
             activeChapter: typeof stored.activeChapter === 'string' ? stored.activeChapter : null,
             expandedByBook,
           })
@@ -4679,7 +4687,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
         setShelfName(null)
         setSelected(new Set())
-      }, [saveShelfGroups, selected, shelfGroups, shelfName, showNotice])
+      }, [group, saveShelfGroups, selected, shelfGroups, shelfName, showNotice])
 
       const hideSelected = useCallback(() => {
         if (selected.size === 0) return
