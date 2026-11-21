@@ -198,12 +198,13 @@ window.__ModuleLoader__.load({
       dualTranslated: '译文',
       toolsToggle: '收起/展开工具条',
       overlayToggle: '叠加',
-      overlayHint: '拖框露出译文；框可拖动、拖角改大小，右键删除（需先翻译）',
+      overlayHint: '拖框露出译文；拖圆点移动、拖角改大小、右键删除（需先翻译）',
       undo: '撤销',
       redo: '重做',
       undoHint: '撤销上一步标注或框选',
       redoHint: '重做刚撤销的一步',
-      maskBoxHint: '拖动移动 · 拖角改大小 · 右键删除',
+      maskBoxHint: '拖顶部圆点移动 · 拖角改大小 · 右键删除',
+      maskMoveHint: '拖动移动这个框',
       overlayBlocks: '框住本页块',
       overlayBlocksHint: '按文本块自动画框；再点一次取消（需先翻译）',
       overlayBlocksCancel: '取消框住',
@@ -613,12 +614,13 @@ window.__ModuleLoader__.load({
       dualTranslated: 'Translation',
       toolsToggle: 'Collapse or expand the tool row',
       overlayToggle: 'Overlay',
-      overlayHint: 'Drag a box to reveal its translation; drag to move, drag a handle to resize, right-click to delete (translate first)',
+      overlayHint: 'Drag a box to reveal its translation; drag the dot to move, drag a handle to resize, right-click to delete (translate first)',
       undo: 'Undo',
       redo: 'Redo',
       undoHint: 'Undo the last stroke or box',
       redoHint: 'Redo the step just undone',
-      maskBoxHint: 'Drag to move · drag a handle to resize · right-click to delete',
+      maskBoxHint: 'Drag the dot to move · drag a handle to resize · right-click to delete',
+      maskMoveHint: 'Drag to move this box',
       overlayBlocks: 'Box the page blocks',
       overlayBlocksHint: 'Box each text block automatically; press again to clear them (translate first)',
       overlayBlocksCancel: 'Clear block boxes',
@@ -3889,7 +3891,13 @@ window.__ModuleLoader__.load({
               height: `${shown.h * 100}%`,
             },
             title: format('maskBoxHint'),
-            onPointerDown: event => start(event, index, 'move'),
+            // A plain drag is how the next box is drawn, even on top of this one;
+            // moving needs the grip (or Alt+drag) so one big box cannot turn the
+            // whole page into "nothing draws any more".
+            onPointerDown: event => {
+              if (!event.altKey) return
+              start(event, index, 'move')
+            },
             onPointerMove: move,
             onPointerUp: end,
             onPointerCancel: end,
@@ -3916,6 +3924,15 @@ window.__ModuleLoader__.load({
                     backgroundRepeat: 'no-repeat',
                   },
                 })),
+            h('span', {
+              className: 'md-mask-grip',
+              title: format('maskMoveHint'),
+              'aria-label': format('maskMoveHint'),
+              onPointerDown: event => start(event, index, 'move'),
+              onPointerMove: move,
+              onPointerUp: end,
+              onPointerCancel: end,
+            }, annotIcon('M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3')),
             MASK_HANDLES.map(position => h('span', {
               key: position,
               className: `md-mask-handle md-mask-handle-${position}`,
@@ -6477,6 +6494,11 @@ window.__ModuleLoader__.load({
 .md-mask-handle-s { left: 50%; top: 100%; cursor: ns-resize; }
 .md-mask-handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
 .md-mask-handle-w { left: 0; top: 50%; cursor: ew-resize; }
+/* A drag on the box body draws the next box, so moving has its own grip: it
+   appears on hover and is the only target that starts a move besides Alt+drag. */
+.md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid rgba(40, 140, 235, .9); color: rgba(40, 140, 235, .95); cursor: move; pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
+.md-mask:hover .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; }
+.md-mask-grip .md-icon { width: 12px; height: 12px; }
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
