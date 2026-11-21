@@ -7618,11 +7618,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (node !== null) node.scrollBy({ top: action === 'scrollDown' ? 96 : -96, behavior: 'auto' })
           } else if (action === 'zoomIn') readerZoom(1.2)
           else if (action === 'zoomOut') readerZoom(1 / 1.2)
-          else if (action === 'toggleMode') props.onMode(reader.mode === 'single' ? 'continuous' : 'single')
+          else if (action === 'toggleMode') readerMode(reader.mode === 'single' ? 'continuous' : 'single')
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-      }, [closeReader, reader, readerNext, readerPage, readerPrev, readerZoom, props.onMode])
+      }, [closeReader, reader, readerMode, readerNext, readerPage, readerPrev, readerZoom])
 
       // Opening the reader moves focus into it; closing returns it to the chapter.
       useEffect(() => {

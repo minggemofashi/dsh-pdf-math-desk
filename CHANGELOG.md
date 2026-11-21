@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.67.2
+
+- **修复 `props is not defined`**：上一版把阅读器的键盘处理改成了查表，收尾时在工作台页里写成了 `props.onMode(...)`，但那是个**没有 props 参数**的组件（`WorkbenchPage()`），依赖数组里引用它的那一刻就抛 `ReferenceError`，整个工作台页崩掉。改成同一个文件里的 `readerMode` 回调，并把 `props.onMode` 从依赖里去掉。
+- 冒烟脚本加了一条静态检查：`WorkbenchPage` 的函数体里不允许出现 `props.`（它确实没有 props），这类错误以后在本地就会拦住。
+
 ## v0.67.1
 
 - **修复插件整个消失（左上角入口不见了）**：上一版用 PowerShell 改版本号时给 `package.json` 写进了 UTF-8 BOM，DSH 读清单时 `JSON.parse` 直接失败，于是这个 bundle 的行在启动时被跳过——Host 半个插件没起来（`/mathdesk/*` 全 404），客户端入口自然也没了。
