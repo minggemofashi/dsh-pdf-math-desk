@@ -15,6 +15,9 @@ import { basename, join } from 'node:path'
 /** A chapter code is `c` plus two or three digits; the title part is optional. */
 const CHAPTER_FILE = /^(?<short>.+?)_(?<code>c\d{2,3})(?:_(?<rest>.*))?\.pdf$/i
 
+/** A split file the splitter named with a page range but no `cNN` marker. */
+const RANGE_FILE = /^(?<short>[^_]+?)_(?:(?:第[^_]*?章)_)?(?<rest>.*?)(?:_p|_)?(?<from>\d{1,4})-(?<to>\d{1,4})\.pdf$/i
+
 /** Canonical chapter code, lowercase and exactly `c` + two or three digits. */
 const CODE_SHAPE = /^c\d{2,3}$/
 
@@ -80,7 +83,23 @@ function tidyChapterTitle(raw) {
  */
 export function parseChapterFile(fileName) {
   const match = CHAPTER_FILE.exec(fileName)
-  if (match === null) return null
+  if (match === null) {
+    // Splitters commonly emit `<book>_<title>_<from>-<to>.pdf` without a code:
+    // accept it and let the scan number the chapters by page order.
+    const loose = RANGE_FILE.exec(fileName)
+    if (loose === null) return null
+    const from = Number(loose.groups.from)
+    const to = Number(loose.groups.to)
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0 || to < from) return null
+    return {
+      short: '',
+      code: '',
+      title: tidyChapterTitle(loose.groups.rest ?? ''),
+      pages: `${from}-${to}`,
+      kind: 'body',
+      from,
+    }
+  }
   const code = normalizeCode(match.groups.code)
   if (code === null) return null
   let rest = match.groups.rest ?? ''
@@ -332,12 +351,39 @@ async function scanFragments(fragmentDir) {
         kind: parsed.kind,
         pages: parsed.pages,
         file: file.replace(/\.pdf$/i, ''),
+        from: parsed.from,
       })
     }
     if (chapters.length === 0) {
       if (pdfCount > 0) skipped.push({ dir: entry.name, pdfCount })
       continue
     }
+    // Files the splitter left without `cNN`: number them by page order, with the
+    // cover/contents pair going to c00 and appendices to c90+.
+    const taken = new Set(chapters.filter(chapter => chapter.code !== '').map(chapter => chapter.code))
+    let bodyIndex = 1
+    const loose = chapters.filter(chapter => chapter.code === '')
+    loose.sort((left, right) => (left.from ?? 0) - (right.from ?? 0))
+    for (const chapter of loose) {
+      const text = `${chapter.title} ${chapter.file}`
+      let code
+      if (/附录|appendix/i.test(text)) {
+        let index = 90
+        while (taken.has(`c${index}`)) index += 1
+        code = `c${index}`
+      } else if (/目录|前言|封面|序言|序$|索引|参考/i.test(text)) {
+        code = 'c00'
+      } else {
+        while (taken.has(`c${String(bodyIndex).padStart(2, '0')}`)) bodyIndex += 1
+        code = `c${String(bodyIndex).padStart(2, '0')}`
+        bodyIndex += 1
+      }
+      chapter.code = code
+      chapter.kind = kindOf(code)
+      taken.add(code)
+    }
+    for (const chapter of chapters) delete chapter.from
+    chapters.sort((left, right) => left.code.localeCompare(right.code))
     const { title, author } = splitBookTitle(entry.name)
     books.push(bookRow({
       id: short === '' ? entry.name : short,
