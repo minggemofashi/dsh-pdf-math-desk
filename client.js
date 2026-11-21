@@ -177,6 +177,12 @@ window.__ModuleLoader__.load({
       overlayRemove: '点击删除这个框',
       overlayBlocks: '框住本页块',
       overlayBlocksHint: '按本页文本块自动画框，避免手画的框把译文截掉（需要先翻译本章）',
+      annotPen: '笔',
+      annotErase: '擦',
+      annotClear: '清空标注',
+      annotHint: '在本页手写批注；再点一次退出。标注按页保存，缩放后位置不变',
+      annotEraseHint: '点/划到笔画上删除该笔画',
+      annotClearHint: '清空本页所有手写标注',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -493,6 +499,12 @@ window.__ModuleLoader__.load({
       overlayRemove: 'Click to remove this box',
       overlayBlocks: 'Box the page blocks',
       overlayBlocksHint: 'Draw a box around every text block on this page so a hand-drawn box cannot clip the translation (translate the chapter first)',
+      annotPen: 'Pen',
+      annotErase: 'Erase',
+      annotClear: 'Clear',
+      annotHint: 'Write on this page; click again to leave the tool. Notes are saved per page and keep their place at any zoom',
+      annotEraseHint: 'Click or drag over a stroke to delete it',
+      annotClearHint: 'Remove every freehand note on this page',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3188,6 +3200,12 @@ window.__ModuleLoader__.load({
       const [overlay, setOverlay] = useState(false)
       const [masks, setMasks] = useState([])
       const [maskDraft, setMaskDraft] = useState(null)
+      // Freehand annotations, one array of strokes per page, normalized so they
+      // follow the page box through any zoom.
+      const [annotTool, setAnnotTool] = useState('')
+      const [strokes, setStrokes] = useState([])
+      const [draftStroke, setDraftStroke] = useState(null)
+      const annotLoaded = useRef(false)
       const [translatedImage, setTranslatedImage] = useState('')
       const [overlayNote, setOverlayNote] = useState('')
       const overlaySource = useRef('')
@@ -3470,6 +3488,78 @@ window.__ModuleLoader__.load({
         }
       }
 
+      const annotKey = `mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
+      useEffect(() => {
+        annotLoaded.current = false
+        try {
+          const raw = window.localStorage.getItem(annotKey)
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          setStrokes(Array.isArray(parsed) ? parsed : [])
+        } catch {
+          setStrokes([])
+        }
+        annotLoaded.current = true
+      }, [annotKey])
+      useEffect(() => {
+        if (!annotLoaded.current) return
+        try {
+          window.localStorage.setItem(annotKey, JSON.stringify(strokes))
+        } catch {
+          // storage unavailable
+        }
+      }, [annotKey, strokes])
+      // Point in page coordinates (0..1). The SVG layer is exactly the page box,
+      // so the same numbers work at any zoom.
+      const annotPoint = event => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return null
+        return [
+          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        ]
+      }
+      const strokeHits = (stroke, point) => {
+        const points = stroke.points ?? []
+        for (let index = 1; index < points.length; index += 1) {
+          const [x1, y1] = points[index - 1]
+          const [x2, y2] = points[index]
+          const dx = x2 - x1
+          const dy = y2 - y1
+          const length = dx * dx + dy * dy
+          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
+          const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
+          if (dist < 0.012) return true
+        }
+        return false
+      }
+      const annotDown = event => {
+        if (annotTool === '') return
+        const point = annotPoint(event)
+        if (point === null) return
+        event.preventDefault()
+        if (annotTool === 'erase') {
+          setStrokes(list => list.filter(stroke => !strokeHits(stroke, point)))
+          return
+        }
+        setDraftStroke({ points: [point] })
+      }
+      const annotMove = event => {
+        if (draftStroke === null) return
+        const point = annotPoint(event)
+        if (point === null) return
+        setDraftStroke(current => {
+          if (current === null) return null
+          const last = current.points[current.points.length - 1]
+          if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return current
+          return { points: [...current.points, point] }
+        })
+      }
+      const annotUp = () => {
+        if (draftStroke === null) return
+        if (draftStroke.points.length > 1) setStrokes(list => [...list, draftStroke])
+        setDraftStroke(null)
+      }
+
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
       useEffect(() => {
@@ -3694,6 +3784,42 @@ window.__ModuleLoader__.load({
       // whole page and shifted by -mask origin. The canvas has no width/height
       // style of its own, so the browser scales the bitmap to exactly the page
       // box: no aspect guess, no SVG clip path, no stretched text.
+      // Freehand layer: SVG in page coordinates, above the masks. It only takes
+      // pointer events while a tool is picked, so masks and the page stay usable.
+      const annotLayer = h('svg', {
+        className: 'md-annot',
+        'data-tool': annotTool,
+        viewBox: '0 0 1 1',
+        preserveAspectRatio: 'none',
+        'aria-hidden': true,
+        onPointerDown: annotDown,
+        onPointerMove: annotMove,
+        onPointerUp: annotUp,
+        onPointerLeave: annotUp,
+      },
+        strokes.map((stroke, index) => h('polyline', {
+          key: index,
+          points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+          fill: 'none',
+          stroke: '#e0554a',
+          strokeWidth: 2,
+          vectorEffect: 'non-scaling-stroke',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        })),
+        draftStroke === null
+          ? null
+          : h('polyline', {
+            points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
+            fill: 'none',
+            stroke: '#e0554a',
+            strokeWidth: 2,
+            vectorEffect: 'non-scaling-stroke',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          })
+      )
+
       const masksLayer = overlay
         ? h('div', {
           className: 'md-overlay-layer',
@@ -3893,6 +4019,25 @@ window.__ModuleLoader__.load({
               }, format('overlayBlocks'))
               : null,
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              'aria-pressed': annotTool === 'pen' ? 'true' : 'false',
+              title: format('annotHint'),
+              onClick: () => setAnnotTool(value => (value === 'pen' ? '' : 'pen')),
+            }, format('annotPen')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
+              title: format('annotEraseHint'),
+              onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
+            }, format('annotErase')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: strokes.length === 0,
+              title: format('annotClearHint'),
+              onClick: () => setStrokes([]),
+            }, format('annotClear')),
+            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
               className: 'md-reader-lang',
@@ -4053,6 +4198,7 @@ window.__ModuleLoader__.load({
                 onError: props.onError,
                 children: [
                   masksLayer,
+                  annotLayer,
                   h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
                 ],
               })
@@ -4548,6 +4694,8 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page { display: block; }
+.md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
+.md-annot[data-tool="pen"], .md-annot[data-tool="erase"] { pointer-events: auto; cursor: crosshair; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
 .md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
