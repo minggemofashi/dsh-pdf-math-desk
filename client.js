@@ -2858,13 +2858,16 @@ window.__ModuleLoader__.load({
       const task = useRef(null)
 
       useEffect(() => {
-        if (props.doc === null || props.doc === undefined) return undefined
+        // Measure only pages near the viewport: opening a 300-page chapter used
+        // to parse every page just to reserve heights. Far pages keep the
+        // 240px placeholder until they come into the prefetch band.
+        if (props.doc === null || props.doc === undefined || !visible) return undefined
         let cancelled = false
         void props.doc.getPage(props.pageNumber).then(page => {
           if (!cancelled) setBaseHeight(page.getViewport({ scale: 1 }).height)
         }).catch(() => {})
         return () => { cancelled = true }
-      }, [props.doc, props.pageNumber])
+      }, [props.doc, props.pageNumber, visible])
 
       // Render lazily: a long chapter must not paint every page up front.
       useEffect(() => {
