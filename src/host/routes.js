@@ -433,6 +433,27 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/translate-cancel`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const jobId = typeof body.job === 'string' ? body.job : ''
+          if (!/^tr-[a-z0-9]+$/.test(jobId)) {
+            fail(response, 400, 'bad-job', '任务编号不合法')
+            return
+          }
+          await mkdir(join(config.dataDir, 'translate-jobs'), { recursive: true })
+          await writeFile(join(config.dataDir, 'translate-jobs', `${jobId}.cancel`), '1', 'utf8')
+          sendJson(response, 200, { ok: true })
+        } catch (error) {
+          fail(response, 500, 'cancel-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/translate-page`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')

@@ -6,6 +6,7 @@
  * conversations no longer cancels the work.
  * @module dsh-pdf-math-desk/translate-job
  */
+import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -96,6 +97,9 @@ export async function startChapterJob(options) {
       let next = 0
       const worker = async () => {
         while (next < files.length) {
+          if (existsSync(join(options.jobDir, `${jobId}.cancel`))) {
+            throw new Error('翻译已取消')
+          }
           const index = next
           next += 1
           const image = `data:image/png;base64,${(await readFile(join(temporary, files[index]))).toString('base64')}`

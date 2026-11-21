@@ -177,6 +177,8 @@ window.__ModuleLoader__.load({
       overlayRemove: '点击删除这个框',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
+      translateCancel: '取消翻译',
+      translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
       translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
       translating: '翻译中…',
@@ -480,6 +482,8 @@ window.__ModuleLoader__.load({
       overlayRemove: 'Click to remove this box',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
+      translateCancel: 'Cancel translation',
+      translateCancelled: 'Translation cancelled',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
       translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
       translating: 'Translating…',
@@ -3014,6 +3018,32 @@ window.__ModuleLoader__.load({
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
+      const jobRef = useRef('')
+      const noteKey = `mathdesk:translate-note:${reader.bookId}:${reader.code}`
+      const updateNote = value => {
+        setTranslateNote(value)
+        try {
+          window.localStorage.setItem(noteKey, value)
+        } catch {
+          // storage unavailable
+        }
+      }
+      useEffect(() => {
+        try {
+          const raw = window.localStorage.getItem(noteKey)
+          if (raw !== null) updateNote(raw)
+        } catch {
+          // storage unavailable
+        }
+      }, [noteKey])
+      const cancelTranslate = () => {
+        if (jobRef.current === '') return
+        request('POST', 'translate-cancel', { job: jobRef.current }).catch(() => {})
+        jobRef.current = ''
+        setTranslating(false)
+        setDeskStatus('idle')
+        updateNote(format('translateCancelled'))
+      }
       const [hasTranslation, setHasTranslation] = useState(false)
       const [dualDoc, setDualDoc] = useState(null)
       const dualLeft = useRef(null)
@@ -3053,7 +3083,7 @@ window.__ModuleLoader__.load({
             if (!cancelled) setDualDoc(doc)
           } catch {
             if (!cancelled) {
-              setTranslateNote(format('translateFailed'))
+              updateNote(format('translateFailed'))
               setDual(false)
             }
           }
@@ -3175,16 +3205,16 @@ window.__ModuleLoader__.load({
             if (cancelled) return
             if (state.status === 'done') {
               setHasTranslation(true)
-              setTranslateNote(`${format('translateDone')}：${state.pdf}`)
+              updateNote(`${format('translateDone')}：${state.pdf}`)
               window.localStorage.removeItem(key)
               return
             }
             if (state.status === 'error') {
-              setTranslateNote(`${format('translateFailed')}：${state.error}`)
+              updateNote(`${format('translateFailed')}：${state.error}`)
               window.localStorage.removeItem(key)
               return
             }
-            setTranslateNote(`${format('translating')} ${state.done}/${state.total}`)
+            updateNote(`${format('translating')} ${state.done}/${state.total}`)
             setTimeout(() => { void tick() }, 2000)
           } catch {
             // job file may be gone; stop watching
@@ -3261,7 +3291,7 @@ window.__ModuleLoader__.load({
                 best = page
               }
             })
-            if (best !== null && best !== reader.page) props.onPage(best)
+            if (best !== null && best !== reader.page) props.onVisible(best)
           }, 180)
         }
         stage.addEventListener('scroll', onScroll, { passive: true })
@@ -3283,7 +3313,7 @@ window.__ModuleLoader__.load({
         if (translating || reader.phase !== 'ready') return
         setTranslating(true)
         setDeskStatus('busy')
-        setTranslateNote(format('translating'))
+        updateNote(format('translating'))
         try {
           const started = await request('POST', 'translate-chapter', {
             book: reader.bookId,
@@ -3292,6 +3322,7 @@ window.__ModuleLoader__.load({
           })
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
           const jobId = started.jobId
+          jobRef.current = jobId
           try {
             window.localStorage.setItem(`mathdesk:job:${reader.bookId}:${reader.code}`, jobId)
           } catch {
@@ -3308,18 +3339,19 @@ window.__ModuleLoader__.load({
               }
             }
             if (state.status === 'done') {
-              setTranslateNote(`${format('translateDone')}：${state.pdf}`)
+              updateNote(`${format('translateDone')}：${state.pdf}`)
               break
             }
             if (state.status === 'error') throw new Error(state.error === '' ? '翻译失败' : state.error)
-            setTranslateNote(`${format('translating')} ${state.done}/${state.total}`)
+            updateNote(`${format('translating')} ${state.done}/${state.total}`)
           }
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           setDeskStatus('error')
           setTimeout(() => setDeskStatus('idle'), 8000)
-          setTranslateNote(`${format('translateFailed')}：${message}`)
+          updateNote(`${format('translateFailed')}：${message}`)
         } finally {
+          jobRef.current = ''
           setTranslating(false)
         }
       }
@@ -3493,7 +3525,13 @@ window.__ModuleLoader__.load({
               }, `＋ ${format(`mode.${mode}`)}`))
             )
         ),
-        translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' }, translateNote),
+        translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' },
+          h('span', null, translateNote),
+          translating ? h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            onClick: cancelTranslate,
+          }, format('translateCancel')) : null
+        ),
         h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
           dual && dualDoc === null
             ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
@@ -4149,7 +4187,7 @@ window.__ModuleLoader__.load({
 .md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .12s ease; }
 .md-reader-colhead:hover { opacity: 1; }
 .md-hidden { display: none; }
-.md-desk-mark { position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 50%; }
+.md-desk-mark { position: absolute; right: -4px; top: -2px; width: 7px; height: 7px; border-radius: 50%; }
 .md-desk-done { background: #2ecc71; }
 .md-desk-error { background: #e74c3c; }
 .md-desk-spin { background: transparent; border: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); border-top-color: var(--dsw-alias-brand-primary); width: 8px; height: 8px; animation: md-desk-spin .8s linear infinite; }
