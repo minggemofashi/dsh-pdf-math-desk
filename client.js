@@ -3004,11 +3004,12 @@ window.__ModuleLoader__.load({
 .md-shelf-head { display: flex; flex-direction: column; gap: 4px; }
 .md-heading { margin: 0; font-size: 17px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-shelf-sub { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
-.md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: none; }
+.md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: stretch; max-width: none; }
 .md-libraries > .md-shelf-head, .md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p, .md-libraries > .md-details, .md-libraries > .md-library-tools { grid-column: 1 / -1; }
 .md-libraries > .md-library-add { grid-column: 1; }
 .md-libraries > .md-library-toolcell { grid-column: 2; }
-.md-library-toolcell { display: flex; flex-direction: column; gap: 12px; }
+.md-library-toolcell { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+.md-library-toolcell > .md-tool-card { flex: 1 1 0; }
 .md-tool-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
 .md-libraries > .md-library-samples { grid-column: 2; }
 .md-library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -3036,7 +3037,8 @@ window.__ModuleLoader__.load({
 .md-manual-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-manual-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .md-library-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.md-library-add { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
+.md-library-add { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
+.md-library-add .md-library-form { margin-top: auto; }
 .md-book-head { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 16px; }
 .md-book-title { margin: 0; font-size: 18px; font-weight: 600; }
 .md-book-title:focus-visible { outline-offset: 4px; }
