@@ -179,6 +179,10 @@ window.__ModuleLoader__.load({
       sideMenuFollowReader: '跟随阅读器缩放',
       sideMenuReload: '重新加载文件',
       sideMenuClose: '关闭预览',
+      sideMenuTools: '工具',
+      sideMenuClearAnnots: '清除本页标注',
+      sideMenuClearMasks: '清空本页框选',
+      sideMenuSessions: '跳到会话',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
@@ -541,6 +545,10 @@ window.__ModuleLoader__.load({
       sideMenuFollowReader: 'Follow the reader zoom',
       sideMenuReload: 'Reload the file',
       sideMenuClose: 'Close the preview',
+      sideMenuTools: 'Tools',
+      sideMenuClearAnnots: 'Clear this page’s ink',
+      sideMenuClearMasks: 'Clear this page’s boxes',
+      sideMenuSessions: 'Jump to a conversation',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
@@ -1687,7 +1695,7 @@ window.__ModuleLoader__.load({
      */
     const VIEW_PUBLISHED = {
       reader: ['page', 'scale', 'mode', 'variant', 'docRev', 'annotRev'],
-      side: ['page', 'mode'],
+      side: ['page', 'mode', 'annotRev'],
     }
 
     /** One chapter's shared view state, keyed `book:code`. */
@@ -1763,6 +1771,22 @@ window.__ModuleLoader__.load({
       return viewLink(bookId, code).state
     }
 
+    /**
+     * Announce an annotation or box edit: the shared counter goes up and the
+     * other end re-reads that page from storage. Both ends edit, so neither can
+     * own the counter; the link does.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'reader'|'side'} origin - which end edited.
+     * @returns {number} the new counter value, for the editor to remember.
+     */
+    function bumpAnnotRev(bookId, code, origin) {
+      const link = viewLink(bookId, code)
+      const next = (Number(link.state.annotRev) || 0) + 1
+      syncView(bookId, code, { annotRev: next }, origin)
+      return next
+    }
+
     /** A chapter the side preview asked the page to open; the page consumes it on mount. */
     let pendingDeskOpen = null
     const deskOpenListeners = new Set()
@@ -1798,6 +1822,40 @@ window.__ModuleLoader__.load({
     }
 
     const deskStatus = { value: 'idle', job: '', listeners: new Set() }
+
+    /** A chapter session the side preview asked the page to resume or create. */
+    let pendingDeskSession = null
+    const deskSessionListeners = new Set()
+
+    /**
+     * Ask for a chapter's 提取/答疑/习题 conversation. The workbench owns session
+     * creation (title, outline, workspace), so the request goes through it; the
+     * panel is switched first because its page must be mounted to answer.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'extract'|'qa'|'exercise'} mode - which conversation.
+     * @returns {void}
+     */
+    function requestDeskSession(bookId, code, mode) {
+      const layout = clientContext === null ? null : clientContext.get('layout')
+      if (layout !== null && layout !== undefined && typeof layout.selectPanel === 'function') {
+        try {
+          layout.selectPanel(PANEL_ID)
+        } catch (error) {
+          trace('side', 'selectPanel failed', String(error))
+        }
+      }
+      const target = { bookId, code, mode }
+      pendingDeskSession = target
+      const listeners = [...deskSessionListeners]
+      listeners.forEach(listener => {
+        try {
+          listener(target)
+        } catch (error) {
+          trace('side', 'session request failed', String(error))
+        }
+      })
+    }
 
     /**
      * Publish the plugin's busy/done state to the sidebar icon.
@@ -3532,23 +3590,29 @@ window.__ModuleLoader__.load({
       const [retryAction, setRetryAction] = useState(null)
       const [exportJob, setExportJob] = useState('')
       // Bumped whenever the translated/overlay file on disk changes, so the
-      // reader (and later the side preview) reloads the same new bytes.
+      // reader (and the side preview) reloads the same new bytes.
       const [docRev, setDocRev] = useState(0)
-      // Bumped on every annotation/mask edit; the side preview redraws from it.
-      const [annotRev, setAnnotRev] = useState(0)
       const maskWritten = useRef('')
       const annotWritten = useRef('')
-      // Both counters travel to the right column as they change. They are state
-      // here, so a bump from any handler reaches the preview without touching
-      // every call site.
+      // Annotation edits are shared: each end persists, then announces, and the
+      // other end re-reads that page. `remoteAnnotRev` is this end's reload signal
+      // and the two flags keep a reload from being announced back.
+      const [remoteAnnotRev, setRemoteAnnotRev] = useState(0)
+      const seenAnnotRev = useRef(0)
+      useEffect(() => {
+        seenAnnotRev.current = Number(readView(reader.bookId, reader.code).annotRev) || 0
+        return subscribeView(reader.bookId, reader.code, state => {
+          if (state.origin !== 'side') return
+          const next = Number(state.annotRev) || 0
+          if (next <= seenAnnotRev.current) return
+          seenAnnotRev.current = next
+          setRemoteAnnotRev(value => value + 1)
+        })
+      }, [reader.bookId, reader.code])
       useEffect(() => {
         if (docRev === 0) return
         syncView(reader.bookId, reader.code, { docRev }, 'reader')
       }, [docRev, reader.bookId, reader.code])
-      useEffect(() => {
-        if (annotRev === 0) return
-        syncView(reader.bookId, reader.code, { annotRev }, 'reader')
-      }, [annotRev, reader.bookId, reader.code])
       const cancelExport = () => {
         if (exportJob === '') return
         void request('POST', 'export-cancel', { job: exportJob }).catch(() => {})
@@ -3715,10 +3779,23 @@ window.__ModuleLoader__.load({
         } catch {
           setMasks([])
         }
-      }, [maskKey])
+      }, [maskKey, remoteAnnotRev])
       useEffect(() => {
+        // A write whose bytes already match storage is a reload (the page's own
+        // load, or the other end's edit), not an edit of ours to announce.
+        const serialized = JSON.stringify(masks)
+        let stored = null
         try {
-          window.localStorage.setItem(maskKey, JSON.stringify(masks))
+          stored = window.localStorage.getItem(maskKey)
+        } catch {
+          // storage unavailable: fall through and try to write anyway
+        }
+        if (stored === serialized) {
+          maskWritten.current = maskKey
+          return
+        }
+        try {
+          window.localStorage.setItem(maskKey, serialized)
         } catch {
           // storage unavailable
         }
@@ -3728,7 +3805,7 @@ window.__ModuleLoader__.load({
           maskWritten.current = maskKey
           return
         }
-        setAnnotRev(value => value + 1)
+        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }, [maskKey, masks])
       useEffect(() => {
         if (!overlay || dualDoc === null) {
@@ -3845,20 +3922,31 @@ window.__ModuleLoader__.load({
           setStrokes([])
         }
         annotLoaded.current = true
-      }, [annotKey])
+      }, [annotKey, remoteAnnotRev])
       useEffect(() => {
         if (!annotLoaded.current) return
+        // Same rule as the boxes: matching bytes mean a reload, not an edit.
+        const serialized = JSON.stringify(strokes)
+        let stored = null
         try {
-          window.localStorage.setItem(annotKey, JSON.stringify(strokes))
+          stored = window.localStorage.getItem(annotKey)
+        } catch {
+          // storage unavailable: fall through and try to write anyway
+        }
+        if (stored === serialized) {
+          annotWritten.current = annotKey
+          return
+        }
+        try {
+          window.localStorage.setItem(annotKey, serialized)
         } catch {
           // storage unavailable
         }
-        // Same rule as the masks: the page's first write is its own load.
         if (annotWritten.current !== annotKey) {
           annotWritten.current = annotKey
           return
         }
-        setAnnotRev(value => value + 1)
+        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }, [annotKey, strokes])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
@@ -3982,6 +4070,9 @@ window.__ModuleLoader__.load({
           updateNote(format('importAnnotsDone', { n: count }))
           setRetryAction(null)
           setDocRev(value => value + 1)
+          // The current page's state already matched storage, so the write effect
+          // stayed silent; the import is still an edit the other end must see.
+          seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('importAnnotsFailed')}：${message}`)
@@ -5359,6 +5450,10 @@ window.__ModuleLoader__.load({
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
 .md-side .md-reader-state { margin: 16px; }
 .md-annot-readonly { pointer-events: none; }
+/* The side preview's own ink: only the tool layer takes pointer events. */
+.md-annot-edit { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.md-annot-edit[data-tool='erase'] { cursor: cell; }
+.md-annot-edit[data-tool='mask'] { cursor: copy; }
 /* The reader's overlay boxes, read-only: below the ink, above the page. */
 .md-masks-readonly { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .md-masks-readonly .md-mask { border-color: color-mix(in srgb, rgb(40, 140, 235) 55%, transparent); }
@@ -5407,6 +5502,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const bookId = target === null ? '' : target.bookId
       const code = target === null ? '' : target.code
       const revision = navigation.revision ?? 0
+      // The chapter's conversations, for the 提取/答疑/习题 jumps.
+      const sessionList = useSessionList()
+      const archivedIds = useArchivedIds()
       const [doc, setDoc] = useState(null)
       const [count, setCount] = useState(0)
       const [page, setPage] = useState(1)
@@ -5440,6 +5538,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Publishing starts only after the opening view has been adopted, so the
       // first render cannot push a default page 1 over the reader's page.
       const [started, setStarted] = useState(false)
+      // Annotation and box editing: this end edits too, so both the tool and the
+      // in-progress shapes live here and the shared counter tells the reader.
+      const [tool, setTool] = useState('')
+      const [draftStroke, setDraftStroke] = useState(null)
+      const [maskDraft, setMaskDraft] = useState(null)
+      const strokesRef = useRef(strokes)
+      const masksRef = useRef(masks)
+      strokesRef.current = strokes
+      masksRef.current = masks
+      const draftRef = useRef(null)
+      const maskDraftRef = useRef(null)
+      const maskStartRef = useRef(null)
+      const erasingRef = useRef(false)
+      const boxRef = useRef(null)
+      const boxSize = useRef({ width: 400, height: 600 })
+      const seenAnnotRev = useRef(0)
       const stage = useRef(null)
       const slots = useRef(new Map())
       const visibleTimer = useRef(null)
@@ -5448,6 +5562,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const pageRef = useRef(1)
       limits.current = count
       pageRef.current = page
+      const sessionListRef = useRef(sessionList)
+      const archivedRef = useRef(archivedIds)
+      sessionListRef.current = sessionList
+      archivedRef.current = archivedIds
 
       // Start where the reader is; the opener's page is the fallback for a tab
       // restored before either end has published anything.
@@ -5559,7 +5677,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The boxes reveal the overlay (or translated) page, the same documents the
       // reader uses for the same job. Loaded once per file version, and only when
       // the current page actually has boxes.
-      const wantsMaskDoc = masks.length > 0 && shownVariant !== 'translated'
+      const wantsMaskDoc = (masks.length > 0 || tool === 'mask') && shownVariant !== 'translated'
       useEffect(() => {
         if (!wantsMaskDoc || bookId === '' || code === '') return undefined
         const key = `${bookId}|${code}|${docRev}`
@@ -5601,6 +5719,166 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (maskLoading.current === key) maskLoading.current = ''
         }
       }, [wantsMaskDoc, bookId, code, docRev])
+
+      /* ------------------------------------------------------- editing -- */
+      // Both ends write the same keys, so every local edit persists first and
+      // then announces itself; the other end re-reads that page.
+      const commitPage = (kind, list, pageNumber) => {
+        try {
+          window.localStorage.setItem(`mathdesk:${kind}:${bookId}:${code}:${pageNumber}`, JSON.stringify(list))
+        } catch {
+          // storage unavailable: the edit stays on screen only
+        }
+        seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
+      }
+      const commitStrokes = next => {
+        strokesRef.current = next
+        setStrokes(next)
+        commitPage('annots', next, pageRef.current)
+      }
+      const commitMasks = next => {
+        masksRef.current = next
+        setMasks(next)
+        commitPage('masks', next, pageRef.current)
+      }
+
+      // Point in page coordinates (0..1), measured against the editing layer,
+      // which is exactly the page box at any zoom. The box width is remembered so
+      // the eraser's pixel tolerance can become page units.
+      const pointOf = event => {
+        const node = boxRef.current
+        if (node === null) return null
+        const rect = node.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return null
+        boxSize.current = { width: rect.width, height: rect.height }
+        return [
+          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        ]
+      }
+      const toleranceFor = widthPx => (8 + widthPx / 2) / Math.max(1, boxSize.current.width)
+      const strokeHits = (stroke, point) => {
+        const points = stroke.points ?? []
+        const reach = toleranceFor(Number(stroke.width) || 2)
+        for (let index = 1; index < points.length; index += 1) {
+          const [x1, y1] = points[index - 1]
+          const [x2, y2] = points[index]
+          const dx = x2 - x1
+          const dy = y2 - y1
+          const length = dx * dx + dy * dy
+          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
+          const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
+          if (dist < reach) return true
+        }
+        return false
+      }
+      const hitTest = (entry, point) => {
+        if (entry.kind === 'text') {
+          const slack = toleranceFor(2)
+          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
+          return point[0] >= entry.x - slack && point[0] <= entry.x + width + slack
+            && point[1] >= entry.y - 0.02 - slack && point[1] <= entry.y + 0.035 + slack
+        }
+        return strokeHits(entry, point)
+      }
+      const eraseAt = point => {
+        const next = strokesRef.current.filter(entry => !hitTest(entry, point))
+        if (next.length !== strokesRef.current.length) commitStrokes(next)
+      }
+      const editDown = event => {
+        if (tool === '') return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (tool === 'erase') {
+          erasingRef.current = true
+          eraseAt(point)
+          return
+        }
+        if (tool === 'mask') {
+          maskStartRef.current = point
+          maskDraftRef.current = { x: point[0], y: point[1], w: 0, h: 0 }
+          setMaskDraft(maskDraftRef.current)
+          return
+        }
+        draftRef.current = { kind: 'stroke', points: [point], color: '#1f1f1f', width: 2 }
+        setDraftStroke(draftRef.current)
+      }
+      const editMove = event => {
+        if (tool === 'erase' && erasingRef.current) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          eraseAt(point)
+          return
+        }
+        if (tool === 'mask' && maskStartRef.current !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          const start = maskStartRef.current
+          maskDraftRef.current = {
+            x: Math.min(start[0], point[0]),
+            y: Math.min(start[1], point[1]),
+            w: Math.abs(point[0] - start[0]),
+            h: Math.abs(point[1] - start[1]),
+          }
+          setMaskDraft(maskDraftRef.current)
+          return
+        }
+        if (draftRef.current === null) return
+        const point = pointOf(event)
+        if (point === null) return
+        const current = draftRef.current
+        const last = current.points[current.points.length - 1]
+        if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return
+        draftRef.current = { ...current, points: [...current.points, point] }
+        setDraftStroke(draftRef.current)
+      }
+      const editUp = () => {
+        erasingRef.current = false
+        if (tool === 'mask') {
+          const start = maskStartRef.current
+          const draft = maskDraftRef.current
+          maskStartRef.current = null
+          maskDraftRef.current = null
+          setMaskDraft(null)
+          if (draft === null || start === null) return
+          if (draft.w > 0.02 && draft.h > 0.02) {
+            commitMasks([...masksRef.current, draft])
+            return
+          }
+          // A click without a drag removes the box under the pointer.
+          const next = masksRef.current.filter(mask => !(start[0] >= mask.x && start[0] <= mask.x + mask.w
+            && start[1] >= mask.y && start[1] <= mask.y + mask.h))
+          if (next.length !== masksRef.current.length) commitMasks(next)
+          return
+        }
+        const draft = draftRef.current
+        draftRef.current = null
+        setDraftStroke(null)
+        if (draft !== null && draft.points.length > 1) commitStrokes([...strokesRef.current, draft])
+      }
+      const toggleTool = name => setTool(current => (current === name ? '' : name))
+
+      // A chapter's conversation for one mode, newest first, from the session list.
+      const findSession = mode => {
+        const list = sessionListRef.current
+        if (list === null || list === undefined || list.phase !== 'ready' || !Array.isArray(list.ids)) return null
+        let found = null
+        for (const id of list.ids) {
+          if (archivedRef.current.has(id)) continue
+          const summary = list.byId === undefined ? undefined : list.byId[id]
+          if (summary === undefined || summary.origin === 'subagent') continue
+          const parsed = parseSessionTitle(summary.title)
+          if (parsed === null || parsed.mode !== mode) continue
+          if (parsed.bookKey !== bookId || parsed.code !== code) continue
+          if (found === null || (Number(summary.updatedAt) || 0) > (Number(found.updatedAt) || 0)) {
+            found = { id, updatedAt: summary.updatedAt }
+          }
+        }
+        return found === null ? null : found.id
+      }
 
       // One page fits the column: page 1's width at scale 1 against the stage's
       // content width. Recomputed whenever either side of that ratio changes, so
@@ -5767,7 +6045,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (state.mode === 'single' || state.mode === 'continuous') setMode(state.mode)
           if (state.variant === '' || state.variant === 'translated') setShownVariant(state.variant)
           if (typeof state.docRev === 'number') setDocRev(current => (state.docRev > current ? state.docRev : current))
-          if (typeof state.annotRev === 'number') setAnnotRev(current => (state.annotRev > current ? state.annotRev : current))
+          const annot = Number(state.annotRev) || 0
+          if (annot > seenAnnotRev.current) {
+            seenAnnotRev.current = annot
+            setAnnotRev(annot)
+          }
         })
       }, [bookId, code])
 
@@ -5801,9 +6083,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
         }, entry.text)))
 
-      // The boxes, read-only: each one clips the translated page to its own
-      // region, exactly as the reader's overlay layer does.
-      const masksLayer = masks.length === 0 || maskDoc === null || shownVariant === 'translated'
+      // The boxes: each one clips the translated page to its own region, exactly
+      // as the reader's overlay layer does. The frame shows as soon as a box
+      // exists, even while the translated page is still loading.
+      const masksLayer = masks.length === 0 || shownVariant === 'translated'
         ? null
         : h('div', { className: 'md-masks-readonly', 'aria-hidden': true },
           masks.map((mask, index) => h('div', {
@@ -5815,7 +6098,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               width: `${mask.w * 100}%`,
               height: `${mask.h * 100}%`,
             },
-          }, h(OverlayMaskPage, {
+          }, maskDoc === null ? null : h(OverlayMaskPage, {
             doc: maskDoc,
             pageNumber: page,
             zoom: renderScale,
@@ -5829,12 +6112,61 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             },
           }))))
 
+      // The editing surface: an invisible page-sized layer that only takes pointer
+      // events while a tool is picked, so scrolling stays untouched otherwise.
+      const editLayer = tool === ''
+        ? null
+        : h('div', {
+          className: 'md-annot md-annot-edit',
+          'data-tool': tool,
+          ref: boxRef,
+          onPointerDown: editDown,
+          onPointerMove: editMove,
+          onPointerUp: editUp,
+          onPointerLeave: editUp,
+          onPointerCancel: editUp,
+        },
+          draftStroke === null
+            ? null
+            : h('svg', {
+              className: 'md-annot-ink',
+              viewBox: '0 0 1 1',
+              preserveAspectRatio: 'none',
+              'aria-hidden': true,
+            }, h('polyline', {
+              points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: draftStroke.color,
+              strokeWidth: draftStroke.width,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })),
+          maskDraft === null
+            ? null
+            : h('div', {
+              className: 'md-mask md-mask-draft',
+              style: {
+                left: `${maskDraft.x * 100}%`,
+                top: `${maskDraft.y * 100}%`,
+                width: `${maskDraft.w * 100}%`,
+                height: `${maskDraft.h * 100}%`,
+              },
+            }))
+
+      // Feedback from a menu action that runs outside a component message line.
+      const notifySide = text => {
+        const menus = clientContext === null ? null : clientContext.get('contextMenus')
+        if (menus !== null && menus !== undefined && typeof menus.notify === 'function') menus.notify(text)
+      }
+
       // The preview's actions live in the shared context menu. It is registered
       // once for the whole target kind and asks the mounted preview for actions,
       // so the menu always reflects the live page, mode and zoom.
       const menuState = useRef(null)
       menuState.current = {
-        page, count, mode, autoFit, follow, phase, bookId, code, target,
+        page, count, mode, autoFit, follow, phase, bookId, code, target, tool,
+        strokes: strokes.length, masks: masks.length,
         tabActions: info.tab.actions,
       }
       const menuActions = useCallback(() => {
@@ -5856,6 +6188,29 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               const wanted = Number.parseInt(answer, 10)
               if (Number.isFinite(wanted)) goPage(wanted)
             },
+          },
+          {
+            id: 'tools',
+            label: format('sideMenuTools'),
+            separatorBefore: true,
+            children: [
+              { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, disabled: state.mode !== 'single', run: () => toggleTool('pen') },
+              { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, disabled: state.mode !== 'single', run: () => toggleTool('erase') },
+              { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, disabled: state.mode !== 'single', run: () => toggleTool('mask') },
+              {
+                id: 'clear-annots',
+                label: format('sideMenuClearAnnots'),
+                disabled: state.strokes === 0,
+                separatorBefore: true,
+                run: () => commitStrokes([]),
+              },
+              {
+                id: 'clear-masks',
+                label: format('sideMenuClearMasks'),
+                disabled: state.masks === 0,
+                run: () => commitMasks([]),
+              },
+            ],
           },
           {
             id: 'zoom',
@@ -5881,6 +6236,25 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             run: () => setMode(state.mode === 'single' ? 'continuous' : 'single'),
           },
           { id: 'reload', label: format('sideMenuReload'), separatorBefore: true, run: () => setDocRev(value => value + 1) },
+          {
+            id: 'sessions',
+            label: format('sideMenuSessions'),
+            separatorBefore: true,
+            children: MODES.map(mode => {
+              const found = findSession(mode)
+              return {
+                id: `session-${mode}`,
+                label: `${found === null ? '＋ ' : ''}${format(`mode.${mode}`)}`,
+                run: () => {
+                  if (found !== null) {
+                    if (!openHostSession(found)) notifySide(format('sessionUnavailable'))
+                    return
+                  }
+                  requestDeskSession(bookId, code, mode)
+                },
+              }
+            }),
+          },
           {
             id: 'desk',
             label: format('sideOpenInDesk'),
@@ -5955,7 +6329,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onVisible,
               registerSlot,
               onError,
-              children: masksLayer === null ? annotLayer : [masksLayer, annotLayer],
+              children: masksLayer === null
+                ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
+                : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
             })
 
       return h('div', {
@@ -5981,6 +6357,34 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: count === 0 || page >= count || phase !== 'ready',
             onClick: () => goPage(page + 1),
           }, '›'),
+          h('span', { className: 'md-side-gap' }),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'pen' ? 'true' : 'false',
+            title: format('annotHint'),
+            'aria-label': format('annotPen'),
+            disabled: mode !== 'single',
+            onClick: () => toggleTool('pen'),
+          }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'erase' ? 'true' : 'false',
+            title: format('annotEraseHint'),
+            'aria-label': format('annotErase'),
+            disabled: mode !== 'single',
+            onClick: () => toggleTool('erase'),
+          }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'mask' ? 'true' : 'false',
+            title: format('overlayHint'),
+            'aria-label': format('overlayToggle'),
+            disabled: mode !== 'single',
+            onClick: () => toggleTool('mask'),
+          }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
           h('span', { className: 'md-side-gap' }),
           h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
             `${Math.round(shown * 100)}%`),
@@ -6104,6 +6508,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [reloadKey, setReloadKey] = useState(0)
       // A chapter the right column asked to open, held until the catalog knows it.
       const [deskRequest, setDeskRequest] = useState(null)
+      // A 提取/答疑/习题 conversation the right column asked for, same deal.
+      const [sessionRequest, setSessionRequest] = useState(null)
       const saveTimer = useRef(null)
       const noticeTimer = useRef(null)
       const bodyRef = useRef(null)
@@ -7217,6 +7623,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         openFromSide(deskRequest)
       }, [catalog, deskRequest, openFromSide])
 
+      // The right column's 跳到会话 arrives on the same pattern; the request is
+      // processed after resumeOrCreate is defined below, because it needs it.
+      useEffect(() => {
+        const listener = target => setSessionRequest(target)
+        deskSessionListeners.add(listener)
+        if (pendingDeskSession !== null) {
+          const target = pendingDeskSession
+          pendingDeskSession = null
+          listener(target)
+        }
+        return () => { deskSessionListeners.delete(listener) }
+      }, [])
+
       // A double click's first click already toggled the row; `detail > 1` is its second click.
       const onClickRow = useCallback((event, chapter) => {
         if (Date.now() < clickGuardRef.current) return
@@ -7838,6 +8257,29 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           continuation: nextContinuation(book.id, chapter.code, mode),
         })
       }, [book, catalog, createSession, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
+
+      // A 提取/答疑/习题 request from the right column: switch the page to that
+      // book first, then let this effect run again with the chapter list in hand.
+      useEffect(() => {
+        if (sessionRequest === null || catalog === null) return
+        const entry = catalog.books.find(candidate => candidate.id === sessionRequest.bookId)
+        const chapter = entry === undefined
+          ? undefined
+          : (entry.chapters ?? []).find(candidate => candidate.code === sessionRequest.code)
+        if (entry === undefined || chapter === undefined) {
+          setSessionRequest(null)
+          showNotice(format('sideForeign'))
+          return
+        }
+        if (book === null || book.id !== sessionRequest.bookId) {
+          if (workRef.current === null || workRef.current.bookId !== sessionRequest.bookId) {
+            openBook(sessionRequest.bookId)
+          }
+          return
+        }
+        setSessionRequest(null)
+        void resumeOrCreate(chapter, sessionRequest.mode, { jumpOnCreate: true })
+      }, [book, catalog, openBook, resumeOrCreate, sessionRequest, showNotice])
 
       /**
        * Summarize one chapter's conversations into an outline file.
