@@ -1571,11 +1571,11 @@ window.__ModuleLoader__.load({
             h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
             h('div', { className: 'md-settings-row' },
               h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
+              envTools.python ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
             ),
             h('div', { className: 'md-settings-row' },
               h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
+              envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
             )
           ),
           h('div', { className: 'md-settings-section' },
@@ -1799,7 +1799,7 @@ window.__ModuleLoader__.load({
           h('h3', { className: 'md-subheading' }, format('envTitle')),
           h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
           h('div', { className: 'md-library-tools' },
-            h('button', {
+            envTools.python ? null : h('button', {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 try {
@@ -1809,7 +1809,7 @@ window.__ModuleLoader__.load({
                 }
               },
             }, `${format('envPython')}（${format('envPythonSize')}）`),
-            h('button', {
+            envTools.tex ? null : h('button', {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 try {
