@@ -4964,9 +4964,6 @@ window.__ModuleLoader__.load({
         saveReaderPage(reader.bookId, reader.code, reader.page)
       }, [reader.bookId, reader.code, reader.page])
       useEffect(() => {
-        if (dual && rightScale === null) setRightScale(reader.scale ?? 1)
-      }, [dual, reader.scale, rightScale])
-      useEffect(() => {
         if (!dual && !overlay) {
           overlaySource.current = ''
           setOverlayNote('')
@@ -5587,17 +5584,10 @@ window.__ModuleLoader__.load({
       // "auto" must fit both the width and the height of that column, not the
       // whole stage (which made 100% pages overflow sideways).
       const [dualFit, setDualFit] = useState({ left: null, right: null })
-      // Page size at scale 1, kept next to the fit so the button can recompute a
-      // fit at click time even if the automatic value is stale.
-      const dualBase = useRef({ left: null, right: null })
-      const fitColumn = side => {
-        const column = side === 'left' ? dualLeft.current : dualRight.current
-        const base = dualBase.current[side]
-        if (column === null || base === null || base === undefined) return null
-        const width = (column.clientWidth - 24) / base.width
-        const height = (column.clientHeight - 52) / base.height
-        return Math.max(0.15, Math.min(3, Math.min(width, height)))
-      }
+      // Auto fit is **width only**: the page fills the column's width and the rest
+      // scrolls vertically. Each column keeps its own zoom (null = automatic), so
+      // the two columns never share a scale and the button is just "back to auto".
+      const [dualLeftScale, setDualLeftScale] = useState(null)
       useEffect(() => {
         if (!dual || dualDoc === null) return undefined
         const leftDoc = reader.variant === 'translated' ? dualDoc : props.doc
@@ -5608,10 +5598,8 @@ window.__ModuleLoader__.load({
         let leftBase = null
         let rightBase = null
         const fitOf = (column, base) => {
-          if (column === null || base === null || base.width === 0 || base.height === 0) return null
-          const width = (column.clientWidth - 24) / base.width
-          const height = (column.clientHeight - 52) / base.height
-          return Math.max(0.15, Math.min(3, Math.min(width, height)))
+          if (column === null || base === null || base.width === 0) return null
+          return Math.max(0.15, Math.min(3, (column.clientWidth - 24) / base.width))
         }
         const measure = () => {
           if (cancelled) return
@@ -5629,7 +5617,6 @@ window.__ModuleLoader__.load({
             if (cancelled) return
             leftBase = leftPage.getViewport({ scale: 1 })
             rightBase = rightPage.getViewport({ scale: 1 })
-            dualBase.current = { left: leftBase, right: rightBase }
             measure()
             if (typeof ResizeObserver === 'function') {
               observer = new ResizeObserver(measure)
@@ -5645,12 +5632,11 @@ window.__ModuleLoader__.load({
           if (observer !== null) observer.disconnect()
         }
       }, [dual, dualDoc, reader.variant, props.doc])
-      // Entering the bilingual view starts at the per-column fit, not at the
-      // single-stage scale the single view applied when it opened.
+      // The columns always start automatic; toggling the bilingual view resets any
+      // manual zoom so a fresh open fits the width again.
       useEffect(() => {
-        if (dual) props.onFit()
-        // props.onFit is stable; running on every render would fight the zoom.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        setDualLeftScale(null)
+        setRightScale(null)
       }, [dual])
       useEffect(() => {
         setDualRightPage(reader.page)
@@ -6314,44 +6300,17 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'md-reader-coltitle' }, format('dualOriginal')),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => {
-                      if (dual) props.onZoomTo(Math.max(0.2, (reader.scale ?? dualFit.left ?? 1) / 1.2))
-                      else props.onZoomOut()
-                    },
+                    onClick: () => setDualLeftScale(value => Math.max(0.2, (value ?? dualFit.left ?? 1) / 1.2)),
                   }, '−'),
-                  h('span', { className: 'md-reader-scale' }, String(Math.round((reader.scale ?? dualFit.left ?? 1) * 100)) + '%'),
+                  h('span', { className: 'md-reader-scale' }, String(Math.round((dualLeftScale ?? dualFit.left ?? 1) * 100)) + '%'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => {
-                      if (dual) props.onZoomTo(Math.min(3, (reader.scale ?? dualFit.left ?? 1) * 1.2))
-                      else props.onZoomIn()
-                    },
+                    onClick: () => setDualLeftScale(value => Math.min(3, (value ?? dualFit.left ?? 1) * 1.2)),
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => {
-                      // Compute the fit at click time from this column's own box:
-                      // the cached auto value may be stale, and `onFit` alone left
-                      // the original column at its previous scale.
-                      const column = dualLeft.current
-                      const doc = reader.variant === 'translated' ? dualDoc : props.doc
-                      if (column === null || doc === null || doc === undefined) {
-                        props.onFit()
-                        return
-                      }
-                      void (async () => {
-                        try {
-                          const page = await doc.getPage(1)
-                          const base = page.getViewport({ scale: 1 })
-                          const width = (column.clientWidth - 24) / base.width
-                          const height = (column.clientHeight - 52) / base.height
-                          props.onZoomTo(Math.max(0.15, Math.min(3, Math.min(width, height))))
-                        } catch {
-                          props.onFit()
-                        }
-                      })()
-                    },
-                  }, format(dual ? 'readerFitScreen' : 'readerFit'))
+                    onClick: () => setDualLeftScale(null),
+                  }, format('readerFitScreen'))
                 ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? dualDoc : props.doc,
@@ -6360,7 +6319,7 @@ window.__ModuleLoader__.load({
                   code: reader.code,
                   count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
                   page: reader.page,
-                  scale: reader.scale ?? dualFit.left ?? 1,
+                  scale: dualLeftScale ?? dualFit.left ?? 1,
                   rootRef: dualLeft,
                   onVisible: notifyVisible,
                   registerSlot,
@@ -6375,16 +6334,16 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'md-reader-scale' }, format('dualPage', { n: dualRightPage })),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
+                    onClick: () => setRightScale(value => Math.max(0.5, (value ?? dualFit.right ?? 1) - 0.1)),
                   }, '−'),
                   h('span', { className: 'md-reader-scale' }, String(Math.round((rightScale ?? dualFit.right ?? 1) * 100)) + '%'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => setRightScale(value => Math.max(0.5, (value ?? dualFit.right ?? 1) - 0.1)),
+                    onClick: () => setRightScale(value => Math.min(3, (value ?? dualFit.right ?? 1) + 0.1)),
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => setRightScale(fitColumn('right')),
+                    onClick: () => setRightScale(null),
                   }, format('readerFitScreen'))
                 ),
                 h(ContinuousView, {
@@ -9021,16 +8980,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => previous === null ? null : { ...previous, scale: null })
       }, [])
 
-      // Explicit zoom for the bilingual columns: `readerScale` only applies while
-      // the scale is still automatic, so pressing + twice would otherwise do
-      // nothing after the first step.
-      const readerZoomTo = useCallback(scale => {
-        setReader(previous => {
-          if (previous === null) return null
-          return { ...previous, scale: Math.max(0.2, Math.min(4, Math.round(scale * 100) / 100)) }
-        })
-      }, [])
-
       const closeReader = useCallback(() => setReader(null), [])
 
       // Keep the right column's chapter preview on this page and reading mode.
@@ -11204,7 +11153,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onPage: readerPage,
             onZoomIn: () => readerZoom(1.2),
             onZoomOut: () => readerZoom(1 / 1.2),
-            onZoomTo: readerZoomTo,
             onFit: readerFit,
             onMode: readerMode,
             onNewSession: mode => readerNewSession(mode, readerForceNew),

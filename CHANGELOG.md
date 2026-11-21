@@ -2,6 +2,13 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.72.9
+
+- **「适应屏幕」改成只按宽度适应**：页面宽度填满栏，高度超出就上下滚；不再为了“整页可见”把两栏缩得很小。打开双语自动按栏宽适应，表头按钮只是把这个缩放清回自动。
+- **两栏的缩放改为各自本地状态**：原文栏新增 `dualLeftScale`（null = 自动），和译文栏的 `rightScale` 完全对称；不再借用共享的 `reader.scale`/`props.onFit`，这修掉了原文栏按钮点了没反应的根因（之前它清的是共享缩放，原文栏并没有跟着变）。
+- 移除不再使用的 `onZoomTo`/`readerZoomTo` 与右栏继承 `reader.scale` 的副作用；`dualFit` 只按宽度计算，`ResizeObserver` 跟随栏宽重算。
+- README/SIDE-PREVIEW/TESTING 同步。
+
 ## v0.72.8
 
 - **原文栏「适应屏幕」改为点击时直接算**：v0.72.7 里它走 `props.onFit()`（把共享缩放清回自动），但原文栏仍停在原来的缩放，说明自动缩放值/状态没有生效。现在点击时用该栏的 `clientWidth/clientHeight` 和第一页的 `scale:1` 尺寸**当场算出比例**，再 `props.onZoomTo(scale)` 写入一个明确的缩放值；拿不到页面尺寸才退回 `onFit`。右栏同样用当场算出的值 `setRightScale(fit)`。
