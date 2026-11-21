@@ -213,8 +213,8 @@ window.__ModuleLoader__.load({
       envTitle: '排版环境',
       envReady: '已就绪：md 可转 PDF',
       envMissing: '未安装：md→PDF 按钮已隐藏，其余功能正常',
-      envDownload: '下载 TinyTeX（约 100 MB）',
-      envHint: 'TinyTeX 内含 xelatex；解压后把 bin 加入 PATH，重启 DSH 生效。另需 Python 3（仅渲染用）。',
+      envDownload: '下载 TeX Live（约 5 GB）',
+      envHint: '需 TeX Live（含 xelatex、ctex）与 Python 3；安装后把 TeX 的 bin 加入 PATH，重启 DSH 生效。',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -479,8 +479,8 @@ window.__ModuleLoader__.load({
       envTitle: 'Typesetting environment',
       envReady: 'ready: md can render to PDF',
       envMissing: 'missing: md-to-PDF buttons are hidden, everything else works',
-      envDownload: 'Download TinyTeX (~100 MB)',
-      envHint: 'TinyTeX bundles xelatex; unzip and add its bin to PATH, then restart DSH. Python 3 is also needed for rendering.',
+      envDownload: 'Download TeX Live (~5 GB)',
+      envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH, then restart DSH.',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -1647,7 +1647,7 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 try {
-                  window.open('https://github.com/rstudio/tinytex-releases/releases', '_blank', 'noopener')
+                  window.open('https://tug.org/texlive/acquire.html', '_blank', 'noopener')
                 } catch {
                   // popup blocked
                 }
