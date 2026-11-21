@@ -26,6 +26,7 @@ def rgb(value, fallback=(0.12, 0.12, 0.12)):
 
 
 source_path, overlay_path, spec_path, out_path = sys.argv[1:5]
+progress_path = sys.argv[5] if len(sys.argv) > 5 else ""
 with open(spec_path, encoding="utf-8-sig") as handle:
     spec = json.load(handle)
 pages = spec.get("pages") if isinstance(spec, dict) else None
@@ -42,7 +43,20 @@ source = fitz.open(source_path)
 overlay = fitz.open(overlay_path) if overlay_path != "-" and os.path.exists(overlay_path) else None
 doc = fitz.open()
 
+
+def write_progress(payload):
+    if progress_path == "":
+        return
+    with open(progress_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+
+write_progress({"status": "running", "done": 0, "total": source.page_count})
+
 for index in range(source.page_count):
+    if progress_path != "" and os.path.exists(progress_path + ".cancel"):
+        write_progress({"status": "cancelled", "done": index, "total": source.page_count})
+        sys.exit(0)
     item = by_page.get(index + 1, {})
     page = doc.new_page(width=source[0].rect.width, height=source[index].rect.height)
     box = page.rect
@@ -85,7 +99,10 @@ for index in range(source.page_count):
         page.draw_polyline(points, color=color, width=float(entry.get("width") or 2),
                            lineCap=1, lineJoin=1, overlay=True)
 
+    write_progress({"status": "running", "done": index + 1, "total": source.page_count})
+
 tmp = out_path + ".tmp.pdf"
 doc.save(tmp)
 os.replace(tmp, out_path)
+write_progress({"status": "done", "done": source.page_count, "total": source.page_count})
 print(out_path)

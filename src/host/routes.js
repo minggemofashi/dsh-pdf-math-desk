@@ -22,6 +22,7 @@
  * @module dsh-pdf-math-desk/routes
  */
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
 
@@ -542,27 +543,72 @@ async function activeLibrary() {
             return
           }
           const pages = Array.isArray(body.pages) ? body.pages : []
-          const tmpDir = join(config.dataDir, 'tmp')
-          await mkdir(tmpDir, { recursive: true })
-          const specPath = join(tmpDir, `export-chapter-${Date.now().toString(36)}.json`)
+          const jobDir = join(config.dataDir, 'export-jobs')
+          await mkdir(jobDir, { recursive: true })
+          const jobId = `ex-${Date.now().toString(36)}`
+          const progressPath = join(jobDir, `${jobId}.progress.json`)
+          const specPath = join(jobDir, `${jobId}.spec.json`)
           await writeFile(specPath, JSON.stringify({ pages }), 'utf8')
           const overlayPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
           const outDir = join(library.artifactDir, body.book, body.code)
           await mkdir(outDir, { recursive: true })
           const outName = `${body.code}_export.pdf`
           const jsonName = `${body.code}_export.annots.json`
-          // The sidecar carries the same normalized masks and notes, so another
-          // machine (or a later release) can re-export without the browser.
           await writeFile(join(outDir, jsonName),
             JSON.stringify({ version: 1, book: body.book, code: body.code, pages }, null, 2), 'utf8')
-          try {
-            await runTool(join(config.toolsDir, 'export_chapter.py'), [source, overlayPath, specPath, join(outDir, outName)])
-          } finally {
-            await unlink(specPath).catch(() => {})
-          }
-          sendJson(response, 200, { ok: true, pdf: outName, json: jsonName, pages: pages.length })
+          const outPath = join(outDir, outName)
+          // Compose in the background and let the client poll the progress file;
+          // a long chapter must not hang one HTTP request.
+          void runTool(join(config.toolsDir, 'export_chapter.py'),
+            [source, overlayPath, specPath, outPath, progressPath])
+            .then(() => {})
+            .catch(() => writeFile(`${progressPath}.error`, '1', 'utf8').catch(() => {}))
+          sendJson(response, 200, { ok: true, jobId, pdf: outName, json: jsonName, pages: pages.length })
         } catch (error) {
           fail(response, 500, 'export-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/export-status`) {
+        try {
+          const jobId = url.searchParams.get('job') ?? ''
+          if (!/^ex-[a-z0-9]+$/.test(jobId)) {
+            fail(response, 400, 'bad-job', '任务编号不合法')
+            return
+          }
+          const progressPath = join(config.dataDir, 'export-jobs', `${jobId}.progress.json`)
+          let state = { status: 'running', done: 0, total: 0 }
+          try {
+            state = JSON.parse(await readFile(progressPath, 'utf8'))
+          } catch {
+            state = { status: 'running', done: 0, total: 0 }
+          }
+          if (existsSync(`${progressPath}.error`)) state = { status: 'error', error: '导出失败' }
+          sendJson(response, 200, { ...state, ok: true })
+        } catch (error) {
+          fail(response, 404, 'status-missing', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/export-cancel`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const jobId = typeof body.job === 'string' ? body.job : ''
+          if (!/^ex-[a-z0-9]+$/.test(jobId)) {
+            fail(response, 400, 'bad-job', '任务编号不合法')
+            return
+          }
+          await mkdir(join(config.dataDir, 'export-jobs'), { recursive: true })
+          await writeFile(join(config.dataDir, 'export-jobs', `${jobId}.progress.json.cancel`), '1', 'utf8')
+          sendJson(response, 200, { ok: true })
+        } catch (error) {
+          fail(response, 500, 'cancel-failed', String(error && error.message ? error.message : error))
         }
         return
       }

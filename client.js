@@ -203,6 +203,8 @@ window.__ModuleLoader__.load({
       importAnnotsDone: '已导入 {n} 页的遮罩与标注',
       importAnnotsFailed: '导入标注失败',
       retryAction: '重试',
+      exportCancel: '取消导出',
+      exportCancelled: '已取消导出',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -545,6 +547,8 @@ window.__ModuleLoader__.load({
       importAnnotsDone: 'Restored masks and notes for {n} page(s)',
       importAnnotsFailed: 'Importing notes failed',
       retryAction: 'Retry',
+      exportCancel: 'Cancel export',
+      exportCancelled: 'Export cancelled',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3306,6 +3310,13 @@ window.__ModuleLoader__.load({
       // Last failed action, so a failure in export/import gets a retry button
       // instead of a dead-end message.
       const [retryAction, setRetryAction] = useState(null)
+      const [exportJob, setExportJob] = useState('')
+      const cancelExport = () => {
+        if (exportJob === '') return
+        void request('POST', 'export-cancel', { job: exportJob }).catch(() => {})
+        setExportJob('')
+        updateNote(format('exportCancelled'))
+      }
       const rememberPartial = state => {
         const missing = Array.isArray(state.failedPages) ? state.failedPages : []
         setPartialPages(missing)
@@ -3728,16 +3739,36 @@ window.__ModuleLoader__.load({
             const hasAnnots = Array.isArray(pageAnnots) && pageAnnots.length > 0
             if (hasMasks || hasAnnots) pages.push({ page, masks: pageMasks, annots: pageAnnots })
           }
-          const payload = await request('POST', 'export-chapter', {
+          const started = await request('POST', 'export-chapter', {
             book: reader.bookId,
             code: reader.code,
             pages,
           })
-          updateNote(`${format('exportDone')}：${payload.pdf}（${format('exportAnnotatedPages', { n: payload.pages })}，附 ${payload.json}）`)
-          setRetryAction(null)
-          if (typeof props.onExported === 'function') props.onExported()
+          setExportJob(started.jobId)
+          let finished = false
+          for (;;) {
+            await new Promise(resolve => setTimeout(resolve, 700))
+            const state = await request('GET', `export-status?job=${encodeURIComponent(started.jobId)}`)
+            if (state.status === 'done') {
+              updateNote(`${format('exportDone')}：${started.pdf}（${format('exportAnnotatedPages', { n: started.pages })}，附 ${started.json}）`)
+              setRetryAction(null)
+              if (typeof props.onExported === 'function') props.onExported()
+              finished = true
+              break
+            }
+            if (state.status === 'cancelled') {
+              updateNote(format('exportCancelled'))
+              finished = true
+              break
+            }
+            if (state.status === 'error') throw new Error(state.error === '' || state.error === undefined ? '导出失败' : state.error)
+            const percent = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0
+            updateNote(`${format('exportingChapter')} ${percent}%`)
+          }
+          setExportJob('')
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
+          setExportJob('')
           updateNote(`${format('exportFailed')}：${message}`)
           setRetryAction(() => exportChapter)
         }
@@ -4354,6 +4385,12 @@ window.__ModuleLoader__.load({
               title: format('translateResumeHint'),
               onClick: () => { void runTranslate(true) },
             }, format('translateResume'))
+            : null,
+          exportJob !== ''
+            ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: cancelExport,
+            }, format('exportCancel'))
             : null,
           !translating && retryAction !== null
             ? h('button', {
