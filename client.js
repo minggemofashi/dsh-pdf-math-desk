@@ -188,8 +188,6 @@ window.__ModuleLoader__.load({
       annotTextPrompt: '文本框内容',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
-      annotThin: '细',
-      annotThick: '粗',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -517,8 +515,6 @@ window.__ModuleLoader__.load({
       annotTextPrompt: 'Text box',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
-      annotThin: 'Thin',
-      annotThick: 'Thick',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -4111,11 +4107,19 @@ window.__ModuleLoader__.load({
               style: { background: color },
               onClick: () => setAnnotColor(color),
             })),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              title: format('annotWidthHint'),
-              onClick: () => setAnnotWidth(value => (value === 2 ? 4 : 2)),
-            }, annotWidth === 2 ? format('annotThin') : format('annotThick')),
+            h('span', { className: 'md-annot-width' },
+              h('input', {
+                type: 'range',
+                min: 1,
+                max: 10,
+                step: 1,
+                value: annotWidth,
+                'aria-label': format('annotWidthHint'),
+                title: `${format('annotWidthHint')}：${annotWidth}px`,
+                onChange: event => setAnnotWidth(Number(event.target.value) || 2),
+              }),
+              h('span', { className: 'md-annot-width-value', 'aria-hidden': true }, `${annotWidth}px`)
+            ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               disabled: strokes.length === 0,
@@ -4787,6 +4791,9 @@ window.__ModuleLoader__.load({
 .md-icon { display: block; }
 .md-annot-swatch { width: 16px; height: 16px; min-width: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--dsw-alias-border-l3); }
 .md-annot-swatch[aria-pressed="true"] { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
+.md-annot-width { display: inline-flex; align-items: center; gap: 5px; padding: 0 2px; }
+.md-annot-width input[type="range"] { width: 68px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
+.md-annot-width-value { min-width: 28px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
 .md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
