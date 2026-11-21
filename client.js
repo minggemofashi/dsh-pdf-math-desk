@@ -171,6 +171,7 @@ window.__ModuleLoader__.load({
       dualNeedsTranslation: '还没有译文。是否现在翻译本章？会消耗 token，并需要先在设置里填写 DeepSeek API Key。',
       dualOriginal: '原文',
       dualTranslated: '译文',
+      toolsToggle: '收起/展开工具条',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translating: '翻译中…',
@@ -468,6 +469,7 @@ window.__ModuleLoader__.load({
       dualNeedsTranslation: 'No translation yet. Translate this chapter now? It costs tokens and needs a DeepSeek API key in Settings.',
       dualOriginal: 'Original',
       dualTranslated: 'Translation',
+      toolsToggle: 'Collapse or expand the tool row',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
@@ -2953,6 +2955,7 @@ window.__ModuleLoader__.load({
       const reader = props.reader
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
+      const [toolsOpen, setToolsOpen] = useState(true)
       const [translateTarget, setTranslateTarget] = useState('zh')
       const [translating, setTranslating] = useState(false)
       const [translateNote, setTranslateNote] = useState('')
@@ -3254,29 +3257,34 @@ window.__ModuleLoader__.load({
             }, '›'),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small', disabled: !ready,
+              type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerZoomOut'), 'aria-label': format('readerZoomOut'),
               onClick: props.onZoomOut,
             }, '−'),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small', disabled: !ready,
+              type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerFit'),
               onClick: props.onFit,
             }, format('readerFit')),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small', disabled: !ready,
+              type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerZoomIn'), 'aria-label': format('readerZoomIn'),
               onClick: props.onZoomIn,
             }, '＋'),
-            h('span', { className: 'md-reader-scale', 'aria-hidden': true }, `${Math.round((reader.scale ?? 1) * 100)}%`)
+            h('span', { className: `md-reader-scale${dual ? ' md-hidden' : ''}`, 'aria-hidden': true }, `${Math.round((reader.scale ?? 1) * 100)}%`)
           ),
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+            'aria-label': format('toolsToggle'), title: format('toolsToggle'),
+            onClick: () => setToolsOpen(value => !value),
+          }, toolsOpen ? '⌃' : '⌄'),
           h('button', {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('previewClose'), title: format('previewClose'),
             onClick: props.onBack,
           }, '×')
         ),
-        h('div', { className: 'md-reader-subbar' },
+        h('div', { className: 'md-reader-subbar', style: toolsOpen ? undefined : { display: 'none' } },
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('single') ? 'true' : 'false',
@@ -3385,7 +3393,23 @@ window.__ModuleLoader__.load({
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(value => Math.min(3, (value ?? reader.scale ?? 1) + 0.1)),
-                  }, '+')
+                  }, '+'),
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => {
+                      void (async () => {
+                        try {
+                          const node = dualRight.current
+                          const page = await (reader.variant === 'translated' ? props.doc : dualDoc).getPage(1)
+                          if (node === null) return
+                          const base = page.getViewport({ scale: 1 }).width
+                          setRightScale(Math.max(0.2, Math.min(3, (node.clientWidth - 28) / base)))
+                        } catch {
+                          // keep the current scale
+                        }
+                      })()
+                    },
+                  }, format('readerFit'))
                 ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? props.doc : dualDoc,
@@ -3925,7 +3949,9 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
-.md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--dsw-alias-bg-base); border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .12s ease; }
+.md-reader-colhead:hover { opacity: 1; }
+.md-hidden { display: none; }
 .md-reader-coltitle { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-right: auto; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
