@@ -222,6 +222,7 @@ export function createHandler(config, options = {}) {
           resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
           pending: pending === undefined ? {} : await pending.list(),
           links: links === undefined ? {} : await links.list(),
+          shelves: options.shelves === undefined ? { hidden: [], shelves: [] } : await options.shelves.get(library.id),
           books: fresh.books,
           skipped: fresh.skipped,
           warnings: fresh.warnings,
@@ -279,6 +280,27 @@ export function createHandler(config, options = {}) {
           }
         }
         sendJson(response, 200, { ok: true, book: bookId, dir: target, copied, skipped })
+        return
+      }
+
+      if (path === `${PREFIX}/shelves`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (options.shelves === undefined) {
+          fail(response, 503, 'unavailable', '书架分组存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const library = await activeLibrary()
+        try {
+          const saved = await options.shelves.put(library.id, body)
+          sendJson(response, 200, { ok: true, ...saved })
+        } catch (error) {
+          fail(response, 400, 'invalid-shelves', String(error && error.message ? error.message : error))
+        }
         return
       }
 

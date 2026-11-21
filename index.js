@@ -21,6 +21,7 @@ import { LibrariesStore } from './src/host/libraries.js'
 import { LinksStore } from './src/host/links.js'
 import { PendingStore } from './src/host/pending.js'
 import { PressureStore } from './src/host/pressure.js'
+import { ShelfGroups } from './src/host/shelf-groups.js'
 import { PREFIX, createHandler } from './src/host/routes.js'
 import { installToolkit } from './src/host/toolkit.js'
 import { purgeArchivedBlanks } from './src/host/purge.js'
@@ -42,6 +43,7 @@ export function apply(ctx, rawConfig) {
   const pending = new PendingStore(config.pendingPath)
   const links = new LinksStore(config.linksPath)
   const pressure = new PressureStore(config.pressurePath)
+  const shelves = new ShelfGroups(config.shelvesPath)
   const libraries = new LibrariesStore(config.librariesPath, {
     libraryDir: config.libraryDir,
     fragmentDir: config.fragmentDir,
@@ -115,6 +117,7 @@ export function apply(ctx, rawConfig) {
     pending,
     links,
     libraries,
+    shelves,
     contextPressure,
     digest: digestChapter,
     installToolkit: libraryDir => installToolkit(config.toolsDir, libraryDir),

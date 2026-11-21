@@ -104,6 +104,7 @@ export function resolveConfig(rawConfig) {
     pendingPath: join(dataDir, 'pending.json'),
     linksPath: join(dataDir, 'links.json'),
     pressurePath: join(dataDir, 'pressure.json'),
+    shelvesPath: join(dataDir, 'shelves.json'),
     librariesPath: join(dataDir, 'libraries.json'),
   }
 }

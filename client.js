@@ -185,6 +185,18 @@ window.__ModuleLoader__.load({
       updateNew: '发现新版本 {version}（当前 {current}），到 GitHub Releases 下载',
       updateNoRelease: '仓库还没有发布版本',
       updateFailed: '检查更新失败（网络或代理问题），可稍后重试',
+      shelfCount: '{n} 本',
+      shelfSelected: '已选 {n} 本',
+      shelfNew: '新建书架',
+      shelfName: '书架名称',
+      shelfCreate: '创建',
+      shelfHide: '隐藏所选',
+      shelfUnhide: '取消隐藏',
+      shelfRemove: '移出书架',
+      shelfClear: '取消选择',
+      shelfNameEmpty: '书架名称不能为空',
+      shelfEmpty: '这个书架还没有书',
+      hiddenShelf: '隐藏书籍',
       cleanupHint: '归档没说话的空会话；工作台自己留下的空白记录会被删除',
       cleanupNotice: '已清理 {n} 个没说话的空白会话（归档）。',
       retryRename: '重试改名',
@@ -383,6 +395,18 @@ window.__ModuleLoader__.load({
       updateNew: 'Version {version} is available (you have {current}) — see GitHub Releases',
       updateNoRelease: 'The repository has no release yet',
       updateFailed: 'Update check failed (network or proxy) — try again later',
+      shelfCount: '{n} books',
+      shelfSelected: '{n} selected',
+      shelfNew: 'New shelf',
+      shelfName: 'Shelf name',
+      shelfCreate: 'Create',
+      shelfHide: 'Hide selected',
+      shelfUnhide: 'Unhide selected',
+      shelfRemove: 'Remove from shelf',
+      shelfClear: 'Clear selection',
+      shelfNameEmpty: 'A shelf needs a name',
+      shelfEmpty: 'This shelf has no books yet',
+      hiddenShelf: 'Hidden books',
       cleanupHint: 'Archive unused blank sessions; empty records the workbench itself left behind are deleted.',
       cleanupNotice: 'Cleaned {n} unused blank session(s) (archived).',
       retryRename: 'Retry rename',
@@ -1307,15 +1331,39 @@ window.__ModuleLoader__.load({
         : [book.author, format('chapters', { n: chapters })].filter(item => item !== '').join(' · ')
       return h('button', {
         type: 'button',
-        className: 'md-card',
-        onClick: () => props.onOpen(book.id),
+        className: props.selected ? 'md-card md-card-selected' : 'md-card',
+        onClick: () => props.onSelect(book.id),
+        onDoubleClick: () => props.onOpen(book.id),
         title: sub === '' ? book.title : `${book.title} · ${sub}`,
         ref: node => props.registerRef(book.id, node),
       },        h(CoverView, { book, hasCover: props.hasCover }),
         h('span', { className: 'md-card-body' },
           h('span', { className: 'md-card-title' }, book.title),
           h('span', { className: 'md-card-sub' }, sub)
-        )
+        ),
+        props.selected ? h('span', { className: 'md-card-check', 'aria-hidden': true }, '✓') : null
+      )
+    }
+
+    /**
+     * A multi-file tile: the "hidden books" folder or a user-made shelf.
+     * @param {{ name: string, count: number, onOpen: Function }} props - tile content and opener.
+     * @returns {import('react').ReactElement} the tile.
+     */
+    function CollectionCard(props) {
+      return h('button', {
+        type: 'button',
+        className: 'md-collection',
+        onClick: props.onOpen,
+        title: `${props.name} · ${format('shelfCount', { n: props.count })}`,
+      },
+        h('span', { className: 'md-collection-stack', 'aria-hidden': true },
+          h('span', { className: 'md-collection-sheet md-sheet-3' }),
+          h('span', { className: 'md-collection-sheet md-sheet-2' }),
+          h('span', { className: 'md-collection-sheet md-sheet-1' })
+        ),
+        h('span', { className: 'md-collection-name' }, props.name),
+        h('span', { className: 'md-collection-count' }, format('shelfCount', { n: props.count }))
       )
     }
 
@@ -1480,21 +1528,163 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the shelf.
      */
     function Shelf(props) {
-      if (props.books.length === 0) {
-        return h('div', { className: 'md-empty' },
-          h('div', { className: 'md-empty-title' }, format('emptyTitle')),
-          h('div', { className: 'md-empty-hint' }, format('emptyHint')),
-          h('div', { className: 'md-empty-path' }, props.libraryDir)
-        )
+      const surfaceRef = useRef(null)
+      const startRef = useRef(null)
+      const boxRef = useRef(null)
+      const [box, setBox] = useState(null)
+      const boundsOf = () => (surfaceRef.current === null ? null : surfaceRef.current.getBoundingClientRect())
+      const onPointerDown = event => {
+        if (event.button !== 0) return
+        if (event.target.closest('.md-card, .md-collection, .md-btn')) return
+        const bounds = boundsOf()
+        if (bounds === null) return
+        startRef.current = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, additive: event.shiftKey }
+        boxRef.current = { x: startRef.current.x, y: startRef.current.y, w: 0, h: 0 }
+        setBox(boxRef.current)
+        try { surfaceRef.current.setPointerCapture(event.pointerId) } catch { /* pointer already gone */ }
       }
-      return h('div', { className: 'md-grid' },
-        props.books.map(book => h(BookCard, {
-          key: book.id,
-          book,
-          hasCover: props.covers.has(book.id),
-          onOpen: props.onOpen,
-          registerRef: props.registerRef,
-        }))
+      const onPointerMove = event => {
+        if (startRef.current === null || surfaceRef.current === null) return
+        const bounds = boundsOf()
+        if (bounds === null) return
+        const x = event.clientX - bounds.left
+        const y = event.clientY - bounds.top
+        const start = startRef.current
+        boxRef.current = {
+          x: Math.min(start.x, x),
+          y: Math.min(start.y, y),
+          w: Math.abs(x - start.x),
+          h: Math.abs(y - start.y),
+        }
+        setBox(boxRef.current)
+      }
+      const onPointerUp = () => {
+        if (startRef.current === null) return
+        const start = startRef.current
+        startRef.current = null
+        const area = boxRef.current
+        boxRef.current = null
+        setBox(null)
+        if (area === null || start === null || surfaceRef.current === null) return
+        if (area.w < 6 && area.h < 6) return
+        const bounds = boundsOf()
+        if (bounds === null) return
+        const ids = []
+        for (const [id, node] of props.cardRefs.current) {
+          if (node === null || node === undefined) continue
+          const rect = node.getBoundingClientRect()
+          const left = rect.left - bounds.left
+          const top = rect.top - bounds.top
+          if (left < area.x + area.w && left + rect.width > area.x && top < area.y + area.h && top + rect.height > area.y) ids.push(id)
+        }
+        props.onSelect(ids, start.additive)
+      }
+      const empty = props.books.length === 0
+      return h('div', {
+        className: 'md-shelf',
+        ref: surfaceRef,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+      },
+        h('div', { className: 'md-shelf-head' },
+          h('h2', { className: 'md-heading' }, props.groupName === null ? format('shelf') : props.groupName),
+          h('span', { className: 'md-shelf-sub' }, format('shelfCount', { n: props.books.length }))
+        ),
+        props.groupName === null && props.collections.length > 0
+          ? h('div', { className: 'md-collection-row' },
+            props.collections.map(item => h(CollectionCard, {
+              key: item.id,
+              name: item.name,
+              count: item.count,
+              onOpen: () => props.onOpenGroup(item.id),
+            }))
+          )
+          : null,
+        empty
+          ? h('div', { className: 'md-empty' },
+            h('div', { className: 'md-empty-title' }, format('shelfEmpty')),
+            h('div', { className: 'md-empty-hint' }, format('emptyHint'))
+          )
+          : h('div', { className: 'md-grid' },
+            props.books.map(book => h(BookCard, {
+              key: book.id,
+              book,
+              selected: props.selected.has(book.id),
+              hasCover: props.covers.has(book.id),
+              onSelect: props.onToggle,
+              onOpen: props.onOpen,
+              registerRef: props.registerRef,
+            }))
+          ),
+        box === null
+          ? null
+          : h('div', {
+            className: 'md-marquee',
+            'aria-hidden': true,
+            style: { left: box.x, top: box.y, width: box.w, height: box.h },
+          }),
+        props.selected.size === 0
+          ? null
+          : h('div', { className: 'md-shelf-actions' },
+            h('span', { className: 'md-shelf-selected' }, format('shelfSelected', { n: props.selected.size })),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onCreateShelf,
+            }, format('shelfNew')),
+            props.group === 'hidden'
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onUnhide,
+              }, format('shelfUnhide'))
+              : h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onHide,
+              }, format('shelfHide')),
+            props.group !== null && props.group !== 'hidden'
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onRemoveFromShelf,
+              }, format('shelfRemove'))
+              : null,
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              onClick: props.onClear,
+            }, format('shelfClear'))
+          )
+      )
+    }
+
+    /**
+     * Name prompt for a new shelf made from the current selection.
+     * @param {{ name: string, onChange: Function, onConfirm: Function, onClose: Function, error: string }} props - the draft and handlers.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function ShelfNameDialog(props) {
+      return h(React.Fragment, null,
+        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
+        h('div', { className: 'md-picker', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('shelfName') },
+          h('div', { className: 'md-picker-head' },
+            h('span', { className: 'md-picker-title' }, format('shelfName')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              'aria-label': format('previewClose'), onClick: props.onClose,
+            }, '×')
+          ),
+          h('input', {
+            className: 'md-input', value: props.name, autoFocus: true,
+            placeholder: format('shelfName'),
+            onChange: event => props.onChange(event.target.value),
+            onKeyDown: event => {
+              if (event.key === 'Enter') props.onConfirm()
+            },
+          }),
+          props.error === '' ? null : h('div', { className: 'md-state-error', role: 'alert' }, props.error),
+          h('div', { className: 'md-library-tools' },
+            h('button', { type: 'button', className: 'md-btn', onClick: props.onConfirm }, format('shelfCreate')),
+            h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: props.onClose }, format('previewClose'))
+          )
+        )
       )
     }
 
@@ -2489,7 +2679,24 @@ window.__ModuleLoader__.load({
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
-.md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; }
+.md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
+.md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }
+.md-card-check { position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-inverse, #fff); display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
+.md-shelf { position: relative; display: flex; flex-direction: column; gap: 16px; }
+.md-shelf-head { display: flex; align-items: baseline; gap: 10px; }
+.md-collection-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.md-collection { position: relative; display: flex; flex-direction: column; gap: 10px; width: 168px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; cursor: pointer; }
+.md-collection:hover { background: var(--dsw-alias-card-fill-hover); border-color: var(--dsw-alias-border-l4); }
+.md-collection-stack { position: relative; display: block; aspect-ratio: 3 / 4; }
+.md-collection-sheet { position: absolute; inset: 0; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-card-fill); }
+.md-collection-sheet.md-sheet-1 { background: linear-gradient(160deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, var(--dsw-alias-bg-layer-2)), var(--dsw-alias-bg-layer-2) 72%); }
+.md-collection-sheet.md-sheet-2 { transform: translate(-6px, 6px) rotate(-2deg); opacity: .8; }
+.md-collection-sheet.md-sheet-3 { transform: translate(-12px, 12px) rotate(-4deg); opacity: .55; }
+.md-collection-name { font-size: 13px; font-weight: 550; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-collection-count { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.md-marquee { position: absolute; z-index: 3; border: 1px solid var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent); border-radius: 4px; pointer-events: none; }
+.md-shelf-actions { position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; }
+.md-shelf-selected { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-right: 4px; }
 .md-card:hover { background: var(--dsw-alias-card-fill-hover); border-color: var(--dsw-alias-border-l4); transform: translateY(-2px); }
 .md-card:active { transform: translateY(1px); }
 .md-cover { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 8px; background: linear-gradient(160deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, var(--dsw-alias-bg-layer-2)), var(--dsw-alias-bg-layer-2) 72%); border: 1px solid var(--dsw-alias-border-l2); overflow: hidden; }
@@ -2710,6 +2917,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [updateBusy, setUpdateBusy] = useState(false)
       const [sample, setSample] = useState(null)
       const [sampleBusy, setSampleBusy] = useState(false)
+      const [shelfGroups, setShelfGroups] = useState({ hidden: [], shelves: [] })
+      const [group, setGroup] = useState(null)
+      const [selected, setSelected] = useState(() => new Set())
+      const [shelfName, setShelfName] = useState(null)
+      const [marquee, setMarquee] = useState(null)
       const bootstrapSeq = useRef(0)
       const digestRef = useRef(false)
       const pendingDrafts = useRef(new Map())
@@ -3371,6 +3583,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return () => window.removeEventListener('keydown', onKeyDown, true)
       }, [digest])
 
+      // The shelf-name dialog is modal too.
+      useEffect(() => {
+        if (shelfName === null) return undefined
+        const onKeyDown = event => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          setShelfName(null)
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [shelfName])
+
 
       // Opening a preview moves focus into the scrollable text so PageDown and
       // arrow keys work; closing puts it back on the row that opened it.
@@ -3444,6 +3669,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             ? { items: data.libraries.items, activeId: typeof data.libraries.activeId === 'string' ? data.libraries.activeId : '' }
             : { items: [], activeId: '' })
           setLibrary(data.library !== null && typeof data.library === 'object' ? data.library : null)
+          const groups = data.shelves !== null && typeof data.shelves === 'object' ? data.shelves : {}
+          setShelfGroups({
+            hidden: Array.isArray(groups.hidden) ? groups.hidden.filter(id => typeof id === 'string') : [],
+            shelves: Array.isArray(groups.shelves)
+              ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
+              : [],
+          })
+          setGroup(null)
+          setSelected(new Set())
           const emptyLibrary = books.length === 0
           const forced = forcedView
           const nextView = emptyLibrary
@@ -4237,8 +4471,78 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [catalog, showNotice, updateBusy])
 
-      /** Load the bundled sample library's manifest once the libraries page opens. */
-      useEffect(() => {
+      /** Persist hidden books / shelves for the active library. */
+      const saveShelfGroups = useCallback(next => {
+        setShelfGroups(next)
+        void request('POST', 'shelves', next).catch(() => {})
+      }, [])
+
+      const toggleSelect = useCallback(id => {
+        setSelected(previous => {
+          const next = new Set(previous)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })
+      }, [])
+
+      const selectMany = useCallback((ids, additive) => {
+        setSelected(previous => {
+          const next = additive ? new Set(previous) : new Set()
+          for (const id of ids) next.add(id)
+          return next
+        })
+      }, [])
+
+      const clearSelection = useCallback(() => setSelected(new Set()), [])
+
+      const openGroup = useCallback(id => {
+        setGroup(id)
+        setSelected(new Set())
+      }, [])
+
+      const createShelf = useCallback(() => {
+        const title = String(shelfName ?? '').trim()
+        if (title === '') {
+          showNotice(format('shelfNameEmpty'))
+          return
+        }
+        if (selected.size === 0) return
+        const shelf = {
+          id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
+          name: title.slice(0, 60),
+          books: [...selected],
+        }
+        saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
+        setShelfName(null)
+        setSelected(new Set())
+        setGroup(shelf.id)
+      }, [saveShelfGroups, selected, shelfGroups, shelfName, showNotice])
+
+      const hideSelected = useCallback(() => {
+        if (selected.size === 0) return
+        const hidden = [...new Set([...shelfGroups.hidden, ...selected])]
+        saveShelfGroups({ hidden, shelves: shelfGroups.shelves })
+        setSelected(new Set())
+      }, [saveShelfGroups, selected, shelfGroups])
+
+      const unhideSelected = useCallback(() => {
+        if (selected.size === 0) return
+        const hidden = shelfGroups.hidden.filter(id => !selected.has(id))
+        saveShelfGroups({ hidden, shelves: shelfGroups.shelves })
+        setSelected(new Set())
+      }, [saveShelfGroups, selected, shelfGroups])
+
+      const removeFromShelf = useCallback(() => {
+        if (group === null || group === 'hidden' || selected.size === 0) return
+        const shelves = shelfGroups.shelves.map(shelf => (shelf.id === group
+          ? { ...shelf, books: shelf.books.filter(id => !selected.has(id)) }
+          : shelf))
+        saveShelfGroups({ hidden: shelfGroups.hidden, shelves })
+        setSelected(new Set())
+      }, [group, saveShelfGroups, selected, shelfGroups])
+
+      /** Load the bundled sample library's manifest once the libraries page opens. */      useEffect(() => {
         if (work === null || work.view !== 'libraries' || sample !== null) return undefined
         let alive = true
         void request('GET', 'samples')
@@ -4578,15 +4882,58 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           registerFileRef,
         })
       } else {
-        body = h(Shelf, { books, libraryDir: catalog.libraryDir, covers: catalog.covers, onOpen: openBook, registerRef })
+        const hiddenSet = new Set(shelfGroups.hidden)
+        const activeShelf = group === null || group === 'hidden'
+          ? null
+          : shelfGroups.shelves.find(shelf => shelf.id === group) ?? null
+        const visibleBooks = group === 'hidden'
+          ? books.filter(item => hiddenSet.has(item.id))
+          : activeShelf !== null
+            ? books.filter(item => activeShelf.books.includes(item.id))
+            : books.filter(item => !hiddenSet.has(item.id))
+        const groupNameForShelf = group === 'hidden'
+          ? format('hiddenShelf')
+          : activeShelf === null ? null : activeShelf.name
+        const collections = group !== null
+          ? []
+          : [
+            ...(shelfGroups.hidden.length === 0 ? [] : [{ id: 'hidden', name: format('hiddenShelf'), count: shelfGroups.hidden.filter(id => books.some(book => book.id === id)).length }]),
+            ...shelfGroups.shelves
+              .filter(shelf => shelf.books.length > 0)
+              .map(shelf => ({ id: shelf.id, name: shelf.name, count: shelf.books.filter(id => books.some(book => book.id === id)).length })),
+          ]
+        body = h(Shelf, {
+          books: visibleBooks,
+          covers: catalog.covers,
+          group,
+          groupName: groupNameForShelf,
+          collections,
+          selected,
+          cardRefs,
+          onSelect: selectMany,
+          onToggle: toggleSelect,
+          onOpen: openBook,
+          registerRef,
+          onOpenGroup: openGroup,
+          onCreateShelf: () => setShelfName(''),
+          onHide: hideSelected,
+          onUnhide: unhideSelected,
+          onRemoveFromShelf: removeFromShelf,
+          onClear: clearSelection,
+        })
       }
 
       // In the narrow overlay the page underneath is covered: it must not take
       // clicks or Tab stops while the drawer is open. The import dialog and the
       // reader are modal at every width, so they cover the page the same way.
-      const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null
+      const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null || shelfName !== null
       // The crumbs render before the catalog arrives; `work` is still null then.
       const librariesView = work !== null && work.view === 'libraries'
+      const groupName = group === 'hidden'
+        ? format('hiddenShelf')
+        : group === null
+          ? null
+          : (shelfGroups.shelves.find(shelf => shelf.id === group) ?? { name: null }).name
 
       // Candidates for the import dialog: every real conversation, minus the
       // ones this chapter already shows, most recent first.
@@ -4664,9 +5011,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   title: format('librariesTitleHint'),
                   onDoubleClick: () => backToLibraries(),
                 }, format('shelf'))
-                : h('button', { type: 'button', className: 'md-crumb', onClick: backToShelf }, format('shelf')),
+                : h('button', {
+                  type: 'button', className: 'md-crumb',
+                  onClick: () => {
+                    setGroup(null)
+                    backToShelf()
+                  },
+                }, format('shelf')),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title)
+            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title),
+            groupName === null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
+            groupName === null ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
           ),
           inlineError === '' ? null : h('div', { className: 'md-alert', role: 'alert', inert: covered ? '' : undefined },
             h('span', { className: 'md-alert-text' }, inlineError),
@@ -4709,6 +5064,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             digest,
             onClose: closeDigest,
             onCopy: copyDigest,
+          }),
+        shelfName === null
+          ? null
+          : h(ShelfNameDialog, {
+            name: shelfName,
+            error: '',
+            onChange: setShelfName,
+            onConfirm: createShelf,
+            onClose: () => setShelfName(null),
           }),
         reader === null
           ? null
