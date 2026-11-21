@@ -292,7 +292,8 @@ window.__ModuleLoader__.load({
       renderActionHint: '渲染为 PDF，与 md 同目录',
       trashAction: '删除',
       trashFileHint: '移到 回收站\\（可恢复）',
-      archiveConfirm: '归档这个会话？归档后工作台不再列出，可在 DSH 侧栏恢复。',
+      archiveConfirm: '归档这个会话？归档不是删除：工作台不再列出，可在 DSH 的归档里恢复；要彻底清理请到 DSH 侧栏处理。',
+      archiveSession: '归档',
       renderWorking: '正在渲染 PDF…（首次可能较慢）',
       renderDone: '已生成 {name}',
       renderFailed: '渲染失败：需要 Python 与 TeX Live（xelatex），详见 README',
@@ -552,7 +553,8 @@ window.__ModuleLoader__.load({
       renderActionHint: 'Render to PDF in the same folder',
       trashAction: 'Delete',
       trashFileHint: 'Move to the library\'s 回收站\\ (restorable)',
-      archiveConfirm: 'Archive this conversation? The workbench will stop listing it; restore it from the DSH sidebar.',
+      archiveConfirm: 'Archive this conversation? Archiving is not deleting: the workbench stops listing it and it can be restored from DSH; delete it in the DSH sidebar to remove it permanently.',
+      archiveSession: 'Archive',
       renderWorking: 'Rendering PDF… (the first run can be slow)',
       renderDone: 'Created {name}',
       renderFailed: 'Render failed: needs Python and TeX Live (xelatex), see README',
@@ -1913,12 +1915,6 @@ window.__ModuleLoader__.load({
               title,
               'aria-label': label,
               onClick: () => props.onOpenSession(item.id),
-              onContextMenu: event => {
-                event.preventDefault()
-                if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-                  && !window.confirm(format('archiveConfirm'))) return
-                props.onArchiveSession(item.id)
-              },
             },
               h('span', { className: 'md-session-name' }, label),
               item.viaLink
@@ -1940,6 +1936,17 @@ window.__ModuleLoader__.load({
                 'aria-label': `${format('rename')}：${label}`,
                 onClick: () => props.onStartRename(props.chapter, item),
               }, '✎'),
+            item.pending
+              ? null
+              : h('button', {
+                type: 'button', className: 'md-icon-btn md-icon-btn-text', title: `${format('archiveSession')}（不删除，可在 DSH 归档里恢复）`,
+                'aria-label': `${format('archiveSession')}：${label}`,
+                onClick: () => {
+                  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                    && !window.confirm(format('archiveConfirm'))) return
+                  props.onArchiveSession(item.id)
+                },
+              }, format('archiveSession')),
             item.viaLink
               ? h('button', {
                 type: 'button', className: 'md-icon-btn', title: format('unlink'),
@@ -3109,6 +3116,7 @@ window.__ModuleLoader__.load({
 .md-session-row:hover .md-session-actions, .md-session-row:focus-within .md-session-actions { opacity: 1; }
 .md-icon-btn { font: inherit; font-size: 12px; line-height: 1.4; color: var(--dsw-alias-label-secondary); background: none; border: 0; border-radius: 4px; padding: 1px 5px; cursor: pointer; }
 .md-icon-btn:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover-solid); }
+.md-icon-btn-text { font-size: 11px; }
 .md-session-edit { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 4px; }
 .md-session-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12.5px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; padding: 2px 6px; }
 .md-session-edit-error { flex: none; font-size: 11.5px; color: var(--dsw-alias-state-error-primary); }

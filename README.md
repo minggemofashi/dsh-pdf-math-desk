@@ -33,11 +33,22 @@
 
 ## 效果
 
-| 书架与章节 | 章节会话与产物 |
+| 书架 | 书库与工具栏 |
 | --- | --- |
-| ![书架与章节](./assets/screenshot-1.png) | ![章节会话与产物](./assets/screenshot-2.png) |
+| ![书架](./assets/screenshot-shelf.png) | ![书库页](./assets/screenshot-library.png) |
 
-![产物列表](./assets/screenshot-3.png)
+| 章节：会话与产物 | 会话中的 token 用量 |
+| --- | --- |
+| ![章节](./assets/screenshot-chapter.png) | ![会话](./assets/screenshot-chat.png) |
+
+> 截图里的路径是本机示例；你添加书库后会显示自己的路径。
+
+## 归档与删除
+
+- 「会话」行右侧的 **归档** 按钮只是把会话**移出工作台列表**，并**不是删除**；
+- 已归档会话仍保存在 DSH 中，可在 DSH 的归档里恢复或自行清理；
+- 工作台不会主动删除会话；「清理空会话」只处理没发过消息的空白会话；
+- 产物删除进 `<库根>\回收站\`，可恢复。
 
 ## Token 消耗（重要）
 
