@@ -3008,8 +3008,6 @@ window.__ModuleLoader__.load({
             if (node === null || cancelled) return
             node.width = Math.floor(viewport.width)
             node.height = Math.floor(viewport.height)
-            node.style.width = '100%'
-            node.style.height = '100%'
             await page.render({ canvasContext: node.getContext('2d'), viewport }).promise
           } catch {
             // the mask stays empty when the page cannot be rendered
