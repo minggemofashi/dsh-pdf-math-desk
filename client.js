@@ -3713,6 +3713,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       /** New session owned by one artifact file (M7.2). */
       const newArtifactSession = useCallback((chapter, item, mode) => {
+        showNotice('M7.2 click')
         const stem = String(item.name).replace(/\.(md|pdf)$/i, '')
         try {
           if (typeof createSession !== 'function') {
