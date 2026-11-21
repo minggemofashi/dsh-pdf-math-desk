@@ -1554,7 +1554,7 @@ window.__ModuleLoader__.load({
               )
             ))
           ),
-        h('div', { className: 'md-library-add' },
+        h('div', { className: 'md-library-add', style: { order: 1 } },
           h('h3', { className: 'md-subheading' }, format('libraryAddTitle')),
           h('p', { className: 'md-shelf-sub' }, format('libraryAddHint')),
           h('div', { className: 'md-library-form' },
@@ -1591,7 +1591,7 @@ window.__ModuleLoader__.load({
         props.error === '' ? null : h('div', { className: 'md-alert', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error)
         ),
-        h('details', { className: 'md-details' },
+        h('details', { className: 'md-details', style: { order: 4 } },
           h('summary', { className: 'md-details-summary' }, format('manualTitle')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhy')),
           h('p', { className: 'md-shelf-sub' }, format('manualStructure')),
@@ -1599,7 +1599,7 @@ window.__ModuleLoader__.load({
           h('p', { className: 'md-shelf-sub' }, format('manualWhole')),
           h('p', { className: 'md-shelf-sub' }, format('manualSession'))
         ),
-        h('details', { className: 'md-details' },
+        h('details', { className: 'md-details', style: { order: 4 } },
           h('summary', { className: 'md-details-summary' }, format('aiPromptTitle')),
           h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
           h('code', { className: 'md-path' }, format('aiPromptText')),
@@ -1608,14 +1608,14 @@ window.__ModuleLoader__.load({
             onClick: props.onCopyPrompt,
           }, format('aiPromptCopy'))
         ),
-        h('details', { className: 'md-details' },
+        h('details', { className: 'md-details', style: { order: 4 } },
           h('summary', { className: 'md-details-summary' }, format('libraryPathsTitle')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
           )
         ),
-        h('div', { className: 'md-library-samples' },
+        h('div', { className: 'md-library-samples', style: { order: 2 } },
           h('h3', { className: 'md-subheading' }, format('sampleTitle')),
           props.sample === null
             ? h('p', { className: 'md-shelf-sub' }, format('sampleLoading'))
@@ -1635,7 +1635,7 @@ window.__ModuleLoader__.load({
                 }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad'))
               )
         ),
-        h('div', { className: 'md-library-tools' },
+        h('div', { className: 'md-library-tools', style: { order: 3 } },
           h('button', {
             type: 'button', className: 'md-btn', disabled: busy, title: format('splitHint'),
             onClick: props.onSplit,
@@ -1806,7 +1806,7 @@ window.__ModuleLoader__.load({
             },
           }),
           props.error === '' ? null : h('div', { className: 'md-state-error', role: 'alert' }, props.error),
-          h('div', { className: 'md-library-tools' },
+          h('div', { className: 'md-library-tools', style: { order: 3 } },
             h('button', { type: 'button', className: 'md-btn', onClick: props.onConfirm }, format('shelfCreate')),
             h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: props.onClose }, format('previewClose'))
           )
@@ -5600,7 +5600,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-content' },
             h('div', { className: 'md-body', ref: bodyRef, inert: covered ? '' : undefined },
               body,
-              catalog === null || blockingError !== '' ? null : h('details', { className: 'md-details' },
+              catalog === null || blockingError !== '' ? null : h('details', { className: 'md-details', style: { order: 4 } },
                 h('summary', { className: 'md-details-summary' }, format('diagnosticsTitle')),
                 h(Diagnostics, { catalog, books, unresolved: sessionIndex.unresolved })
               )
