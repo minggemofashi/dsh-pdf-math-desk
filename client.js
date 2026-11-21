@@ -2950,8 +2950,20 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the column.
      */
     function ContinuousView(props) {
+      const total = Math.max(0, Number(props.count) || 0)
+      const current = total === 0 ? 1 : Math.max(1, Math.min(total, Number(props.page) || 1))
+      // Only the pages around the one being read are mounted. A 300-page chapter
+      // used to create 300 components (and 300 observers) up front; the rest stay
+      // cheap ghosts until the reader approaches them.
+      const from = Math.max(1, current - 12)
+      const to = Math.min(total, current + 12)
       const pages = []
-      for (let page = 1; page <= props.count; page += 1) {
+      for (let page = 1; page <= total; page += 1) {
+        if (page < from || page > to) {
+          pages.push(h('div', { key: page, className: 'md-reader-slot md-reader-ghost' },
+            h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(page))))
+          continue
+        }
         pages.push(h(ReaderPage, {
           key: page,
           doc: props.doc,
@@ -3238,6 +3250,7 @@ window.__ModuleLoader__.load({
           ))
         : h(ContinuousView, {
           doc: props.doc,
+          page: props.page,
           count: props.count,
           scale: props.scale === null ? 1 : props.scale,
           rootRef: props.rootRef === null || props.rootRef === undefined ? stage : props.rootRef,
@@ -4437,6 +4450,7 @@ window.__ModuleLoader__.load({
                   bookId: reader.bookId,
                   code: reader.code,
                   count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
+                  page: reader.page,
                   scale: reader.scale ?? 1,
                   rootRef: dualLeft,
                   onVisible: notifyVisible,
@@ -4479,6 +4493,7 @@ window.__ModuleLoader__.load({
                   bookId: reader.bookId,
                   code: reader.code,
                   count: reader.variant === 'translated' ? reader.count : (dualDoc.numPages || 0),
+                  page: reader.page,
                   scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
                   onVisible: ignoreVisible,
@@ -5049,6 +5064,7 @@ window.__ModuleLoader__.load({
 .md-blockbox[data-kind="formula"] { border-color: rgba(40, 160, 90, .95); background: transparent; }
 .md-reader-continuous { display: flex; flex-direction: column; align-items: safe center; gap: 18px; width: 100%; }
 .md-reader-slot { display: flex; flex-direction: column; align-items: safe center; min-height: 240px; position: relative; }
+.md-reader-ghost { justify-content: center; opacity: .55; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-modes { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
