@@ -93,6 +93,14 @@ export async function startChapterJob(options) {
   const jobPath = join(options.jobDir, `${jobId}.json`)
   await writeFile(jobPath, JSON.stringify(state), 'utf8')
   const save = () => writeFile(jobPath, JSON.stringify(state), 'utf8')
+  // Token accounting for the whole chapter: the API reports usage per call, so
+  // every page adds its share and the reader can see what a chapter cost.
+  const addUsage = usage => {
+    state.tokens = state.tokens ?? { input: 0, output: 0, total: 0 }
+    state.tokens.input += usage.input
+    state.tokens.output += usage.output
+    state.tokens.total += usage.total
+  }
 
   void (async () => {
     let temporary = null
@@ -140,6 +148,7 @@ export async function startChapterJob(options) {
                   image,
                   blocks,
                   target: options.target,
+                  onUsage: addUsage,
                 })
                 const name = `page-${String(index + 1).padStart(3, '0')}.blocks.json`
                 pageMarkdown = translated.map(block => block.md).filter(part => part !== '').join('\n\n')
@@ -155,7 +164,7 @@ export async function startChapterJob(options) {
           }
           if (pageMarkdown.trim() === '') {
             try {
-              pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target })
+              pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target, onUsage: addUsage })
             } catch {
               // One page failing must not throw away the pages that worked: keep
               // the page empty, remember it, and let the chapter finish.

@@ -192,7 +192,8 @@ window.__ModuleLoader__.load({
       translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
       translating: '翻译中…',
       translateDone: '已生成',
-      translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页）；可以重译本章补上',
+      translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页），已用 {tokens} tokens；可以点「补译缺失页」只补这几页',
+      translateTokens: '共 {n} tokens',
       translateFailed: '翻译失败',
       translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
       translateFor: '翻译为：',
@@ -507,7 +508,8 @@ window.__ModuleLoader__.load({
       translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
       translating: 'Translating…',
       translateDone: 'Created',
-      translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); translate the chapter again to fill them',
+      translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
+      translateTokens: '{n} tokens',
       translateFailed: 'Translation failed',
       translateHint: 'Translate the current page; needs a DeepSeek API key',
       translateFor: 'Translate to:',
@@ -3213,8 +3215,10 @@ window.__ModuleLoader__.load({
       // of reporting a clean success the reader cannot trust.
       const doneNote = state => {
         const missing = Array.isArray(state.failedPages) ? state.failedPages : []
-        if (missing.length === 0) return `${format('translateDone')}：${state.pdf}`
-        return format('translateDonePartial', { n: missing.length, pages: missing.join('、') })
+        const tokens = state.tokens !== null && typeof state.tokens === 'object' ? Number(state.tokens.total) || 0 : 0
+        const suffix = tokens > 0 ? `（${format('translateTokens', { n: tokens.toLocaleString() })}）` : ''
+        if (missing.length === 0) return `${format('translateDone')}：${state.pdf}${suffix}`
+        return format('translateDonePartial', { n: missing.length, pages: missing.join('、'), tokens: tokens.toLocaleString() })
       }
       const partialKey = `mathdesk:partial:${reader.bookId}:${reader.code}`
       const [partialPages, setPartialPages] = useState([])

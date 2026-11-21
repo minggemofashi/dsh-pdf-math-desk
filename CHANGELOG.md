@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.50.2
+
+- 费用日志（M5-3）：翻译任务累计 DeepSeek 返回的 `usage`，任务状态里带 `tokens {input, output, total}`；完成后提示变成「已生成：xxx（共 12,345 tokens）」，有缺页时也带上已用 token。
+- `translatePage` / `translatePageBlocks` 新增可选 `onUsage` 回调，单页翻译与块翻译都上报，不影响原有调用方。
+
 ## v0.50.1
 
 - 断点续跑（M5-2）：`POST /translate-chapter` 支持 `resume`，任务遇到已有缓存 `page-NNN.md` 的页直接复用、不调 API；界面在「有页没译成功」时提供 **「补译缺失页」** 按钮，只花缺失页的 token；DSH 重启后也能从断点继续。

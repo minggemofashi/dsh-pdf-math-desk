@@ -78,6 +78,14 @@ export async function translatePage(options) {
     throw new Error(`DeepSeek API ${response.status}: ${detail.slice(0, 300)}`)
   }
   const data = await response.json()
+  if (typeof options.onUsage === 'function' && data !== null && typeof data === 'object' && data.usage) {
+    const usage = data.usage
+    options.onUsage({
+      input: Number(usage.prompt_tokens) || 0,
+      output: Number(usage.completion_tokens) || 0,
+      total: Number(usage.total_tokens) || 0,
+    })
+  }
   const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string' || content.trim() === '') {
     throw new Error('DeepSeek API 返回了空内容')
