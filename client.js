@@ -140,6 +140,9 @@ window.__ModuleLoader__.load({
       translateDone: '已生成',
       translateFailed: '翻译失败',
       translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
+      translateFor: '翻译为：',
+      langZh: '中文',
+      langEn: 'English',
       translateToEn: '译为英文',
       translateToZh: '译为中文',
       translatedLabel: '译文',
@@ -424,6 +427,9 @@ window.__ModuleLoader__.load({
       translateDone: 'Created',
       translateFailed: 'Translation failed',
       translateHint: 'Translate the current page; needs a DeepSeek API key',
+      translateFor: 'Translate to:',
+      langZh: 'Chinese',
+      langEn: 'English',
       translateToEn: 'to English',
       translateToZh: 'to Chinese',
       translatedLabel: 'Translation',
@@ -2840,7 +2846,7 @@ window.__ModuleLoader__.load({
       const reader = props.reader
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
-      const [translateTarget, setTranslateTarget] = useState('en')
+      const [translateTarget, setTranslateTarget] = useState('zh')
       const [translating, setTranslating] = useState(false)
       const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
@@ -2881,7 +2887,7 @@ window.__ModuleLoader__.load({
       const runTranslate = async () => {
         if (translating || props.doc === null || props.doc === undefined) return
         setTranslating(true)
-        setTranslateNote('')
+        setTranslateNote(format('translating'))
         try {
           const page = await props.doc.getPage(reader.page)
           const base = page.getViewport({ scale: 1 })
@@ -3019,14 +3025,15 @@ window.__ModuleLoader__.load({
               onClick: () => setShowBlocks(value => !value),
             }, format('blocksToggle')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+            h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
               className: 'md-reader-lang',
               value: translateTarget,
               title: format('translateHint'),
               onChange: event => setTranslateTarget(event.target.value),
             },
-              h('option', { value: 'en' }, format('translateToEn')),
-              h('option', { value: 'zh' }, format('translateToZh'))
+              h('option', { value: 'zh' }, format('langZh')),
+              h('option', { value: 'en' }, format('langEn'))
             ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
@@ -3573,6 +3580,7 @@ window.__ModuleLoader__.load({
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 .md-reader-single { display: flex; justify-content: center; margin: 0 auto; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }

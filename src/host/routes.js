@@ -116,26 +116,19 @@ export function createHandler(config, options = {}) {
    * @returns {Promise<object>} the active library, or the profile's fallback.
    */
   /**
- * Locate a chapter's own PDF: the split folder first, then the whole-book folder.
+ * Locate a chapter's own PDF through the catalog (the same path the reader uses).
  * @param {object} library - active library entry.
- * @param {string} book - book id.
- * @param {string} name - PDF file name.
+ * @param {string} bookId - book id.
+ * @param {string} code - chapter code.
  * @returns {Promise<string|null>} absolute path, or null when missing.
  */
-async function locateChapterPdf(library, book, name) {
-  const candidates = [
-    join(library.libraryDir, '分片', book, name),
-    join(library.libraryDir, '整本', name),
-  ]
-  for (const candidate of candidates) {
-    try {
-      await stat(candidate)
-      return candidate
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null
+async function chapterPdf(library, bookId, code) {
+  const catalog = await loadCatalog(config)
+  const book = Array.isArray(catalog.books) ? catalog.books.find(item => item.id === bookId) : undefined
+  const chapter = resolveChapter(catalog, bookId, code)
+  if (book === undefined || chapter === null) return null
+  const source = chapterPdfPath(library, book, chapter)
+  return source.ok ? source.path : null
 }
 
 async function activeLibrary() {
@@ -349,7 +342,7 @@ async function activeLibrary() {
             return
           }
           const library = await activeLibrary()
-          const source = await locateChapterPdf(library, body.book, name)
+          const source = await chapterPdf(library, body.book, body.code)
           if (source === null) {
             fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
             return
@@ -380,7 +373,7 @@ async function activeLibrary() {
             return
           }
           const library = await activeLibrary()
-          const source = await locateChapterPdf(library, book, name)
+          const source = await chapterPdf(library, book, url.searchParams.get('code') ?? '')
           if (source === null) {
             sendJson(response, 200, { ok: true, exists: false })
             return
@@ -413,7 +406,7 @@ async function activeLibrary() {
             return
           }
           const library = await activeLibrary()
-          const source = await locateChapterPdf(library, body.book, name)
+          const source = await chapterPdf(library, body.book, body.code)
           if (source === null) {
             fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
             return
