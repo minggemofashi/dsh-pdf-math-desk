@@ -930,7 +930,22 @@ window.__ModuleLoader__.load({
       if (typeof title !== 'string') return null
       const match = SESSION_TITLE.exec(title)
       if (match === null) return null
-      return { bookKey: match[1].trim(), code: match[2].toLowerCase(), mode: modeOf(match[3]) }
+      const rest = match[3].trim()
+      let artifact = ''
+      let mode = modeOf(rest)
+      if (mode === null) {
+        // Artifact-owned session: `[book cNN] <artifact> · <mode>`.
+        const cut = rest.lastIndexOf('·')
+        if (cut > 0) {
+          const candidate = rest.slice(cut + 1).trim()
+          const candidateMode = modeOf(candidate)
+          if (candidateMode !== null) {
+            artifact = rest.slice(0, cut).trim()
+            mode = candidateMode
+          }
+        }
+      }
+      return { bookKey: match[1].trim(), code: match[2].toLowerCase(), mode, artifact }
     }
 
     /**
@@ -1002,8 +1017,9 @@ window.__ModuleLoader__.load({
      */
     function buildSessionIndex(list, books, targetPath, pending, archivedIds, freshIds, links) {
       const byChapter = new Map()
+      const byArtifact = new Map()
       if (list === null || list === undefined || list.phase !== 'ready' || !Array.isArray(list.ids) || list.byId === undefined) {
-        return { byChapter, unresolved: 0, loaded: false, pendingCount: 0 }
+        return { byChapter, byArtifact, unresolved: 0, loaded: false, pendingCount: 0 }
       }
       const byId = new Map(books.map(book => [book.id, book]))
       const titleCounts = new Map()
@@ -1013,7 +1029,15 @@ window.__ModuleLoader__.load({
       let unresolved = 0
       let pendingCount = 0
       const marker = (bookId, code, id) => `${bookId}|${code}|${id}`
-      const push = (book, code, mode, row) => {
+      const push = (book, code, mode, row, artifact = '') => {
+        if (artifact !== '') {
+          const artifactKey = `${book.id}|${code}|${artifact}`
+          const artifactGroups = byArtifact.get(artifactKey) ?? { extract: [], qa: [], exercise: [] }
+          artifactGroups[mode].push(row)
+          byArtifact.set(artifactKey, artifactGroups)
+          placed.add(marker(book.id, code, row.id))
+          return
+        }
         const key = `${book.id}|${code}`
         const groups = byChapter.get(key) ?? { extract: [], qa: [], exercise: [] }
         groups[mode].push(row)
@@ -1057,7 +1081,7 @@ window.__ModuleLoader__.load({
           running: summary.running === true,
           pending: false,
           viaLink: false,
-        })
+        }, parsed.artifact)
         seen.add(id)
       }
       // Explicit placements: a conversation imported into a chapter, or one that
@@ -1123,7 +1147,7 @@ window.__ModuleLoader__.load({
       for (const groups of byChapter.values()) {
         for (const mode of MODES) groups[mode].sort((left, right) => right.updatedAt - left.updatedAt)
       }
-      return { byChapter, unresolved, loaded: true, pendingCount }
+      return { byChapter, byArtifact, unresolved, loaded: true, pendingCount }
     }
 
     /**
