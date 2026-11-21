@@ -169,6 +169,16 @@ window.__ModuleLoader__.load({
       sideOpenInDeskHint: '回到数学工作台的阅读器，停在同一页',
       sideForeign: '这个地址不属于数学工作台，无法预览',
       sideHint: '与工作台阅读器同步：翻页、阅读模式与文件版本都跟着变',
+      sideMenuMore: '更多操作',
+      sideMenuHint: '右键或点 ⋯ 打开菜单',
+      sideMenuGoto: '跳页…',
+      sideGotoPrompt: '跳到第几页？',
+      sideMenuZoom: '缩放',
+      sideMenuAutoFit: '自动适应栏宽',
+      sideAutoFitOn: '自动适应栏宽',
+      sideMenuFollowReader: '跟随阅读器缩放',
+      sideMenuReload: '重新加载文件',
+      sideMenuClose: '关闭预览',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
@@ -521,6 +531,16 @@ window.__ModuleLoader__.load({
       sideOpenInDeskHint: 'Return to the workbench reader at the same page',
       sideForeign: 'This address is not a math workbench chapter, so it cannot be previewed',
       sideHint: 'Follows the workbench reader: page, reading mode and file version',
+      sideMenuMore: 'More actions',
+      sideMenuHint: 'Right-click or click ⋯ to open the menu',
+      sideMenuGoto: 'Go to page…',
+      sideGotoPrompt: 'Which page?',
+      sideMenuZoom: 'Zoom',
+      sideMenuAutoFit: 'Fit the column',
+      sideAutoFitOn: 'Fitted to the column',
+      sideMenuFollowReader: 'Follow the reader zoom',
+      sideMenuReload: 'Reload the file',
+      sideMenuClose: 'Close the preview',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
@@ -1620,6 +1640,19 @@ window.__ModuleLoader__.load({
 
     /** Whether this build has the right column and our tab type is registered in it. */
     let sideTabsReady = false
+
+    /** The menu target family the side preview contributes to. */
+    const SIDE_MENU_KIND = 'mathdeskSide'
+
+    /** Whether the shared context menu already holds our contribution. */
+    let sideMenuReady = false
+
+    /**
+     * The live action provider of each mounted side preview, by `book:code`.
+     * The menu contribution is registered once for the whole kind and forwards
+     * here, so opening the menu needs no per-tab wiring.
+     */
+    const sideMenuProviders = new Map()
 
     /**
      * The side preview's address for one chapter.
@@ -5317,9 +5350,13 @@ window.__ModuleLoader__.load({
 .md-side-bar .md-btn { white-space: nowrap; flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
 .md-side-count { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+.md-side-more { font-size: 15px; line-height: 1; padding: 2px 9px; }
 .md-side-gap { flex: 1 1 auto; }
 .md-side-body { flex: 1 1 auto; min-height: 0; display: flex; }
-.md-side-body > .md-reader-stage { padding: 8px 10px 16px; }
+/* Horizontal padding must stay in step with the width minus twenty in
+   SidePdfView's measurement; the stable gutter keeps that measurement from
+   moving when the page grows a scrollbar. */
+.md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
 .md-side .md-reader-state { margin: 16px; }
 .md-annot-readonly { pointer-events: none; }
 /* The reader's overlay boxes, read-only: below the ink, above the page. */
@@ -5374,8 +5411,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [count, setCount] = useState(0)
       const [page, setPage] = useState(1)
       const [jump, setJump] = useState(0)
-      const [scale, setScale] = useState(null)
       const [mode, setMode] = useState('single')
+      // Zoom: the column auto-fits by default and follows its own width. A manual
+      // zoom (buttons or menu) leaves auto-fit, and following the reader's zoom is
+      // an explicit third mode; all three resolve to one concrete scale.
+      const [autoFit, setAutoFit] = useState(true)
+      const [follow, setFollow] = useState(false)
+      const [manualScale, setManualScale] = useState(null)
+      const [followScale, setFollowScale] = useState(null)
+      // Page-1 width at scale 1 and the stage's content width: the fit inputs.
+      const [baseWidth, setBaseWidth] = useState(0)
+      const [stageWidth, setStageWidth] = useState(0)
       // What the tab was opened with, then what the reader switched to.
       const [shownVariant, setShownVariant] = useState(variant)
       const [phase, setPhase] = useState('loading')
@@ -5394,9 +5440,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Publishing starts only after the opening view has been adopted, so the
       // first render cannot push a default page 1 over the reader's page.
       const [started, setStarted] = useState(false)
-      // Bumped when the column's width changes, so a page measured in a hidden
-      // or half-laid-out pane fits once the real width exists.
-      const [fitTick, setFitTick] = useState(0)
       const stage = useRef(null)
       const slots = useRef(new Map())
       const visibleTimer = useRef(null)
@@ -5417,7 +5460,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : Number.isFinite(wanted) && wanted > 0 ? Math.round(wanted) : 1
         setPage(Math.max(1, start))
         setJump(value => value + 1)
-        if (typeof shared.scale === 'number') setScale(shared.scale)
+        if (typeof shared.scale === 'number') setFollowScale(shared.scale)
         if (shared.mode === 'single' || shared.mode === 'continuous') setMode(shared.mode)
         if (typeof shared.docRev === 'number' && shared.docRev > 0) setDocRev(shared.docRev)
         setShownVariant(shared.variant === 'translated' || variant === 'translated' ? 'translated' : '')
@@ -5559,40 +5602,107 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [wantsMaskDoc, bookId, code, docRev])
 
-      const fitScale = useCallback(baseWidth => {
-        const node = stage.current
-        const available = node === null ? 0 : Math.max(0, node.clientWidth - 24)
-        const used = available > 0 && baseWidth > 0 ? available / baseWidth : 1
-        return Math.max(0.2, Math.min(3, Math.round(used * 100) / 100))
-        // `fitTick` is the real dependency: a width change must hand PdfViewer a
-        // new callback, which is what makes it repaint at the new fit.
-      }, [fitTick])
-      const onScale = useCallback(value => {
-        // A pane measured at zero width says nothing about the right zoom.
-        const node = stage.current
-        if (node === null || node.clientWidth <= 0) return
-        setScale(current => (current === null ? value : current))
+      // One page fits the column: page 1's width at scale 1 against the stage's
+      // content width. Recomputed whenever either side of that ratio changes, so
+      // resizing the pane, the window or the dock refits on its own. `stageWidth`
+      // is already the content width (the stage's horizontal padding removed).
+      const autoScale = baseWidth > 0 && stageWidth > 0
+        ? Math.max(0.2, Math.min(3, Math.round(stageWidth / baseWidth * 100) / 100))
+        : 1
+      const renderScale = follow && typeof followScale === 'number'
+        ? followScale
+        : autoFit
+          ? autoScale
+          : (manualScale === null ? autoScale : manualScale)
+      const shown = renderScale
+      // Zoom buttons work from what is on screen; a ref keeps their callbacks
+      // identity-stable across renders.
+      const renderScaleRef = useRef(renderScale)
+      renderScaleRef.current = renderScale
+
+      const zoomTo = useCallback(value => {
+        const next = Math.max(0.2, Math.min(4, Math.round(value * 100) / 100))
+        setFollow(false)
+        setAutoFit(false)
+        setManualScale(next)
       }, [])
+      const fitToColumn = useCallback(() => {
+        setFollow(false)
+        setAutoFit(true)
+        setManualScale(null)
+      }, [])
+      // The toggles read the current mode from refs: a setState updater must stay
+      // pure, and entering a mode needs the other two writes decided up front.
+      const modeRef = useRef({ autoFit, follow })
+      modeRef.current = { autoFit, follow }
+      const toggleAutoFit = useCallback(() => {
+        const next = !modeRef.current.autoFit
+        setFollow(false)
+        setAutoFit(next)
+        // Leaving auto-fit keeps the size the reader is looking at.
+        setManualScale(next ? null : renderScaleRef.current)
+      }, [])
+      const toggleFollow = useCallback(() => {
+        const next = !modeRef.current.follow
+        setFollow(next)
+        if (next) setAutoFit(false)
+      }, [])
+
+      // Page 1's intrinsic width: the denominator of every fit.
+      useEffect(() => {
+        if (doc === null) return undefined
+        let cancelled = false
+        void doc.getPage(1).then(page => {
+          if (!cancelled) setBaseWidth(page.getViewport({ scale: 1 }).width)
+        }).catch(() => {
+          // A document whose first page cannot be read still gets a scale, so the
+          // paint below can report the real failure instead of waiting forever.
+          if (!cancelled) setBaseWidth(current => (current > 0 ? current : 600))
+        })
+        return () => { cancelled = true }
+      }, [doc])
+
+      const noopScale = useCallback(() => {}, [])
       const onError = useCallback(failure => {
         setPhase('error')
         setError(errorText(failure))
       }, [])
-      // The dock gives the tab its real width only after the first layout, so
-      // watch the stage and refit when that width lands (or the column is resized).
+      // The dock gives the tab its real width only after the first layout, and the
+      // stage only exists once the document may paint, so wait for the node rather
+      // than depending on an effect that ran before it appeared.
       useEffect(() => {
-        const node = stage.current
-        if (node === null || typeof ResizeObserver !== 'function') return undefined
-        let last = node.clientWidth
-        const observer = new ResizeObserver(entries => {
-          const width = entries[0] !== undefined && entries[0].contentRect !== undefined
-            ? entries[0].contentRect.width
-            : node.clientWidth
-          if (width <= 0 || Math.abs(width - last) <= 2) return
-          last = width
-          setFitTick(value => value + 1)
-        })
-        observer.observe(node)
-        return () => observer.disconnect()
+        if (phase !== 'ready') return undefined
+        let cancelled = false
+        let frames = 0
+        let observer = null
+        const apply = width => {
+          const content = Math.max(0, width - 20)
+          if (content > 0) setStageWidth(current => (Math.abs(current - content) <= 1 ? current : content))
+        }
+        const bind = () => {
+          if (cancelled) return
+          const node = stage.current
+          if (node === null) {
+            frames += 1
+            if (frames < 120) requestAnimationFrame(bind)
+            return
+          }
+          if (typeof ResizeObserver === 'function') {
+            observer = new ResizeObserver(entries => {
+              apply(entries[0] !== undefined && entries[0].contentRect !== undefined
+                ? entries[0].contentRect.width
+                : node.clientWidth)
+            })
+            observer.observe(node)
+          }
+          apply(node.clientWidth)
+        }
+        bind()
+        return () => {
+          cancelled = true
+          cancelAnimationFrame(frames)
+          if (observer !== null) observer.disconnect()
+        }
       }, [phase])
       const registerSlot = useCallback((number, node) => {
         if (node === null) slots.current.delete(number)
@@ -5653,7 +5763,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               setJump(value => value + 1)
             }
           }
-          if (state.scale === null || typeof state.scale === 'number') setScale(state.scale)
+          if (state.scale === null || typeof state.scale === 'number') setFollowScale(state.scale)
           if (state.mode === 'single' || state.mode === 'continuous') setMode(state.mode)
           if (state.variant === '' || state.variant === 'translated') setShownVariant(state.variant)
           if (typeof state.docRev === 'number') setDocRev(current => (state.docRev > current ? state.docRev : current))
@@ -5708,7 +5818,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }, h(OverlayMaskPage, {
             doc: maskDoc,
             pageNumber: page,
-            zoom: scale ?? 1,
+            zoom: renderScale,
             style: {
               position: 'absolute',
               left: `${-(mask.x / mask.w) * 100}%`,
@@ -5719,7 +5829,103 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             },
           }))))
 
-      const shown = scale ?? 1
+      // The preview's actions live in the shared context menu. It is registered
+      // once for the whole target kind and asks the mounted preview for actions,
+      // so the menu always reflects the live page, mode and zoom.
+      const menuState = useRef(null)
+      menuState.current = {
+        page, count, mode, autoFit, follow, phase, bookId, code, target,
+        tabActions: info.tab.actions,
+      }
+      const menuActions = useCallback(() => {
+        const state = menuState.current
+        if (state === null) return []
+        const ready = state.phase === 'ready'
+        const check = on => (on ? '✓ ' : '')
+        return [
+          { id: 'prev', label: format('readerPrev'), disabled: !ready || state.page <= 1, run: () => goPage(state.page - 1) },
+          { id: 'next', label: format('readerNext'), disabled: !ready || state.count === 0 || state.page >= state.count, run: () => goPage(state.page + 1) },
+          { id: 'first', label: format('readerFirst'), disabled: !ready || state.page <= 1, run: () => goPage(1) },
+          {
+            id: 'goto',
+            label: format('sideMenuGoto'),
+            disabled: !ready || state.count === 0,
+            run: () => {
+              const answer = window.prompt(format('sideGotoPrompt'), String(state.page))
+              if (answer === null) return
+              const wanted = Number.parseInt(answer, 10)
+              if (Number.isFinite(wanted)) goPage(wanted)
+            },
+          },
+          {
+            id: 'zoom',
+            label: format('sideMenuZoom'),
+            separatorBefore: true,
+            children: [
+              { id: 'zoom-in', label: format('readerZoomIn'), run: () => zoomTo(renderScaleRef.current * 1.2) },
+              { id: 'zoom-out', label: format('readerZoomOut'), run: () => zoomTo(renderScaleRef.current / 1.2) },
+              { id: 'fit', label: format('readerFit'), run: () => fitToColumn() },
+              { id: 'auto-fit', label: `${check(state.autoFit)}${format('sideMenuAutoFit')}`, run: () => toggleAutoFit() },
+              {
+                id: 'follow',
+                label: `${check(state.follow)}${format('sideMenuFollowReader')}`,
+                separatorBefore: true,
+                run: () => toggleFollow(),
+              },
+            ],
+          },
+          {
+            id: 'mode',
+            label: format(state.mode === 'single' ? 'readerModeContinuous' : 'readerModeSingle'),
+            separatorBefore: true,
+            run: () => setMode(state.mode === 'single' ? 'continuous' : 'single'),
+          },
+          { id: 'reload', label: format('sideMenuReload'), separatorBefore: true, run: () => setDocRev(value => value + 1) },
+          {
+            id: 'desk',
+            label: format('sideOpenInDesk'),
+            disabled: state.target === null,
+            run: () => requestDeskOpen(state.bookId, state.code, state.page),
+          },
+          {
+            id: 'close',
+            label: format('sideMenuClose'),
+            separatorBefore: true,
+            run: () => {
+              const actions = state.tabActions
+              if (actions !== null && actions !== undefined && typeof actions.close === 'function') actions.close()
+            },
+          },
+        ]
+        // The action bodies read `menuState`, so only the constructors matter.
+      }, [fitToColumn, goPage, toggleAutoFit, toggleFollow, zoomTo])
+
+      const openSideMenu = useCallback(event => {
+        if (event !== null && event !== undefined) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        const menus = clientContext === null ? null : clientContext.get('contextMenus')
+        if (menus === null || menus === undefined || typeof menus.open !== 'function') return
+        const node = event !== null && event !== undefined && event.currentTarget !== undefined ? event.currentTarget : null
+        const rect = node !== null && typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null
+        const blank = event === null || event === undefined || (event.clientX === 0 && event.clientY === 0)
+        const point = blank && rect !== null
+          ? { x: rect.left + 8, y: rect.bottom - 2 }
+          : { x: event.clientX, y: event.clientY }
+        menus.open({ kind: SIDE_MENU_KIND, value: { bookId, code, page } }, point)
+      }, [bookId, code, page])
+
+      useEffect(() => {
+        if (bookId === '' || code === '') return undefined
+        const key = `${bookId}:${code}`
+        const provider = () => menuActions()
+        sideMenuProviders.set(key, provider)
+        return () => {
+          if (sideMenuProviders.get(key) === provider) sideMenuProviders.delete(key)
+        }
+      }, [bookId, code, menuActions])
+
       const body = target === null
         ? h('div', { className: 'md-reader-state', role: 'alert' }, format('sideForeign'))
         : phase === 'error'
@@ -5731,7 +5937,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 className: 'md-btn md-btn-small',
                 onClick: () => setDocRev(value => value + 1),
               }, format('readerRetry'))))
-          : doc === null
+          : doc === null || baseWidth === 0
             ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
             : h(PdfViewer, {
               variant: 'stage',
@@ -5739,10 +5945,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               doc,
               page,
               count,
-              scale,
-              fitScale,
+              scale: renderScale,
+              fitScale: noopScale,
               stageRef: stage,
-              onScale,
+              onScale: noopScale,
               showBlocks: false,
               bookId,
               code,
@@ -5752,7 +5958,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               children: masksLayer === null ? annotLayer : [masksLayer, annotLayer],
             })
 
-      return h('div', { className: 'md-side', 'data-mode': mode },
+      return h('div', {
+        className: 'md-side',
+        'data-mode': mode,
+        onContextMenu: openSideMenu,
+      },
         h('div', { className: 'md-side-bar' },
           h('button', {
             type: 'button',
@@ -5772,41 +5982,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => goPage(page + 1),
           }, '›'),
           h('span', { className: 'md-side-gap' }),
+          h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
+            `${Math.round(shown * 100)}%`),
           h('button', {
             type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('readerZoomOut'),
-            'aria-label': format('readerZoomOut'),
-            onClick: () => setScale(current => Math.max(0.2, Math.round((current ?? 1) / 1.2 * 100) / 100)),
-          }, '−'),
-          h('button', {
-            type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('readerFit'),
-            onClick: () => setScale(null),
-          }, format('readerFit')),
-          h('button', {
-            type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('readerZoomIn'),
-            'aria-label': format('readerZoomIn'),
-            onClick: () => setScale(current => Math.min(4, Math.round((current ?? 1) * 1.2 * 100) / 100)),
-          }, '+'),
-          h('span', { className: 'md-side-zoom' }, `${Math.round(shown * 100)}%`),
-          h('span', { className: 'md-side-gap' }),
-          h('button', {
-            type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('readerMode'),
-            onClick: () => setMode(mode === 'single' ? 'continuous' : 'single'),
-          }, format(mode === 'single' ? 'readerModeContinuous' : 'readerModeSingle')),
-          h('button', {
-            type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('sideOpenInDeskHint'),
+            className: 'md-btn md-btn-small md-side-more',
+            title: format('sideMenuHint'),
+            'aria-label': format('sideMenuMore'),
+            'aria-haspopup': 'menu',
             disabled: target === null,
-            onClick: () => requestDeskOpen(bookId, code, page),
-          }, format('sideOpenInDesk'))),
+            onClick: event => openSideMenu(event),
+          }, '⋯')),
         h('div', { className: 'md-side-body' }, body))
     }
 
@@ -5862,6 +6048,34 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }, SideTitle)), 'mathdesk: side preview title')
         sideTabsReady = true
         trace('side', 'tab type registered')
+        // The preview's actions live in the shared context menu, contributed once
+        // for the whole target kind; a build without that menu still previews.
+        const menusUp = host => {
+          if (sideMenuReady) return true
+          const menus = typeof host.get === 'function' ? host.get('contextMenus') : undefined
+          if (menus === null || menus === undefined || typeof menus.register !== 'function') return false
+          host.effect(() => menus.register({
+            id: 'math-desk-side',
+            target: SIDE_MENU_KIND,
+            order: 20,
+            resolve: target => {
+              if (target === null || typeof target !== 'object') return []
+              const provider = sideMenuProviders.get(`${target.bookId}:${target.code}`)
+              return provider === undefined ? [] : provider()
+            },
+          }), 'mathdesk: side menu')
+          sideMenuReady = true
+          trace('side', 'menu contribution registered')
+          return true
+        }
+        const menusHere = menusUp(scope)
+        if (!menusHere && typeof ctx.inject === 'function') {
+          try {
+            ctx.inject(['contextMenus'], host => { menusUp(host) })
+          } catch (error) {
+            trace('side', 'menu inject failed', String(error))
+          }
+        }
       }
       // Take it now when the column is already up, and again when it arrives.
       start(ctx)

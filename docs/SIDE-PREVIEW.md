@@ -83,12 +83,18 @@ const VIEW_PUBLISHED = {
 - `syncView(bookId, code, state, origin)`：只发布**与共享状态不同**的字段（差值发布），因此「A 应用了 B 的变更」不会回弹；
 - `subscribeView(bookId, code, listener)` 返回 disposer；`readView(bookId, code)` 供新挂载的一端取初值。
 
-### 5.2 为什么缩放单向
+### 5.2 缩放：默认自动适应，跟随是可选模式
 
-`reader.scale` 是**绝对** pdf.js 缩放（工具栏百分比＝`scale×100%`），右栏容器窄得多。若双向同步，两侧会互相把对方的「适应宽度」当成自己的绝对缩放来回改写。所以：
+右侧默认**持续跟随栏宽**：`autoScale = (栏内容宽 - 2) / 第 1 页宽`，窗口/侧栏/浮窗尺寸一变就重算（`ResizeObserver` → `stageWidth`），所以不需要再点「适应宽度」。三种模式：
 
-- 阅读器改缩放 → 右侧跟随（图省事的绝对值，栏窄就横向滚动）；
-- 右侧自己的 `− / 适应宽度 / +` 只影响右侧。
+| 模式 | 触发 | 实际缩放 |
+| --- | --- | --- |
+| 自动适应栏宽（默认） | ⋯ → 缩放 → ☑ 自动适应栏宽 | `autoScale` |
+| 手动 | 放大/缩小/跳页后 | `manualScale`（离开自动适应时以当前显示值为起点） |
+| 跟随阅读器 | ⋯ → 缩放 → ☑ 跟随阅读器缩放 | 阅读器通过总线发来的 `scale` |
+
+- 阅读器的缩放只在「跟随阅读器」模式下生效，否则被忽略——这是为了不让两侧栏宽差把对方的排版改坏；
+- 右侧**从不发布**缩放，`VIEW_PUBLISHED.side` 只有 `page`/`mode`。
 
 ### 5.3 防回声的三个细节
 
@@ -100,10 +106,10 @@ const VIEW_PUBLISHED = {
 
 ### 6.1 `SidePdfView`
 
-- 状态：`doc / count / page / scale(null=适应) / mode / phase / error / docRev / annotRev / strokes / shownVariant`；
+- `SidePdfView` 状态：`doc / count / page / scale(见 5.2) / mode / phase / error / docRev / annotRev / strokes / masks / shownVariant`；
 - 加载：`loadPdfjs()` + `getDocument({ url, isEvalSupported:false, ...pdfAssetUrls() })`，卸载或换版时 `task.destroy()`；
-- 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式挂只读标注层，连续模式走 `ContinuousView` 的窗口化挂载；
-- 工具条：`‹ 页码 ›`、`− / 适应宽度 / + / 百分比`、`单页↔连续`、`在工作台打开`；
+- 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式挂只读遮罩层与标注层，连续模式走 `ContinuousView` 的窗口化挂载；
+- 工具条只留 `‹ 页码 ›`、缩放百分比、`⋯`；其余动作见 6.4 的右键菜单；
 - 只读标注：`mathdesk:annots:<书>:<章>:<页>` → `.md-annot-readonly`（`pointer-events:none`），`annotRev` 变化时重读；
 - 只读遮罩：`mathdesk:masks:<书>:<章>:<页>` → `.md-masks-readonly`（`z-index:4`，标注之下），每个框用 `OverlayMaskPage` 把**译文页**画进框里；`annotRev` 变化时重读。
 
@@ -127,6 +133,25 @@ const VIEW_PUBLISHED = {
 
 `requestDeskOpen(bookId, code, page)`：`ctx.layout.selectPanel('mathdesk')` + 通过 `deskOpenListeners` 广播；`WorkbenchPage` 收到后从 `catalog.books` 找到章（含 `title/file`），必要时先 `openBook`，再 `openReader({ ..., page })`。加载中收到的请求会暂存到 `pendingDeskOpen`，catalog 到位后重放。
 
+### 6.4 右键菜单（`v0.62.0`）
+
+DSH 的菜单是**按 target kind 贡献动作**的共享弹窗（`ctx.contextMenus.register({ target, order, resolve })` + `open(target, point)`），所以我们注册一个自己的 target family：
+
+```js
+ctx.contextMenus.register({
+  id: 'math-desk-side',
+  target: 'mathdeskSide',            // 运行时不校验 kind 集合，扩展方可自定义
+  order: 20,
+  resolve: target => sideMenuProviders.get(`${target.bookId}:${target.code}`)?.() ?? [],
+})
+```
+
+- target 值只放 JSON 安全数据 `{ bookId, code, page }`（`menuTargetKey` 会 `JSON.stringify` 它做「同点重复手势关闭」判定，不能放函数）；
+- 动作本身来自**已挂载组件**：每个 `SidePdfView` 在挂载时把 `() => 动作数组` 登记进 `sideMenuProviders`（键 `书:章`），卸载时撤销；动作读 `menuState` ref，所以菜单永远反映当前页/模式/缩放；
+- 打开方式两种：页面 `onContextMenu`（右键）与工具条 `⋯` 按钮（用按钮矩形算弹出点）；
+- 菜单项：上一页/下一页/首页/跳页…｜缩放 ▸（放大、缩小、适应宽度、☑ 自动适应栏宽、☑ 跟随阅读器缩放）｜单页↔连续｜重新加载文件｜在工作台打开｜关闭预览；置灰与 ☑ 由当前状态决定。
+- 降级：没有 context menu 服务的构建里 `⋯` 不做事，阅读功能照常（工具条只留翻页）。
+
 ## 7. 实施顺序与状态
 
 | # | 步骤 | 状态 |
@@ -138,7 +163,8 @@ const VIEW_PUBLISHED = {
 | 5 | 标注只读上屏（`annotRev`） | ✅ v0.61.0 |
 | 6 | 「在工作台打开」 | ✅ v0.61.0 |
 | 7 | 遮罩（叠加框）只读上屏：按需加载叠加/译文文档 | ✅ v0.61.2 |
-| 8 | 右侧右键菜单 / 关闭时的状态清理 | ⏳ 可选 |
+| 8 | 动作收进右键菜单 + 自动适应栏宽 | ✅ v0.62.0 |
+| 9 | 关闭时的状态清理 / 侧栏浮动面板下的适配回归 | ⏳ 可选 |
 
 ## 8. 验收矩阵
 
@@ -146,8 +172,10 @@ const VIEW_PUBLISHED = {
 | --- | --- |
 | 阅读器翻到第 5 页 | 右侧跟到第 5 页 |
 | 右侧翻页 | 阅读器跟到同页，不抖动 |
-| 阅读器放大到 200% | 右侧显示 200%（栏窄则横向滚动）；右侧自己缩放不影响阅读器 |
-| 阅读器切单页/连续 | 右侧同步切换布局并停在同页 |
+| 拖动侧栏宽度 / 改窗口大小 | 右侧自动重新按栏宽排版，不需要点「适应宽度」 |
+| 阅读器放大到 200% | 右侧仍自动适应栏宽；勾「跟随阅读器缩放」后右侧才跟着变 200% |
+| 右键页面任意处 / 点 ⋯ | 弹出同一个菜单，项按当前状态置灰/打勾 |
+| 菜单里跳页、切单页/连续、重新加载 | 与工具条等效，阅读器同步跟随页码与模式 |
 | 画一笔标注 | 右侧 350ms 内出现同一笔；右侧不能编辑 |
 | 画一个叠加框 | 右侧同一位置出现框，框内是译文；右侧不能改框 |
 | 翻译完成 / 补译 | 两侧都换到新 `_translated.pdf`，框内译文也跟着换 |
@@ -156,11 +184,13 @@ const VIEW_PUBLISHED = {
 
 ## 9. 风险与已知问题
 
-- **dispatch 依赖内部契约**：`sidebarRightTabs` / `sidebar.right.pane.tab` 是 DSH 的扩展点，但字段名随版本可能变；`start()` 里对服务与返回值都做了存在性判断，异常只记 trace 并降级。
+- **dispatch 依赖内部契约**：`sidebarRightTabs` / `sidebar.right.pane.tab` / `contextMenus` 是 DSH 的扩展点，但字段名随版本可能变；`start()` 里对服务与返回值都做了存在性判断，异常只记 trace 并降级。
+- **自定义 target kind**：`ContextMenuTargetMap` 是 TS 声明合并表，运行时不校验 kind，外部插件自定义 kind 属于预期用法；但若将来 DSH 加了运行时校验，菜单会静默不弹（阅读功能不受影响）。
 - **样式注入**：`document.head` 里多一份样式表；与页面内 `<style>` 内容相同，重复无害。
 - **标注与遮罩只在单页模式可见**：`PdfViewer` 只在单页模式渲染 `children`；连续模式的图层需要另做（与阅读器现状一致）。
 - **遮罩的内存代价**：每个框内是一张整页 canvas（`max(2, zoom*2)` 倍），和阅读器同一实现；一页框很多时右栏会多占几十 MB，属已知取舍。
 - **框的可见性不跟随阅读器的「叠加」开关**：只要该页存在框，右侧就画出来（框是页面数据，不是开关状态）。
+- **自动适应与滚动条**：`ResizeObserver` 测内容盒宽度，理论上「刚好不再出竖滚动条」的边界可能来回一次，差值 ≤1px 时忽略。
 - **同一章多个标签**：地址即内容 id，同一章在同一栏只有一张标签；重复打开是「指向同页」而不是新标签。
 - **跨书跳转**：`openFromSide` 会先切书页再开阅读器，避免「返回章节」落到旧书。
 
@@ -170,6 +200,8 @@ const VIEW_PUBLISHED = {
 | --- | --- |
 | 地址与同步总线 | `sideAddress` / `sideTarget` / `syncView` / `subscribeView` / `readView` |
 | 「在工作台打开」请求 | `requestDeskOpen` / `deskOpenListeners` / `pendingDeskOpen` |
+| 右键菜单 | `SIDE_MENU_KIND` / `sideMenuProviders` / `registerSidePreview` 里的 `menus.register` / 组件内 `menuActions` / `openSideMenu` |
+| 自动适应 | `autoScale` / `renderScale` / `stageWidth` / `baseWidth` / `zoomTo` / `fitToColumn` |
 | 右侧组件 | `SidePdfView` / `SideTitle` |
 | 注册 | `registerSidePreview(ctx)`（`apply` 末尾调用） |
 | 打开右侧 | `openPdfInSession`（`sideTabAvailable` 判定后走自建地址） |
