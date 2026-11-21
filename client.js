@@ -188,6 +188,11 @@ window.__ModuleLoader__.load({
       annotTextPrompt: '文本框内容',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
+      exportPage: '导出本页',
+      exportHint: '导出本页 PDF：原文 + 框选露出的译文 + 标注，保存到本章产物',
+      exporting: '正在导出本页…',
+      exportDone: '已导出',
+      exportFailed: '导出失败',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -515,6 +520,11 @@ window.__ModuleLoader__.load({
       annotTextPrompt: 'Text box',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
+      exportPage: 'Export page',
+      exportHint: 'Export this page as PDF: original + revealed translation + notes, saved into the chapter artifacts',
+      exporting: 'Exporting this page…',
+      exportDone: 'Exported',
+      exportFailed: 'Export failed',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3631,6 +3641,26 @@ window.__ModuleLoader__.load({
         setDraftStroke(null)
       }
 
+      // Compose the current page on the Host: original page, the revealed parts
+      // of the overlay PDF, and the annotations. Saved into the chapter's
+      // produced files so it can be opened from the shelf like any artifact.
+      const exportPage = async () => {
+        updateNote(format('exporting'))
+        try {
+          const payload = await request('POST', 'export-page', {
+            book: reader.bookId,
+            code: reader.code,
+            page: reader.page,
+            masks,
+            annots: strokes,
+          })
+          updateNote(`${format('exportDone')}：${payload.pdf}`)
+        } catch (error) {
+          const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
+          updateNote(`${format('exportFailed')}：${message}`)
+        }
+      }
+
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
       useEffect(() => {
@@ -4098,6 +4128,11 @@ window.__ModuleLoader__.load({
                 onClick: () => { void maskAllBlocks() },
               }, format('overlayBlocks'))
               : null,
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('exportHint'),
+              onClick: () => { void exportPage() },
+            }, format('exportPage')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',

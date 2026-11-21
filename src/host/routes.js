@@ -504,6 +504,49 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/export-page`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request, 8 * 1024 * 1024)
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const page = Math.max(1, Math.round(Number(body.page) || 1))
+          const masks = Array.isArray(body.masks) ? body.masks : []
+          const annots = Array.isArray(body.annots) ? body.annots : []
+          const tmpDir = join(config.dataDir, 'tmp')
+          await mkdir(tmpDir, { recursive: true })
+          const stamp = Date.now().toString(36)
+          const masksPath = join(tmpDir, `export-${stamp}-masks.json`)
+          const annotsPath = join(tmpDir, `export-${stamp}-annots.json`)
+          await writeFile(masksPath, JSON.stringify(masks), 'utf8')
+          await writeFile(annotsPath, JSON.stringify(annots), 'utf8')
+          const overlayPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
+          const outDir = join(library.artifactDir, body.book, body.code)
+          await mkdir(outDir, { recursive: true })
+          const outName = `${body.code}_p${String(page).padStart(3, '0')}_export.pdf`
+          const outPath = join(outDir, outName)
+          try {
+            await runTool(join(config.toolsDir, 'export_page.py'), [
+              source, overlayPath, String(page), masksPath, annotsPath, outPath,
+            ])
+          } finally {
+            await unlink(masksPath).catch(() => {})
+            await unlink(annotsPath).catch(() => {})
+          }
+          sendJson(response, 200, { ok: true, pdf: outName, page })
+        } catch (error) {
+          fail(response, 500, 'export-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/rebuild-overlay`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')

@@ -2,6 +2,14 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.53.0
+
+- 导出第一步（M4-3 / M6）：工具条新增 **「导出本页」**。
+  - Host 侧 `tools/export_page.py` 用 PyMuPDF 合成一页：原页为底 → 每个遮罩区域用 `show_pdf_page(clip=…)` 露出 `_overlay.pdf` 对应区域 → 再把标注笔画（`draw_polyline`）和文本框（`insert_text` + 内置简体字体）画上去；
+  - 输出到本章「产物」目录：`<章代码>_pNNN_export.pdf`，可在产物列表里直接打开；
+  - `POST /mathdesk/export-page` 接收 `{book, code, page, masks, annots}`，导出结果与阅读器所见一致（坐标都是归一化的）。
+- 已知边界：一次导出当前页（整章导出留到下一步）；没有 `_overlay.pdf` 时只合成原文 + 标注。
+
 ## v0.52.3
 
 - 橡皮更灵敏：
