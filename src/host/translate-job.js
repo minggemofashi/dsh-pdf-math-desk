@@ -60,6 +60,14 @@ function capture(script, args, env) {
   })
 }
 
+/** Body font class for the chapter's own point size. */
+function fontClassOf(fontPt) {
+  if (fontPt >= 12.5) return '12pt'
+  if (fontPt >= 11.2) return '11pt'
+  if (fontPt >= 10) return '10pt'
+  return '9pt'
+}
+
 /**
  * Start a chapter translation; resolves nothing, writes progress to `jobPath`.
  * @param {{ rasterScript: string, md2texScript: string, apiKey: string, source: string, outPath: string, jobPath: string, target: 'zh'|'en', book: string, code: string }} options - job inputs.
@@ -192,10 +200,36 @@ export async function startChapterJob(options) {
         }
       }
       const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
+      // The reading PDF also uses the chapter's own paper size and body size, so
+      // the bilingual columns read at the same scale on both sides.
+      let paper = ''
+      let fontClass = ''
+      if (typeof options.toolsDir === 'string') {
+        try {
+          const sizes = JSON.parse(await capture(join(options.toolsDir, 'pdf_pagesizes.py'), [options.source]))
+          const size = Array.isArray(sizes) ? sizes[0] : null
+          if (Array.isArray(size) && size.length === 2) paper = `${size[0] / 72},${size[1] / 72}`
+        } catch {
+          paper = ''
+        }
+        try {
+          fontClass = fontClassOf(Number(JSON.parse(await capture(join(options.toolsDir, 'pdf_fontsize.py'), [options.source]))) || 0)
+        } catch {
+          fontClass = ''
+        }
+      }
       const markdownPath = join(tmpdir(), `${title}.md`)
       await writeFile(markdownPath, markdown, 'utf8')
       try {
-        await renderMarkdown(options.md2texScript, markdownPath, options.outPath)
+        await renderMarkdown(
+          options.md2texScript,
+          markdownPath,
+          options.outPath,
+          {
+            ...(paper === '' ? {} : { MATH_DESK_PAPER: paper }),
+            ...(fontClass === '' ? {} : { MATH_DESK_FONTSIZE: fontClass }),
+          }
+        )
       } finally {
         await rm(markdownPath, { force: true })
       }

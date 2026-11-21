@@ -142,6 +142,34 @@ function runTool(script, args) {
   })
 }
 
+/**
+ * Run one bundled tool and return its stdout (PDF sizes, font sizes, blocks).
+ * @param {string} script - absolute tool path.
+ * @param {string[]} args - tool arguments.
+ * @returns {Promise<string>} the tool's stdout.
+ */
+function toolOutput(script, args) {
+  const pythons = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
+  return new Promise((resolve, reject) => {
+    const next = index => {
+      if (index >= pythons.length) {
+        reject(new Error('没有可用的 Python'))
+        return
+      }
+      execFile(
+        pythons[index],
+        [script, ...args],
+        { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+        (error, stdout) => {
+          if (error === null) resolve(stdout)
+          else next(index + 1)
+        }
+      )
+    }
+    next(0)
+  })
+}
+
 async function chapterPdf(library, bookId, code) {
   const current = await catalog()
   const match = resolveChapter(current, bookId, code)
@@ -535,10 +563,25 @@ async function activeLibrary() {
           }
           const chunks = []
           for (const name of pages) chunks.push(await readFile(join(cacheDir, name), 'utf8'))
+          // Render on the source's own paper size: bilingual columns then look
+          // like one book instead of "chapter page next to an A4 sheet".
+          let paper = ''
+          try {
+            const sizes = JSON.parse(await toolOutput(join(config.toolsDir, 'pdf_pagesizes.py'), [source]))
+            const size = Array.isArray(sizes) ? sizes[0] : null
+            if (Array.isArray(size) && size.length === 2) paper = `${size[0] / 72},${size[1] / 72}`
+          } catch {
+            paper = ''
+          }
           const draft = join(cacheDir, `.render-${PLUGIN_VERSION}.md`)
           await writeFile(draft, chunks.join('\n\n\\newpage\n\n'), 'utf8')
           try {
-            await renderMarkdown(options.md2texScript, draft, outPath)
+            await renderMarkdown(
+              options.md2texScript,
+              draft,
+              outPath,
+              paper === '' ? {} : { MATH_DESK_PAPER: paper }
+            )
           } finally {
             await unlink(draft).catch(() => {})
           }

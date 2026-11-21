@@ -175,6 +175,8 @@ window.__ModuleLoader__.load({
       overlayToggle: '叠加',
       overlayHint: '拖拽画框，框内露出译文；点框可删除（需要先生成译文）',
       overlayRemove: '点击删除这个框',
+      overlayBlocks: '框住本页块',
+      overlayBlocksHint: '按本页文本块自动画框，避免手画的框把译文截掉（需要先翻译本章）',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -484,6 +486,8 @@ window.__ModuleLoader__.load({
       overlayToggle: 'Overlay',
       overlayHint: 'Drag to draw a box that reveals the translation underneath; click a box to remove it (translate the chapter first)',
       overlayRemove: 'Click to remove this box',
+      overlayBlocks: 'Box the page blocks',
+      overlayBlocksHint: 'Draw a box around every text block on this page so a hand-drawn box cannot clip the translation (translate the chapter first)',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -3396,6 +3400,34 @@ window.__ModuleLoader__.load({
           return null
         })
       }
+      // Masks drawn by hand clip whatever sticks out of the box, which is how a
+      // translated paragraph got cut in half. This builds the boxes from the
+      // page's own text blocks instead, with a little padding for descenders.
+      const maskAllBlocks = async () => {
+        try {
+          const payload = await request('GET',
+            `blocks?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&page=${reader.page}`)
+          const list = Array.isArray(payload.blocks) ? payload.blocks : []
+          const next = []
+          for (const block of list) {
+            if (!Array.isArray(block.bbox) || block.bbox.length < 4) continue
+            if (typeof block.md === 'string' && block.md.trim() === '') continue
+            const x = Number(block.bbox[0])
+            const y = Number(block.bbox[1])
+            const w = Number(block.bbox[2])
+            const h = Number(block.bbox[3])
+            if (![x, y, w, h].every(Number.isFinite)) continue
+            const left = Math.max(0, x - 0.01)
+            const top = Math.max(0, y - 0.006)
+            const right = Math.min(1, x + w + 0.01)
+            const bottom = Math.min(1, y + h + 0.012)
+            next.push({ x: left, y: top, w: right - left, h: bottom - top })
+          }
+          if (next.length > 0) setMasks(next)
+        } catch {
+          // no cached blocks for this page: leave the current boxes alone
+        }
+      }
 
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
@@ -3809,6 +3841,13 @@ window.__ModuleLoader__.load({
                 setOverlay(value => !value)
               },
             }, format('overlayToggle')),
+            overlay
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: format('overlayBlocksHint'),
+                onClick: () => { void maskAllBlocks() },
+              }, format('overlayBlocks'))
+              : null,
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
