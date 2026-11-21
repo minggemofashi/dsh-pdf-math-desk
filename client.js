@@ -195,6 +195,8 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: '开启后，md/txt 等非 PDF 产物也会显示「删除」按钮；关闭时只允许删除 PDF',
       settings: '设置',
       version: '版本',
+      aiPromptTitle: 'AI 生成 Markdown',
+      libraryPathsTitle: '书库路径与书 id',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -441,6 +443,8 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: 'When on, md/txt artifacts also show a Delete button; when off, only PDFs can be deleted',
       settings: 'Settings',
       version: 'Version',
+      aiPromptTitle: 'AI-generated Markdown',
+      libraryPathsTitle: 'Library paths and book ids',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -1585,21 +1589,25 @@ window.__ModuleLoader__.load({
         props.error === '' ? null : h('div', { className: 'md-alert', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error)
         ),
-        h('div', { className: 'md-library-manual' },
-          h('h3', { className: 'md-subheading' }, format('manualTitle')),
+        h('details', { className: 'md-details' },
+          h('summary', { className: 'md-details-summary' }, format('manualTitle')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhy')),
           h('p', { className: 'md-shelf-sub' }, format('manualStructure')),
           h('p', { className: 'md-shelf-sub' }, format('manualSplit')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhole')),
-          h('p', { className: 'md-shelf-sub' }, format('manualSession')),
-          h('div', { className: 'md-manual-block' },
-            h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
-            h('code', { className: 'md-path' }, format('aiPromptText')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: props.onCopyPrompt,
-            }, format('aiPromptCopy'))
-          ),
+          h('p', { className: 'md-shelf-sub' }, format('manualSession'))
+        ),
+        h('details', { className: 'md-details' },
+          h('summary', { className: 'md-details-summary' }, format('aiPromptTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
+          h('code', { className: 'md-path' }, format('aiPromptText')),
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            onClick: props.onCopyPrompt,
+          }, format('aiPromptCopy'))
+        ),
+        h('details', { className: 'md-details' },
+          h('summary', { className: 'md-details-summary' }, format('libraryPathsTitle')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
@@ -2977,6 +2985,9 @@ window.__ModuleLoader__.load({
 .md-input { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; padding: 6px 8px; }
 .md-input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .md-library-manual { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px dashed var(--dsw-alias-border-l3); border-radius: 10px; }
+.md-details { padding: 8px 12px; border: 1px dashed var(--dsw-alias-border-l3); border-radius: 10px; }
+.md-details-summary { cursor: pointer; font-size: 13px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-details[open] .md-details-summary { margin-bottom: 6px; }
 .md-library-samples { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-card-fill); }
 .md-manual-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-manual-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
