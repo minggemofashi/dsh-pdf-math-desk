@@ -30,6 +30,7 @@ import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from '.
 import { loadCatalog } from './index-source.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
 import { checkForUpdate } from './update.js'
+import { detectEnvironment } from './environment.js'
 import { renderMarkdown } from './render.js'
 import { readState, writeState } from './state.js'
 
@@ -236,6 +237,7 @@ export function createHandler(config, options = {}) {
           indexPath: library.indexPath,
           covers: await coverIds(library.coverDir),
           target,
+          environment: detectEnvironment(),
           resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
           pending: pending === undefined ? {} : await pending.list(),
           links: links === undefined ? {} : await links.list(),

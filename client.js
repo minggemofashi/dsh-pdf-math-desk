@@ -210,6 +210,11 @@ window.__ModuleLoader__.load({
       importToolTitle: '导入文件',
       toolbarTitle: '工具栏',
       diagnosticsTitle: '目录来源与路径',
+      envTitle: '排版环境',
+      envReady: '已就绪：md 可转 PDF',
+      envMissing: '未安装：md→PDF 按钮已隐藏，其余功能正常',
+      envDownload: '下载 TinyTeX（约 100 MB）',
+      envHint: 'TinyTeX 内含 xelatex；解压后把 bin 加入 PATH，重启 DSH 生效。另需 Python 3（仅渲染用）。',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
       updateLatest: '已是最新版本（v{version}）',
@@ -471,6 +476,11 @@ window.__ModuleLoader__.load({
       importToolTitle: 'Import files',
       toolbarTitle: 'Toolbar',
       diagnosticsTitle: 'Catalog source and paths',
+      envTitle: 'Typesetting environment',
+      envReady: 'ready: md can render to PDF',
+      envMissing: 'missing: md-to-PDF buttons are hidden, everything else works',
+      envDownload: 'Download TinyTeX (~100 MB)',
+      envHint: 'TinyTeX bundles xelatex; unzip and add its bin to PATH, then restart DSH. Python 3 is also needed for rendering.',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
       updateLatest: 'Up to date (v{version})',
@@ -1631,6 +1641,20 @@ window.__ModuleLoader__.load({
           h('p', { className: 'md-shelf-sub' }, format('manualSplit')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhole', { root: props.libraryDir })),
           h('p', { className: 'md-shelf-sub' }, format('manualSession')),
+          h('p', { className: 'md-shelf-sub' }, `${format('envTitle')}：${props.canRender ? format('envReady') : format('envMissing')}`),
+          h('div', { className: 'md-library-tools' },
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                try {
+                  window.open('https://github.com/rstudio/tinytex-releases/releases', '_blank', 'noopener')
+                } catch {
+                  // popup blocked
+                }
+              },
+            }, format('envDownload')),
+            h('span', { className: 'md-shelf-sub' }, format('envHint'))
+          ),
           h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
           h('code', { className: 'md-path' }, format('aiPromptText')),
           h('button', {
@@ -2175,7 +2199,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'md-file-name' }, item.name),
           h('span', { className: 'md-file-meta', 'aria-hidden': true },
             [formatSize(item.size), formatDate(item.mtime)].filter(Boolean).join(' · ')),
-          /\.md$/i.test(item.name)
+          /\.md$/i.test(item.name) && props.canRender === true
             ? h('span', {
               className: 'md-file-action', role: 'button', tabIndex: 0,
               title: format('renderActionHint'),
@@ -2796,6 +2820,7 @@ window.__ModuleLoader__.load({
             chapter,
             code: chapter.code,
             sessionIndex: props.sessionIndex,
+            canRender: props.canRender,
             onArtifactSession: props.onArtifactSession,
             allowNonPdfDelete: props.allowNonPdfDelete,
             onOpenSession: props.onOpenSession,
@@ -2848,6 +2873,7 @@ window.__ModuleLoader__.load({
                 groups: props.sessionIndex.byChapter.get(key),
                 sessionIndex: props.sessionIndex,
                 onArtifactSession: props.onArtifactSession,
+                canRender: props.canRender,
                 allowNonPdfDelete: props.allowNonPdfDelete,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
@@ -3281,6 +3307,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [settingsOpen, setSettingsOpen] = useState(false)
+      const [envTools, setEnvTools] = useState({ python: false, tex: false })
       useEffect(() => {
         if (!settingsOpen) return undefined
         const onDown = event => {
@@ -4151,6 +4178,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const shelves = Array.isArray(groups.shelves)
             ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
             : []
+          setEnvTools(data.environment !== null && typeof data.environment === 'object' ? { python: data.environment.python === true, tex: data.environment.tex === true } : { python: false, tex: false })
           setShelfGroups({ hidden, shelves })
           // Refresh re-reads data; it must not lose the shelf you are looking at.
           setGroup(previous => {
@@ -5418,6 +5446,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         body = h(LibrariesPage, {
           libraries: libs.items,
           activeId: libs.activeId,
+          canRender: envTools.python && envTools.tex,
           busy: libBusy,
           error: libError,
           onUse: activateLibrary,
@@ -5460,6 +5489,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
           onArtifactSession: newArtifactSession,
+          canRender: envTools.python && envTools.tex,
           allowNonPdfDelete,
           onRenderArtifact: renderArtifact,
           onTrashArtifact: trashArtifact,

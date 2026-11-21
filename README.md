@@ -107,7 +107,7 @@ dsh plugin add dsh-pdf-math-desk@0.35.3
 DSH → Plugins → Add plugin → 选择本目录。
 
 
-> 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX Live（xelatex、ctex）**；不装也能正常读书、开会话、预览 md，只是「转 PDF」会提示缺少依赖。
+> 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**。插件启动时会检测；**没检测到就不显示「转 PDF」按钮**，读书、会话、预览 md 均不受影响。安装可在书库页说明书里点「下载 TinyTeX（约 100 MB）」，解压后把 in 加入 PATH 并重启 DSH。
 
 ## 开始使用
 
