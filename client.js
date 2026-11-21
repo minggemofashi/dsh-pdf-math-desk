@@ -2753,9 +2753,23 @@ window.__ModuleLoader__.load({
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
+      // Page height at scale 1: reserves the real page's space before it paints.
+      // Without it every unpainted page is only `min-height: 240px`, so jumping
+      // to page N in continuous mode landed N*760px too high and the column
+      // seemed to jump once the pages above painted.
+      const [baseHeight, setBaseHeight] = useState(0)
       const holder = useRef(null)
       const canvas = useRef(null)
       const task = useRef(null)
+
+      useEffect(() => {
+        if (props.doc === null || props.doc === undefined) return undefined
+        let cancelled = false
+        void props.doc.getPage(props.pageNumber).then(page => {
+          if (!cancelled) setBaseHeight(page.getViewport({ scale: 1 }).height)
+        }).catch(() => {})
+        return () => { cancelled = true }
+      }, [props.doc, props.pageNumber])
 
       // Render lazily: a long chapter must not paint every page up front.
       useEffect(() => {
@@ -2822,7 +2836,10 @@ window.__ModuleLoader__.load({
         },
       },
         h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(props.pageNumber)),
-        h('div', { className: 'md-reader-page-wrap' },
+        h('div', {
+          className: 'md-reader-page-wrap',
+          style: baseHeight > 0 ? { minHeight: `${Math.round(baseHeight * props.scale)}px` } : undefined,
+        },
           h('canvas', { className: 'md-reader-canvas', ref: canvas }),
           h(BlockOverlay, { bookId: props.bookId, code: props.code, pageNumber: props.pageNumber, show: props.showBlocks === true })
         )
@@ -3393,14 +3410,40 @@ window.__ModuleLoader__.load({
         else slotRefs.current.set(page, node)
       }, [])
 
+      // Scrolling to a page before the column knows every page height lands on
+      // the wrong offset, so repeat once after the placeholders settle.
+      const scrollToPage = useCallback(page => {
+        const jump = () => {
+          const node = slotRefs.current.get(page)
+          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
+            node.scrollIntoView({ block: 'start' })
+          }
+        }
+        jump()
+        setTimeout(jump, 320)
+      }, [])
+
+      // The same callback instance for every page: a new one on each render
+      // recreated every IntersectionObserver and made scrolling jittery.
+      const notifyVisible = useCallback(page => {
+        if (switchingMode.current) return
+        if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+        visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
+      }, [props.onVisible])
+      // The right column never drives the page: keep its callbacks stable too,
+      // so its IntersectionObservers are not recreated on every render.
+      const ignoreVisible = useCallback(() => {}, [])
+      const ignoreSlot = useCallback(() => {}, [])
+
       // Explicit page changes (buttons, the page box, restore) scroll the
       // continuous column; pages reported by scrolling itself do not, so this
       // deliberately ignores `reader.page` unless a jump asked for it.
       useEffect(() => {
         if (reader.mode !== 'continuous' || reader.phase !== 'ready') return
-        const node = slotRefs.current.get(reader.page)
-        if (node !== undefined && node !== null) node.scrollIntoView({ block: 'start' })
-      }, [reader.jump, reader.mode, reader.phase])
+        scrollToPage(reader.page)
+        // `reader.page` is intentionally read but not watched: pages reported by
+        // scrolling itself must not scroll the column again.
+      }, [reader.jump, reader.mode, reader.phase, scrollToPage])
 
       // Switching back to a single page starts that page at the top of the stage.
       useEffect(() => {
@@ -3422,16 +3465,23 @@ window.__ModuleLoader__.load({
         const from = previousMode.current
         previousMode.current = reader.mode
         if (reader.mode === 'continuous' && from !== 'continuous') {
-          const node = slotRefs.current.get(reader.page)
-          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
-            node.scrollIntoView({ block: 'start' })
-          }
+          scrollToPage(reader.page)
         }
         return () => {
           switchingMode.current = false
           clearTimeout(timer)
         }
       }, [reader.mode])
+      // Zooming changes every page's pixel height, so keep the page being read
+      // at the top of the column instead of whatever scrollTop lands on after
+      // the heights change.
+      const lastScale = useRef(reader.scale)
+      useEffect(() => {
+        const changed = lastScale.current !== reader.scale
+        lastScale.current = reader.scale
+        if (!changed || reader.mode !== 'continuous' || reader.phase !== 'ready') return
+        scrollToPage(reader.page)
+      }, [reader.mode, reader.scale, reader.phase, scrollToPage])
       // Scroll mode: derive the page from the slot nearest the stage top, so
       // the page indicator matches what the reader actually sees.
       useEffect(() => {
@@ -3806,11 +3856,7 @@ window.__ModuleLoader__.load({
                   count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: dualLeft,
-                  onVisible: page => {
-                    if (switchingMode.current) return
-                    if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
-                    visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
-                  },
+                  onVisible: notifyVisible,
                   registerSlot,
                   onError: props.onError,
                 })
@@ -3852,8 +3898,8 @@ window.__ModuleLoader__.load({
                   count: reader.variant === 'translated' ? reader.count : (dualDoc.numPages || 0),
                   scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
-                  onVisible: () => {},
-                  registerSlot: () => {},
+                  onVisible: ignoreVisible,
+                  registerSlot: ignoreSlot,
                   onError: props.onError,
                 })
               )
@@ -3882,11 +3928,7 @@ window.__ModuleLoader__.load({
                 showBlocks,
                 bookId: reader.bookId,
                 code: reader.code,
-                onVisible: page => {
-                  if (switchingMode.current) return
-                  if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
-                  visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
-                },
+                onVisible: notifyVisible,
                 registerSlot,
                 onError: props.onError,
                 children: [

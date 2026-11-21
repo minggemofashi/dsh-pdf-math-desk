@@ -2,6 +2,8 @@
 dist/
 .dsh-scratch/
 node_modules/
+__pycache__/
+*.pyc
 *.tmp
 *.log
 .DS_Store

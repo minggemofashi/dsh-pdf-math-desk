@@ -113,7 +113,21 @@ def split_groups(lines):
     return groups
 
 
+def normalize_math_delimiters(text):
+    """Rewrite the model's \\(...\\) and \\[...\\] math into $...$ and $$...$$.
+
+    The vision model regularly answers with LaTeX delimiters instead of the
+    requested dollars; left alone they printed literally ("\\(\\rho\\)") and made
+    the translated pages look like broken markup."""
+    text = re.sub(r"(?<!\\)\\\(", "$", text)
+    text = re.sub(r"(?<!\\)\\\)", "$", text)
+    text = re.sub(r"(?<!\\)\\\[", "$$", text)
+    text = re.sub(r"(?<!\\)\\\]", "$$", text)
+    return text
+
+
 def convert(lines, chapter_title):
+    lines = [normalize_math_delimiters(line) for line in lines]
     out = []
     if chapter_title:
         out.append("\\section*{%s}\n" % inline(chapter_title))
