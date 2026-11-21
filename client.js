@@ -6996,8 +6996,22 @@ window.__ModuleLoader__.load({
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
-.md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .12s ease; }
+.md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .18s ease; }
 .md-reader-colhead:hover { opacity: 1; }
+/* The zoom controls and the page hint only appear when the header is hovered (or
+   focused from the keyboard); the title stays so the column is identifiable. */
+.md-reader-colhead > :not(.md-reader-coltitle) {
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.md-reader-colhead:hover > :not(.md-reader-coltitle),
+.md-reader-colhead:focus-within > :not(.md-reader-coltitle) {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
 .md-hidden { display: none; }
 .md-desk-mark { position: absolute; right: -4px; top: -2px; width: 7px; height: 7px; border-radius: 50%; }
 .md-desk-done { background: #2ecc71; }
