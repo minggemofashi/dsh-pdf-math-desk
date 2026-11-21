@@ -787,7 +787,11 @@ async function activeLibrary() {
               options.md2texScript,
               draft,
               outPath,
-              paper === '' ? {} : { MATH_DESK_PAPER: paper }
+              {
+                // No generated heading: the pages carry the book's own one.
+                MATH_DESK_NO_TITLE: '1',
+                ...(paper === '' ? {} : { MATH_DESK_PAPER: paper }),
+              }
             )
           } finally {
             await unlink(draft).catch(() => {})
@@ -834,7 +838,9 @@ async function activeLibrary() {
           await writeFile(mdPath, markdown, 'utf8')
           const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
           try {
-            await renderMarkdown(options.md2texScript, mdPath, out)
+            // The translated page keeps the book's own chapter heading; a
+            // generated one would print the temp file name above it.
+            await renderMarkdown(options.md2texScript, mdPath, out, { MATH_DESK_NO_TITLE: '1' })
           } finally {
             await unlink(mdPath).catch(() => {})
           }
@@ -869,7 +875,7 @@ async function activeLibrary() {
           await writeFile(mdPath, markdown, 'utf8')
           const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
           try {
-            await renderMarkdown(options.md2texScript, mdPath, out)
+            await renderMarkdown(options.md2texScript, mdPath, out, { MATH_DESK_NO_TITLE: '1' })
           } finally {
             await unlink(mdPath).catch(() => {})
           }

@@ -230,6 +230,7 @@ export async function startChapterJob(options) {
             if (!positioned) {
               await writeFile(miniMd, chunks[index], 'utf8')
               await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
+                MATH_DESK_NO_TITLE: '1',
                 MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
                 MATH_DESK_FONTSIZE: fontClass,
               })
@@ -269,6 +270,9 @@ export async function startChapterJob(options) {
           markdownPath,
           options.outPath,
           {
+            // The translated pages keep the book's headings; a generated one
+            // would print the chapter's file name on top of page 1.
+            MATH_DESK_NO_TITLE: '1',
             ...(paper === '' ? {} : { MATH_DESK_PAPER: paper }),
             ...(fontClass === '' ? {} : { MATH_DESK_FONTSIZE: fontClass }),
           }

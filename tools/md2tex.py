@@ -391,7 +391,16 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3:
         import tempfile
         src, out = sys.argv[1], sys.argv[2]
-        title = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(os.path.basename(src))[0]
+        # The heading is the caller's choice: a named artifact wants its own
+        # name, while a translated page already carries the book's chapter
+        # heading and must not repeat a temporary file name ("page-012",
+        # ".render-0.67.2") at the top. MATH_DESK_NO_TITLE=1 asks for none.
+        if len(sys.argv) > 3:
+            title = sys.argv[3]
+        elif os.environ.get("MATH_DESK_NO_TITLE") == "1":
+            title = ""
+        else:
+            title = os.path.splitext(os.path.basename(src))[0]
         with open(src, encoding="utf-8") as handle:
             lines = sanitize_display_math(handle.read()).split("\n")
         work = tempfile.mkdtemp(prefix="md2tex-")

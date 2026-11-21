@@ -173,7 +173,8 @@ window.__ModuleLoader__.load({
       sideMenuMore: '更多操作',
       sideMenuHint: '右键或点 ⋯ 打开菜单',
       sideMenuGoto: '跳页…',
-      sideGotoPrompt: '跳到第几页？',
+      sideGotoPrompt: '跳到第几页',
+      sideGotoHint: '点页码直接输入',
       sideMenuZoom: '缩放',
       sideMenuAutoFit: '自动适应栏宽',
       sideAutoFitOn: '自动适应栏宽',
@@ -208,8 +209,12 @@ window.__ModuleLoader__.load({
       annotEraseHint: '点或划过笔画即可删除',
       annotClearHint: '清空本页手写标注',
       annotText: '文本框',
-      annotTextHint: '在页面上点一下输入文字；用「擦」删除',
-      annotTextPrompt: '文本框内容',
+      annotTextHint: '点页面写字；Enter 保存，Shift+Enter 换行',
+      annotTextPrompt: '批注内容',
+      annotTextPlaceholder: '写下批注…',
+      annotTextEditorHint: 'Enter 保存 · Shift+Enter 换行 · Esc 取消',
+      annotTextEditHint: '双击编辑；清空内容再保存即删除',
+      annotTextActiveHint: '文本框：点页面任意位置写字，Enter 保存，Esc 取消',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       exportPage: '导出本页',
@@ -567,7 +572,8 @@ window.__ModuleLoader__.load({
       sideMenuMore: 'More actions',
       sideMenuHint: 'Right-click or click ⋯ to open the menu',
       sideMenuGoto: 'Go to page…',
-      sideGotoPrompt: 'Which page?',
+      sideGotoPrompt: 'Page number',
+      sideGotoHint: 'Click the page number to type',
       sideMenuZoom: 'Zoom',
       sideMenuAutoFit: 'Fit the column',
       sideAutoFitOn: 'Fitted to the column',
@@ -602,8 +608,12 @@ window.__ModuleLoader__.load({
       annotEraseHint: 'Click or drag across a stroke to delete it',
       annotClearHint: 'Remove every freehand stroke on this page',
       annotText: 'Text box',
-      annotTextHint: 'Click the page and type; remove it with Erase',
-      annotTextPrompt: 'Text box',
+      annotTextHint: 'Click the page to type; Enter saves, Shift+Enter breaks the line',
+      annotTextPrompt: 'Note text',
+      annotTextPlaceholder: 'Write a note…',
+      annotTextEditorHint: 'Enter saves · Shift+Enter newline · Esc cancels',
+      annotTextEditHint: 'Double-click to edit; save it empty to delete',
+      annotTextActiveHint: 'Text box: click anywhere on the page and type; Enter saves, Esc cancels',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       exportPage: 'Export page',
@@ -3525,6 +3535,105 @@ window.__ModuleLoader__.load({
       }, h('path', { d }))
     }
 
+    /**
+     * Apply one saved note to a page's annotation list. Shared by the reader and
+     * the side preview so both ends store a note the same way: an empty save on
+     * an existing note deletes it, surrounding whitespace is dropped, and inner
+     * line breaks stay.
+     * @param {Array<object>} list - the page's annotations.
+     * @param {{ index: number, x: number, y: number, color: string }} draft - the edited note.
+     * @param {string} raw - what the editor holds.
+     * @returns {Array<object>} the new list (a copy; the input is untouched).
+     */
+    function applyNote(list, draft, raw) {
+      const value = String(raw ?? '').replace(/^\s+|\s+$/g, '')
+      const next = Array.isArray(list) ? [...list] : []
+      if (draft.index >= 0 && draft.index < next.length) {
+        if (value === '') next.splice(draft.index, 1)
+        else next[draft.index] = { ...next[draft.index], text: value }
+        return next
+      }
+      if (value !== '') next.push({ kind: 'text', x: draft.x, y: draft.y, text: value, color: draft.color })
+      return next
+    }
+
+    /**
+     * In-place editor for a text note. The text tool used to call
+     * `window.prompt`, which DSH Desktop (Electron) does not implement: the
+     * click did nothing at all. The note is typed on the page instead — Enter
+     * saves, Shift+Enter breaks the line, Esc throws the draft away, and a blur
+     * saves what is there (so clicking a toolbar button never loses a note).
+     * The typed text lives here, not in the page's state: one keystroke must not
+     * re-render a whole chapter of pages. The owner reads it back through
+     * `onChange` into a ref it saves from.
+     * @param {{ draft: { text: string }, onChange: (text: string) => void,
+     *   onSave: () => void, onCancel: () => void }} props - the open draft.
+     * @returns {import('react').ReactElement} the editor.
+     */
+    function NoteEditor(props) {
+      const draft = props.draft
+      const [value, setValue] = useState(String(draft.text ?? ''))
+      const areaRef = useRef(null)
+      const closed = useRef(false)
+      useEffect(() => {
+        const node = areaRef.current
+        if (node === null) return
+        node.focus()
+        try {
+          node.setSelectionRange(node.value.length, node.value.length)
+        } catch {
+          // some engines refuse selection on a hidden field: focus is enough
+        }
+      }, [])
+      const finish = save => {
+        if (closed.current) return
+        closed.current = true
+        if (save) props.onSave()
+        else props.onCancel()
+      }
+      // The editor sits on the PDF page: keep the box inside the page even when
+      // the click lands near the right edge (the note itself stays at its point).
+      const left = Math.min(0.66, Math.max(0, draft.x)) * 100
+      return h('div', {
+        className: 'md-note-editor',
+        style: { left: `${left}%`, top: `${Math.max(0, draft.y) * 100}%`, maxWidth: `calc(100% - ${left}% - 6px)` },
+        onPointerDown: event => event.stopPropagation(),
+        onPointerMove: event => event.stopPropagation(),
+        onDoubleClick: event => event.stopPropagation(),
+        onContextMenu: event => event.stopPropagation(),
+      },
+        h('textarea', {
+          ref: areaRef,
+          className: 'md-note-input',
+          value,
+          rows: Math.min(8, Math.max(2, value.split('\n').length)),
+          spellCheck: false,
+          placeholder: format('annotTextPlaceholder'),
+          'aria-label': format('annotTextPrompt'),
+          onChange: event => {
+            setValue(event.target.value)
+            props.onChange(event.target.value)
+          },
+          onKeyDown: event => {
+            event.stopPropagation()
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              finish(false)
+              return
+            }
+            // Enter while an IME is composing confirms the candidate, not the note.
+            const composing = event.nativeEvent === undefined ? false : event.nativeEvent.isComposing === true
+            if (event.key === 'Enter' && !event.shiftKey && !composing) {
+              event.preventDefault()
+              finish(true)
+            }
+          },
+          onBlur: () => finish(true),
+        }),
+        h('span', { className: 'md-note-hint', 'aria-hidden': true }, format('annotTextEditorHint'))
+      )
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -3968,6 +4077,15 @@ window.__ModuleLoader__.load({
       const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
       const [draftStroke, setDraftStroke] = useState(null)
+      // The note being typed in place: `index` is its slot in `strokes`, or -1
+      // for one that does not exist yet. `id` keeps a stale save (a blur that
+      // lands after the draft was replaced) from touching the next note.
+      const [noteEdit, setNoteEdit] = useState(null)
+      const noteEditRef = useRef(null)
+      noteEditRef.current = noteEdit
+      const noteSeq = useRef(0)
+      // The editor owns the text while typing; this ref is what gets saved.
+      const noteText = useRef('')
       const [translatedImage, setTranslatedImage] = useState('')
       const [overlayNote, setOverlayNote] = useState('')
       const overlaySource = useRef('')
@@ -4344,6 +4462,11 @@ window.__ModuleLoader__.load({
           setStrokes([])
         }
       }, [annotKey, remoteAnnotRev])
+      // Turning the page (or taking the other end's edit) moves the ink under
+      // the editor: a draft left open would save itself onto the wrong page.
+      useEffect(() => {
+        setNoteEdit(null)
+      }, [annotKey, remoteAnnotRev])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
       // eraser can turn its pixel tolerance into page units.
@@ -4386,6 +4509,33 @@ window.__ModuleLoader__.load({
         }
         return strokeHits(entry, point)
       }
+      // Notes are edited where they sit. Text that already exists under the
+      // pointer is opened for editing instead of stacking a second note on top.
+      const openNote = point => {
+        const list = strokesRef.current
+        const found = list.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+        noteSeq.current += 1
+        if (found >= 0) {
+          const entry = list[found]
+          noteText.current = String(entry.text ?? '')
+          setNoteEdit({ id: noteSeq.current, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? annotColor })
+          return
+        }
+        noteText.current = ''
+        setNoteEdit({ id: noteSeq.current, index: -1, x: point[0], y: point[1], text: '', color: annotColor })
+      }
+      const changeNote = text => {
+        noteText.current = text
+      }
+      const cancelNote = () => setNoteEdit(null)
+      const saveNote = id => {
+        const draft = noteEditRef.current
+        if (draft === null || draft.id !== id) return
+        setNoteEdit(null)
+        // Nothing typed into a brand-new note: nothing to store.
+        if (draft.index < 0 && noteText.current.trim() === '') return
+        savePageAnnots(applyNote(strokesRef.current, draft, noteText.current))
+      }
       const erasing = useRef(false)
       const annotDown = event => {
         if (annotTool === '') return
@@ -4398,11 +4548,10 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'text') {
-          const typed = typeof window.prompt === 'function' ? window.prompt(format('annotTextPrompt'), '') : ''
-          const value = typeof typed === 'string' ? typed.trim() : ''
-          if (value !== '') {
-            savePageAnnots([...strokesRef.current, { kind: 'text', x: point[0], y: point[1], text: value, color: annotColor }])
-          }
+          // A click outside the open editor only finishes it: making a new note
+          // where the user merely clicked to dismiss would surprise them.
+          if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
+          else openNote(point)
           return
         }
         setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
@@ -4828,11 +4977,42 @@ window.__ModuleLoader__.load({
               strokeLinejoin: 'round',
             })
         ),
-        strokes.filter(entry => entry.kind === 'text').map((entry, index) => h('div', {
-          key: `text-${index}`,
-          className: 'md-annot-text',
-          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
-        }, entry.text))
+        // Iterating `strokes` (not the filtered notes) keeps the index aligned
+        // with the stored list, so a double-click edits the right entry.
+        strokes.map((entry, index) => (entry.kind === 'text'
+          ? h('div', {
+            key: `text-${index}`,
+            className: 'md-annot-text',
+            title: annotTool === '' ? format('annotTextEditHint') : undefined,
+            style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+            onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
+            onDoubleClick: annotTool === ''
+              ? event => {
+                event.preventDefault()
+                event.stopPropagation()
+                noteSeq.current += 1
+                noteText.current = String(entry.text ?? '')
+                setNoteEdit({
+                  id: noteSeq.current,
+                  index,
+                  x: entry.x,
+                  y: entry.y,
+                  text: noteText.current,
+                  color: entry.color ?? annotColor,
+                })
+              }
+              : undefined,
+          }, entry.text)
+          : null)),
+        noteEdit === null
+          ? null
+          : h(NoteEditor, {
+            key: `note-${noteEdit.id}`,
+            draft: noteEdit,
+            onChange: changeNote,
+            onSave: () => saveNote(noteEdit.id),
+            onCancel: cancelNote,
+          })
       )
 
       const masksLayer = overlay
@@ -5176,6 +5356,11 @@ window.__ModuleLoader__.load({
             }, format('retryAction'))
             : null
         ),
+        // While the text tool is picked, say what to do with it: an icon-only
+        // button otherwise looks dead until the page is clicked.
+        annotTool === 'text' && noteEdit === null && reader.mode === 'single'
+          ? h('div', { className: 'md-reader-note' }, format('annotTextActiveHint'))
+          : null,
         overlay && (overlayNote !== '' || translatedImage === '')
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
             overlayNote === '' ? format('overlayLoading') : overlayNote)
@@ -5823,7 +6008,19 @@ window.__ModuleLoader__.load({
 /* A text note sits on the white PDF page, so it needs its own backing: the chip
    follows the theme (light or dark) and keeps any ink colour readable. */
 .md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-border-l3) 55%, transparent); }
+/* With no tool picked, a note is clickable so a double-click can edit it. */
+.md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; }
+.md-annot[data-tool=""] .md-annot-text:hover { box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary); }
+/* The in-place note editor: opaque enough to read over any page, and never
+   wider than the page box it sits in. */
+.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 3px; width: 240px; min-width: 140px; pointer-events: auto; }
+.md-note-input { box-sizing: border-box; width: 100%; min-height: 34px; max-height: 240px; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.4; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); box-shadow: 0 4px 14px color-mix(in srgb, #000 22%, transparent); outline: none; }
+.md-note-input::placeholder { color: var(--dsw-alias-label-secondary); }
+.md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 1px 6px; border-radius: 5px; color: var(--dsw-alias-label-secondary); background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
+/* A picked tool must look picked: these are icon-only buttons outside the
+   mode group, and without this the text tool read as a dead click. */
+.md-reader-subbar .md-icon-btn[aria-pressed="true"], .md-side-bar .md-icon-btn[aria-pressed="true"] { color: var(--dsw-alias-brand-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-icon { display: block; }
 .md-annot-swatch { width: 16px; height: 16px; min-width: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--dsw-alias-border-l3); }
 .md-annot-swatch[aria-pressed="true"] { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
@@ -5879,6 +6076,11 @@ window.__ModuleLoader__.load({
 .md-side-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
 .md-side-bar .md-btn { white-space: nowrap; flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
 .md-side-count { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The page number doubles as the "go to page" input: a button that turns into
+   a box on click, so the jump never depends on window.prompt. */
+.md-side-bar .md-side-count { padding: 3px 7px; border: 1px solid transparent; }
+.md-side-bar .md-side-count:hover { border-color: var(--dsw-alias-border-l3); }
+.md-side-goto { width: 56px; padding: 3px 5px; font: inherit; font-size: 12px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 6px; outline: none; }
 .md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-side-more { font-size: 15px; line-height: 1; padding: 2px 9px; }
 /* With the toolbar hidden, the handle fades in on hover and sits in the stage's
@@ -6009,8 +6211,31 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Annotation and box editing: this end edits too, so both the tool and the
       // in-progress shapes live here and the shared counter tells the reader.
       const [tool, setTool] = useState('')
+      // The page number turns into an input on click: `window.prompt` does not
+      // exist in DSH Desktop, so the menu's "go to page" used to do nothing.
+      const [gotoOpen, setGotoOpen] = useState(false)
+      const gotoInput = useRef(null)
+      useEffect(() => {
+        if (!gotoOpen) return
+        const node = gotoInput.current
+        if (node === null) return
+        node.focus()
+        try {
+          node.select()
+        } catch {
+          // focus alone is enough
+        }
+      }, [gotoOpen])
       const [draftStroke, setDraftStroke] = useState(null)
       const [maskDraft, setMaskDraft] = useState(null)
+      // The note being typed in the preview; `index` is its slot in `strokes`,
+      // or -1 for one that does not exist yet. The text itself stays inside the
+      // editor until saved (`noteText` is what a save reads).
+      const [noteEdit, setNoteEdit] = useState(null)
+      const noteEditRef = useRef(null)
+      noteEditRef.current = noteEdit
+      const noteSeq = useRef(0)
+      const noteText = useRef('')
       const strokesRef = useRef(strokes)
       const masksRef = useRef(masks)
       strokesRef.current = strokes
@@ -6212,6 +6437,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         commitPage('masks', next, pageRef.current)
       }
 
+      // A draft belongs to the page it was started on: a page change (or the
+      // reader's edit) would otherwise save it into the new page's list.
+      useEffect(() => {
+        setNoteEdit(null)
+      }, [page, annotRev, shownVariant])
+
       // Point in page coordinates (0..1), measured against the editing layer,
       // which is exactly the page box at any zoom. The box width is remembered so
       // the eraser's pixel tolerance can become page units.
@@ -6255,6 +6486,30 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         const next = strokesRef.current.filter(entry => !hitTest(entry, point))
         if (next.length !== strokesRef.current.length) commitStrokes(next)
       }
+      const openNote = point => {
+        const list = strokesRef.current
+        const found = list.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
+        noteSeq.current += 1
+        if (found >= 0) {
+          const entry = list[found]
+          noteText.current = String(entry.text ?? '')
+          setNoteEdit({ id: noteSeq.current, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? '#1f1f1f' })
+          return
+        }
+        noteText.current = ''
+        setNoteEdit({ id: noteSeq.current, index: -1, x: point[0], y: point[1], text: '', color: '#1f1f1f' })
+      }
+      const changeNote = text => {
+        noteText.current = text
+      }
+      const cancelNote = () => setNoteEdit(null)
+      const saveNote = id => {
+        const draft = noteEditRef.current
+        if (draft === null || draft.id !== id) return
+        setNoteEdit(null)
+        if (draft.index < 0 && noteText.current.trim() === '') return
+        commitStrokes(applyNote(strokesRef.current, draft, noteText.current))
+      }
       const editDown = event => {
         if (tool === '') return
         const point = pointOf(event)
@@ -6270,6 +6525,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           maskStartRef.current = point
           maskDraftRef.current = { x: point[0], y: point[1], w: 0, h: 0 }
           setMaskDraft(maskDraftRef.current)
+          return
+        }
+        if (tool === 'text') {
+          if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
+          else openNote(point)
           return
         }
         draftRef.current = { kind: 'stroke', points: [point], color: '#1f1f1f', width: 2 }
@@ -6689,6 +6949,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 width: `${maskDraft.w * 100}%`,
                 height: `${maskDraft.h * 100}%`,
               },
+            }),
+          noteEdit === null
+            ? null
+            : h(NoteEditor, {
+              key: `note-${noteEdit.id}`,
+              draft: noteEdit,
+              onChange: changeNote,
+              onSave: () => saveNote(noteEdit.id),
+              onCancel: cancelNote,
             }))
 
       // Feedback from a menu action that runs outside a component message line.
@@ -6727,10 +6996,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 label: format('sideMenuGoto'),
                 disabled: !ready || state.count === 0,
                 run: () => {
-                  const answer = window.prompt(format('sideGotoPrompt'), String(state.page))
-                  if (answer === null) return
-                  const wanted = Number.parseInt(answer, 10)
-                  if (Number.isFinite(wanted)) goPage(wanted)
+                  // The input lives in the toolbar, so a hidden toolbar comes
+                  // back for the jump (the saved preference is untouched).
+                  setToolsHidden(false)
+                  setGotoOpen(true)
                 },
               },
             ],
@@ -6741,6 +7010,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             children: [
               { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, disabled: state.mode !== 'single', run: () => toggleTool('pen') },
               { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, disabled: state.mode !== 'single', run: () => toggleTool('erase') },
+              { id: 'text', label: `${check(state.tool === 'text')}${format('annotText')}`, disabled: state.mode !== 'single', run: () => toggleTool('text') },
               { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, disabled: state.mode !== 'single', run: () => toggleTool('mask') },
               {
                 id: 'clear-annots',
@@ -6914,7 +7184,39 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: page <= 1 || phase !== 'ready',
             onClick: () => goPage(page - 1),
           }, '‹'),
-          h('span', { className: 'md-side-count' }, count === 0 ? String(page) : `${page} / ${count}`),
+          gotoOpen
+            ? h('input', {
+              key: 'goto',
+              ref: gotoInput,
+              className: 'md-side-goto',
+              type: 'text',
+              inputMode: 'numeric',
+              defaultValue: String(page),
+              'aria-label': format('sideGotoPrompt'),
+              title: format('sideGotoPrompt'),
+              onKeyDown: event => {
+                event.stopPropagation()
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setGotoOpen(false)
+                  return
+                }
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                const wanted = Number.parseInt(event.currentTarget.value, 10)
+                setGotoOpen(false)
+                if (Number.isFinite(wanted)) goPage(wanted)
+              },
+              onBlur: () => setGotoOpen(false),
+            })
+            : h('button', {
+              type: 'button',
+              className: 'md-btn md-btn-small md-side-count',
+              title: format('sideGotoHint'),
+              'aria-label': format('sideMenuGoto'),
+              disabled: count === 0 || phase !== 'ready',
+              onClick: () => setGotoOpen(true),
+            }, count === 0 ? String(page) : `${page} / ${count}`),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small',
@@ -6942,6 +7244,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: mode !== 'single',
             onClick: () => toggleTool('erase'),
           }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'text' ? 'true' : 'false',
+            title: format('annotTextHint'),
+            'aria-label': format('annotText'),
+            disabled: mode !== 'single',
+            onClick: () => toggleTool('text'),
+          }, annotIcon('M4 6h16M12 6v13M9 19h6')),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
@@ -7656,9 +7967,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (reader === null) return undefined
         const stage = readerStage
         const onKeyDown = event => {
+          const target = event.target
+          // The in-place note editor owns Escape (cancel) and every other key
+          // it types, in the reader and in the right column alike. This
+          // listener runs in the capture phase on window, so it would otherwise
+          // close the reader out from under an open note.
+          if (target !== null && target !== undefined && typeof target.closest === 'function'
+            && target.closest('.md-note-editor') !== null) return
           const action = shortcutActionOf(event)
           if (action === '') return
-          const target = event.target
           const typing = target !== null && target !== undefined
             && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)
           if (typing && action !== 'closeReader') return
