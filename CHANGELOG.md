@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.49.0
+
+- 阅读器重写启动：新增 `src/client/viewer.js` 基础模块（统一绘制 `paintPage`、遮罩几何 `maskPageStyle`、viewer 样式），作为后续 PdfViewer 的落地骨架；
+- 设计稿 `docs/READER-REWRITE.md` 固定了目标、规则与迁移步骤；
+- 阅读区居中改为 `safe center`，修复放大后水平滚动到不了最左。
+
 ## v0.48.8
 
 - 新增 `docs/READER-REWRITE.md`：统一 PdfViewer 的目标、架构、坑点规则、迁移步骤与验收标准，防止重写过程跑偏；
