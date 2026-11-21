@@ -2706,7 +2706,6 @@ window.__ModuleLoader__.load({
           'aria-controls': open ? detailId : undefined,
           ref: node => props.registerRef(chapter.code, node),
           onClick: event => props.onClick(event, chapter),
-          onDoubleClick: () => props.onOpenPdf(chapter),
         },
           h('span', { className: 'md-code' }, chapter.code),
           h('span', { className: 'md-ch-title' }, chapter.title === '' ? format('untitled', { code: chapter.code }) : chapter.title),
