@@ -2746,7 +2746,7 @@ window.__ModuleLoader__.load({
         h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(props.pageNumber)),
         h('div', { className: 'md-reader-page-wrap' },
           h('canvas', { className: 'md-reader-canvas', ref: canvas }),
-          h(BlockOverlay, { doc: props.doc, pageNumber: props.pageNumber, show: props.showBlocks === true })
+          h(BlockOverlay, { bookId: props.bookId, code: props.code, pageNumber: props.pageNumber, show: props.showBlocks === true })
         )
       )
     }
@@ -2768,6 +2768,8 @@ window.__ModuleLoader__.load({
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
           showBlocks: props.showBlocks,
+          bookId: props.bookId,
+          code: props.code,
           onError: props.onError,
         }))
       }
@@ -2896,25 +2898,22 @@ window.__ModuleLoader__.load({
     function BlockOverlay(props) {
       const [blocks, setBlocks] = useState([])
       useEffect(() => {
-        if (props.show !== true || props.doc === null || props.doc === undefined) {
+        if (props.show !== true) {
           setBlocks([])
           return undefined
         }
         let cancelled = false
-        const run = async () => {
-          try {
-            const page = await props.doc.getPage(props.pageNumber)
-            const parsed = await parsePageBlocks(page)
-            if (!cancelled) setBlocks(parsed)
-          } catch {
+        request('GET', `blocks?book=${encodeURIComponent(props.bookId ?? '')}&code=${encodeURIComponent(props.code ?? '')}&page=${props.pageNumber}`)
+          .then(payload => {
+            if (!cancelled) setBlocks(Array.isArray(payload.blocks) ? payload.blocks : [])
+          })
+          .catch(() => {
             if (!cancelled) setBlocks([])
-          }
-        }
-        void run()
+          })
         return () => {
           cancelled = true
         }
-      }, [props.doc, props.pageNumber, props.show])
+      }, [props.bookId, props.code, props.pageNumber, props.show])
       if (props.show !== true || blocks.length === 0) return null
       return h('div', { className: 'md-blocklayer', 'aria-hidden': true },
         blocks.map(block => h('div', {
@@ -2932,6 +2931,7 @@ window.__ModuleLoader__.load({
       )
     }
 
+
     /**
      * The full-page PDF reader: one page or a continuous column, page
      * navigation, zoom, reading-mode switch, and the chapter's three New
@@ -2948,6 +2948,7 @@ window.__ModuleLoader__.load({
       const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
       const switchingMode = useRef(false)
+      const visibleTimer = useRef(null)
       useEffect(() => setPageText(String(reader.page)), [reader.page])
       useEffect(() => {
         saveReaderPage(reader.bookId, reader.code, reader.page)
@@ -3230,12 +3231,15 @@ window.__ModuleLoader__.load({
                 ? h(ContinuousView, {
                   doc: props.doc,
                   showBlocks,
+                  bookId: reader.bookId,
+                  code: reader.code,
                   count: reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: props.stageRef,
                   onVisible: page => {
                     if (switchingMode.current) return
-                    props.onVisible(page)
+                    if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+                    visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
                   },
                   registerSlot,
                   onError: props.onError,
@@ -3243,7 +3247,7 @@ window.__ModuleLoader__.load({
                 : h('div', { className: 'md-reader-single' },
                   h('div', { className: 'md-reader-single-page' },
                     h('canvas', { className: 'md-reader-canvas', ref: props.canvasRef }),
-                    h(BlockOverlay, { doc: props.doc, pageNumber: reader.page, show: showBlocks })
+                    h(BlockOverlay, { bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks })
                   ))
         )
       )

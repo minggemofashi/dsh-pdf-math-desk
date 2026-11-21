@@ -28,6 +28,7 @@ import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolv
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
+import { readPageBlocks } from './blocks.js'
 import { translatePage } from './translate.js'
 import { startChapterJob } from './translate-job.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
@@ -349,6 +350,33 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, configured: key !== '' })
         } catch (error) {
           fail(response, 500, 'key-save-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/blocks`) {
+        try {
+          const book = url.searchParams.get('book') ?? ''
+          const code = (url.searchParams.get('code') ?? '').toLowerCase()
+          const page = Number.parseInt(url.searchParams.get('page') ?? '', 10)
+          if (!Number.isFinite(page) || page < 1) {
+            fail(response, 400, 'bad-page', '页码不合法')
+            return
+          }
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, book, code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const blocks = await readPageBlocks({
+            script: join(config.toolsDir, 'pdf_blocks.py'),
+            source,
+            pageIndex: page,
+          })
+          sendJson(response, 200, { ok: true, blocks })
+        } catch (error) {
+          fail(response, 500, 'blocks-failed', String(error && error.message ? error.message : error))
         }
         return
       }
