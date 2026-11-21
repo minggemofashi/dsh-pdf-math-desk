@@ -196,6 +196,8 @@ window.__ModuleLoader__.load({
       shelfCreate: '创建',
       shelfHide: '隐藏所选',
       shelfUnhide: '取消隐藏',
+      shelfTrash: '删除所选（移入回收站）',
+      trashSelectedConfirm: '删除选中的 {n} 本书？它们的章节 PDF 会移入 回收站\\，可恢复。',
       shelfRemove: '移出书架',
       shelfClear: '取消选择',
       shelfNameEmpty: '书架名称不能为空',
@@ -422,6 +424,8 @@ window.__ModuleLoader__.load({
       shelfCreate: 'Create',
       shelfHide: 'Hide selected',
       shelfUnhide: 'Unhide selected',
+      shelfTrash: 'Delete selected (to recycle bin)',
+      trashSelectedConfirm: 'Delete {n} selected book(s)? Their chapter PDFs move to 回收站\\ and can be restored.',
       shelfRemove: 'Remove from shelf',
       shelfClear: 'Clear selection',
       shelfNameEmpty: 'A shelf needs a name',
@@ -1652,7 +1656,6 @@ window.__ModuleLoader__.load({
               hasCover: props.covers.has(book.id),
               onSelect: props.onToggle,
               onOpen: props.onOpen,
-              onContextMenu: props.group === 'hidden' ? () => props.onTrashBook(book.id) : undefined,
               registerRef: props.registerRef,
             }))
           ),
@@ -1680,6 +1683,12 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onHide,
               }, format('shelfHide')),
+            props.group === 'hidden'
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onTrashSelected,
+              }, format('shelfTrash'))
+              : null,
             props.group !== null && props.group !== 'hidden'
               ? h('button', {
                 type: 'button', className: 'md-btn md-btn-small',
@@ -3594,6 +3603,28 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [shelfGroups, showNotice])
 
+      /** Button in the hidden shelf: trash every selected book, keep recoverable. */
+      const trashSelected = useCallback(async () => {
+        if (selected.size === 0) return
+        if (!window.confirm(format('trashSelectedConfirm', { n: selected.size }))) return
+        const ids = new Set(selected)
+        for (const id of selected) {
+          try {
+            await request('POST', 'trash-book', { book: id })
+          } catch {
+            // keep going: the notice below reports what still exists
+          }
+        }
+        saveShelfGroups({
+          hidden: shelfGroups.hidden.filter(id => !ids.has(id)),
+          shelves: shelfGroups.shelves.map(shelf => ({ ...shelf, books: shelf.books.filter(id => !ids.has(id)) })),
+        })
+        showNotice(format('trashDone'))
+        setSelected(new Set())
+        setGroup('hidden')
+        setReloadKey(key => key + 1)
+      }, [selected, shelfGroups, showNotice])
+
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
         if (item.kind === 'pdf') {
@@ -4636,11 +4667,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
           name: title.slice(0, 60),
           books: [...selected],
+          ...(group === null || group === 'hidden' ? {} : { parent: group }),
         }
         saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
         setShelfName(null)
         setSelected(new Set())
-        setGroup(shelf.id)
       }, [saveShelfGroups, selected, shelfGroups, shelfName, showNotice])
 
       const hideSelected = useCallback(() => {
@@ -5071,14 +5102,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         const groupNameForShelf = group === 'hidden'
           ? format('hiddenShelf')
           : activeShelf === null ? null : activeShelf.name
-        const collections = group !== null
-          ? []
-          : [
-            ...(shelfGroups.hidden.length === 0 ? [] : [{ id: 'hidden', name: format('hiddenShelf'), count: shelfGroups.hidden.filter(id => books.some(book => book.id === id)).length }]),
-            ...shelfGroups.shelves
-              .filter(shelf => shelf.books.length > 0)
-              .map(shelf => ({ id: shelf.id, name: shelf.name, count: shelf.books.filter(id => books.some(book => book.id === id)).length })),
-          ]
+        const collections = [
+          ...(group !== null || shelfGroups.hidden.length === 0
+            ? []
+            : [{ id: 'hidden', name: format('hiddenShelf'), count: shelfGroups.hidden.filter(id => books.some(book => book.id === id)).length }]),
+          ...shelfGroups.shelves
+            .filter(shelf => (shelf.parent ?? null) === group && shelf.books.length > 0)
+            .map(shelf => ({ id: shelf.id, name: shelf.name, count: shelf.books.filter(id => books.some(book => book.id === id)).length })),
+        ]
         body = h(Shelf, {
           books: visibleBooks,
           covers: catalog.covers,
@@ -5094,6 +5125,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onOpenGroup: openGroup,
           onDeleteGroup: deleteShelf,
           onTrashBook: trashBook,
+          onTrashSelected: trashSelected,
           onCreateShelf: () => setShelfName(''),
           onHide: hideSelected,
           onUnhide: unhideSelected,
