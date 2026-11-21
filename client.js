@@ -4178,6 +4178,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (id === keepId || id in pending || archivedIds.has(id)) continue
           const summary = list.byId[id]
           if (summary === undefined || summary.blank !== true || summary.origin === 'subagent') continue
+          if (pendingDrafts.current.has(id)) continue
           if (typeof summary.cwd === 'string' && summary.cwd !== '' && targetPath !== '' && !sameDirectory(summary.cwd, targetPath)) continue
           if (parseSessionTitle(summary.title) === null) continue
           if (force !== true && sessionIsRetained(id)) continue
@@ -4212,6 +4213,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (archivedIds.has(id)) continue
           const summary = list.byId[id]
           if (summary === undefined || summary.blank !== true || summary.origin === 'subagent') continue
+          if (pendingDrafts.current.has(id)) continue
           if (typeof summary.title === 'string' && summary.title !== '') continue
           if (typeof summary.cwd === 'string' && summary.cwd !== '' && target.cwd !== '' && !sameDirectory(summary.cwd, target.cwd)) continue
           if (workspace !== undefined && Array.isArray(workspace.sessionIds) && !workspace.sessionIds.includes(id)) continue
