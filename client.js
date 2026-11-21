@@ -5388,8 +5388,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [maskDoc, setMaskDoc] = useState(null)
       const maskTask = useRef(null)
       // Which `book|code|rev` the mask document belongs to, so a page change does
-      // not reload it.
+      // not reload it; `maskLoading` marks the same key while its load is running.
       const maskReady = useRef('')
+      const maskLoading = useRef('')
       // Publishing starts only after the opening view has been adopted, so the
       // first render cannot push a default page 1 over the reader's page.
       const [started, setStarted] = useState(false)
@@ -5501,6 +5502,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // loader checks, so a re-render in the same commit still reloads.
       useEffect(() => {
         maskReady.current = ''
+        maskLoading.current = ''
         setMaskDoc(null)
         return () => {
           const task = maskTask.current
@@ -5518,8 +5520,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useEffect(() => {
         if (!wantsMaskDoc || bookId === '' || code === '') return undefined
         const key = `${bookId}|${code}|${docRev}`
-        if (maskReady.current === key) return undefined
-        maskReady.current = key
+        if (maskReady.current === key || maskLoading.current === key) return undefined
+        maskLoading.current = key
         let cancelled = false
         void (async () => {
           try {
@@ -5537,6 +5539,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   return
                 }
                 maskTask.current = task
+                maskReady.current = key
+                maskLoading.current = ''
                 setMaskDoc(loaded)
                 return
               } catch {
@@ -5546,8 +5550,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           } catch {
             // no translation yet: the boxes simply stay empty
           }
+          // Nothing to load (or the build vanished): allow a later retry.
+          if (maskLoading.current === key) maskLoading.current = ''
         })()
-        return () => { cancelled = true }
+        return () => {
+          cancelled = true
+          if (maskLoading.current === key) maskLoading.current = ''
+        }
       }, [wantsMaskDoc, bookId, code, docRev])
 
       const fitScale = useCallback(baseWidth => {
