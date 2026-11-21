@@ -21,8 +21,8 @@
  *
  * @module dsh-pdf-math-desk/routes
  */
-import { copyFile, mkdir, readFile, readdir, stat } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { basename, extname, isAbsolute, join, relative } from 'node:path'
 
 import { countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { PLUGIN_VERSION } from './config.js'
@@ -239,6 +239,45 @@ export function createHandler(config, options = {}) {
         }
         const result = await checkForUpdate(config.updateProxy)
         sendJson(response, 200, result)
+        return
+      }
+
+      if (path === `${PREFIX}/import`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const wanted = basename(url.searchParams.get('name') ?? '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 160)
+        if (wanted === '' || !/\.(md|markdown|txt|pdf|png|jpe?g|webp)$/i.test(wanted)) {
+          fail(response, 400, 'bad-name', '只接受 md/txt/pdf/图片文件')
+          return
+        }
+        const library = await activeLibrary()
+        const dir = join(library.libraryDir, '导入')
+        await mkdir(dir, { recursive: true })
+        const chunks = []
+        let total = 0
+        for await (const chunk of request) {
+          total += chunk.length
+          if (total > 64 * 1024 * 1024) {
+            fail(response, 413, 'too-large', '单个文件不能超过 64 MB')
+            return
+          }
+          chunks.push(chunk)
+        }
+        const extension = extname(wanted)
+        const stem = wanted.slice(0, wanted.length - extension.length)
+        let target = join(dir, wanted)
+        for (let n = 2; n < 1000; n += 1) {
+          try {
+            await stat(target)
+            target = join(dir, `${stem}-${n}${extension}`)
+          } catch {
+            break
+          }
+        }
+        await writeFile(target, Buffer.concat(chunks))
+        sendJson(response, 200, { ok: true, path: target, bytes: total })
         return
       }
 

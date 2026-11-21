@@ -91,6 +91,10 @@ window.__ModuleLoader__.load({
       manualSession: '拆分会话：点下面的按钮，工具会复制到当前书库的 工具\\，并新开一个会话，提示词里已经写好当前书库的路径、目标目录和命名规则。',
       splitStart: '拆分工具：开一个会话',
       splitHint: '把工具复制到当前书库的 工具\\，并新建一个带预设提示词的会话。',
+      importStart: '导入文件',
+      importBusy: '导入中…',
+      importHint: '把外部文件复制到当前书库的 导入\\ 目录',
+      importFilesDone: '已导入 {n} 个文件到 库根\\导入\\',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
       splitFailed: '拆分工具启动失败',
       librariesTitleHint: '双击标题回到书库',
@@ -303,6 +307,10 @@ window.__ModuleLoader__.load({
       manualSession: 'Split session: the button below copies the toolkit into 工具\\ of this library and opens a conversation whose prompt already names the library path, the target folder, and the naming rules.',
       splitStart: 'Split a book (opens a conversation)',
       splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
+      importStart: 'Import files',
+      importBusy: 'Importing…',
+      importHint: 'Copy external files into the active library\'s 导入\\ folder',
+      importFilesDone: 'Imported {n} file(s) into the library\'s 导入\\ folder',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
       splitFailed: 'Could not start the split conversation',
       librariesTitleHint: 'Double-click the title for the libraries',
@@ -1525,7 +1533,12 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button', className: 'md-btn', disabled: busy, title: format('splitHint'),
             onClick: props.onSplit,
-          }, busy ? format('libraryBusy') : format('splitStart'))
+          }, busy ? format('libraryBusy') : format('splitStart')),
+          h('button', {
+            type: 'button', className: 'md-btn', disabled: busy || props.importBusy,
+            title: format('importHint'),
+            onClick: props.onImport,
+          }, props.importBusy ? format('importBusy') : format('importStart'))
         )
       )
     }
@@ -2919,6 +2932,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [updateBusy, setUpdateBusy] = useState(false)
       const [sample, setSample] = useState(null)
       const [sampleBusy, setSampleBusy] = useState(false)
+      const [importBusy, setImportBusy] = useState(false)
+      const importInput = useRef(null)
       const [shelfGroups, setShelfGroups] = useState({ hidden: [], shelves: [] })
       const [group, setGroup] = useState(null)
       const [selected, setSelected] = useState(() => new Set())
@@ -4585,9 +4600,28 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return () => { alive = false }
       }, [sample, work])
 
+      /** Copy browser-selected files into the active library's 导入 folder. */
+      const importFiles = useCallback(async event => {
+        const files = Array.from(event.target.files ?? [])
+        event.target.value = ''
+        if (files.length === 0) return
+        setImportBusy(true)
+        let copied = 0
+        for (const file of files) {
+          try {
+            const response = await fetch(`${ENDPOINT}import?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
+            if (response.ok) copied += 1
+          } catch {
+            // A failed file is skipped; the notice reports how many landed.
+          }
+        }
+        setImportBusy(false)
+        showNotice(format('importFilesDone', { n: copied }))
+        setReloadKey(key => key + 1)
+      }, [showNotice])
+
       /** Copy the bundled sample book into the active library. */
-      const installSample = useCallback(async () => {
-        if (sampleBusy) return
+      const installSample = useCallback(async () => {        if (sampleBusy) return
         setSampleBusy(true)
         setLibError('')
         try {
@@ -4873,6 +4907,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onSplit: startSplitSession,
           sample,
           sampleBusy,
+          importBusy,
+          onImport: () => importInput.current?.click(),
           onLoadSample: installSample,
           libraryDir: library === null ? (catalog === null ? '' : catalog.libraryDir) : library.libraryDir,
         })
@@ -5004,6 +5040,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       return h('div', { className: 'md-root', 'data-preview': preview === null ? undefined : 'open', ref: rootRef },
         h('style', null, CSS),
+        h('input', {
+          type: 'file', multiple: true, ref: importInput,
+          style: { display: 'none' }, onChange: importFiles,
+        }),
         h('div', { className: 'md-inner' },
           h('header', { className: 'md-head', inert: covered ? '' : undefined },
             h('div', {
