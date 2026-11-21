@@ -2833,6 +2833,7 @@ window.__ModuleLoader__.load({
           if (!indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
             current.bottom = Math.max(current.bottom, line.baseline)
+            current.left = Math.min(current.left, line.left)
             current.right = Math.max(current.right, line.right)
             current.h = Math.max(current.h, line.h)
             current.lastLeft = line.left
@@ -3721,8 +3722,8 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
-.md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: rgba(235, 70, 70, .04); }
-.md-blockbox[data-kind="heading"] { border-color: rgba(60, 130, 235, .95); background: rgba(60, 130, 235, .06); }
+.md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: transparent; }
+.md-blockbox[data-kind="heading"] { border-color: rgba(60, 130, 235, .95); background: transparent; }
 .md-reader-continuous { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
 .md-reader-slot { display: flex; flex-direction: column; align-items: center; min-height: 240px; position: relative; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
