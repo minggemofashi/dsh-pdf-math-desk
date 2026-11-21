@@ -183,6 +183,13 @@ window.__ModuleLoader__.load({
       annotHint: '在本页手写批注；再点一次退出。标注按页保存，缩放后位置不变',
       annotEraseHint: '点/划到笔画上删除该笔画',
       annotClearHint: '清空本页所有手写标注',
+      annotText: '文本框',
+      annotTextHint: '在页面上点一下，输入文字生成文本框；用「擦」可以删除',
+      annotTextPrompt: '文本框内容',
+      annotColorHint: '标注颜色',
+      annotWidthHint: '笔画粗细',
+      annotThin: '细',
+      annotThick: '粗',
       overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
       overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
@@ -505,6 +512,13 @@ window.__ModuleLoader__.load({
       annotHint: 'Write on this page; click again to leave the tool. Notes are saved per page and keep their place at any zoom',
       annotEraseHint: 'Click or drag over a stroke to delete it',
       annotClearHint: 'Remove every freehand note on this page',
+      annotText: 'Text box',
+      annotTextHint: 'Click the page, type the text, and a note appears there; use Erase to remove it',
+      annotTextPrompt: 'Text box',
+      annotColorHint: 'Annotation colour',
+      annotWidthHint: 'Stroke width',
+      annotThin: 'Thin',
+      annotThick: 'Thick',
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
       overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
@@ -2776,6 +2790,27 @@ window.__ModuleLoader__.load({
       })
     }
 
+    /**
+     * One stroked 16px icon for the tool row; the label lives in title/aria-label
+     * so the buttons stay compact.
+     * @param {string} d - SVG path data.
+     * @returns {import('react').ReactElement} the icon.
+     */
+    function annotIcon(d) {
+      return h('svg', {
+        className: 'md-icon',
+        viewBox: '0 0 24 24',
+        width: 15,
+        height: 15,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': true,
+      }, h('path', { d }))
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -3203,6 +3238,8 @@ window.__ModuleLoader__.load({
       // Freehand annotations, one array of strokes per page, normalized so they
       // follow the page box through any zoom.
       const [annotTool, setAnnotTool] = useState('')
+      const [annotColor, setAnnotColor] = useState('#e0554a')
+      const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
       const [draftStroke, setDraftStroke] = useState(null)
       const annotLoaded = useRef(false)
@@ -3532,16 +3569,34 @@ window.__ModuleLoader__.load({
         }
         return false
       }
+      // A text note is hit inside its rough box: its left/top is the anchor, so
+      // the box grows with the number of characters.
+      const annotHit = (entry, point) => {
+        if (entry.kind === 'text') {
+          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
+          return point[0] >= entry.x - 0.01 && point[0] <= entry.x + width
+            && point[1] >= entry.y - 0.02 && point[1] <= entry.y + 0.035
+        }
+        return strokeHits(entry, point)
+      }
       const annotDown = event => {
         if (annotTool === '') return
         const point = annotPoint(event)
         if (point === null) return
         event.preventDefault()
         if (annotTool === 'erase') {
-          setStrokes(list => list.filter(stroke => !strokeHits(stroke, point)))
+          setStrokes(list => list.filter(entry => !annotHit(entry, point)))
           return
         }
-        setDraftStroke({ points: [point] })
+        if (annotTool === 'text') {
+          const typed = typeof window.prompt === 'function' ? window.prompt(format('annotTextPrompt'), '') : ''
+          const value = typeof typed === 'string' ? typed.trim() : ''
+          if (value !== '') {
+            setStrokes(list => [...list, { kind: 'text', x: point[0], y: point[1], text: value, color: annotColor }])
+          }
+          return
+        }
+        setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
       }
       const annotMove = event => {
         if (draftStroke === null) return
@@ -3786,38 +3841,47 @@ window.__ModuleLoader__.load({
       // box: no aspect guess, no SVG clip path, no stretched text.
       // Freehand layer: SVG in page coordinates, above the masks. It only takes
       // pointer events while a tool is picked, so masks and the page stay usable.
-      const annotLayer = h('svg', {
+      const annotLayer = h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
-        viewBox: '0 0 1 1',
-        preserveAspectRatio: 'none',
-        'aria-hidden': true,
         onPointerDown: annotDown,
         onPointerMove: annotMove,
         onPointerUp: annotUp,
         onPointerLeave: annotUp,
       },
-        strokes.map((stroke, index) => h('polyline', {
-          key: index,
-          points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
-          fill: 'none',
-          stroke: '#e0554a',
-          strokeWidth: 2,
-          vectorEffect: 'non-scaling-stroke',
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-        })),
-        draftStroke === null
-          ? null
-          : h('polyline', {
-            points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
+        h('svg', {
+          className: 'md-annot-ink',
+          viewBox: '0 0 1 1',
+          preserveAspectRatio: 'none',
+          'aria-hidden': true,
+        },
+          strokes.filter(entry => entry.kind !== 'text').map((stroke, index) => h('polyline', {
+            key: index,
+            points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
             fill: 'none',
-            stroke: '#e0554a',
-            strokeWidth: 2,
+            stroke: stroke.color ?? '#e0554a',
+            strokeWidth: stroke.width ?? 2,
             vectorEffect: 'non-scaling-stroke',
             strokeLinecap: 'round',
             strokeLinejoin: 'round',
-          })
+          })),
+          draftStroke === null
+            ? null
+            : h('polyline', {
+              points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: draftStroke.color ?? '#e0554a',
+              strokeWidth: draftStroke.width ?? 2,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+        ),
+        strokes.filter(entry => entry.kind === 'text').map((entry, index) => h('div', {
+          key: `text-${index}`,
+          className: 'md-annot-text',
+          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+        }, entry.text))
       )
 
       const masksLayer = overlay
@@ -4020,23 +4084,44 @@ window.__ModuleLoader__.load({
               : null,
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'pen' ? 'true' : 'false',
-              title: format('annotHint'),
+              title: format('annotHint'), 'aria-label': format('annotPen'),
               onClick: () => setAnnotTool(value => (value === 'pen' ? '' : 'pen')),
-            }, format('annotPen')),
+            }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
-              title: format('annotEraseHint'),
+              title: format('annotEraseHint'), 'aria-label': format('annotErase'),
               onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
-            }, format('annotErase')),
+            }, annotIcon('M20 20H9L4 15l11-11 5 5-8 8H20Z')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+              'aria-pressed': annotTool === 'text' ? 'true' : 'false',
+              title: format('annotTextHint'), 'aria-label': format('annotText'),
+              onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
+            }, annotIcon('M4 6h16M12 6v13M9 19h6')),
+            ['#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+              key: color,
+              type: 'button',
+              className: 'md-btn md-btn-small md-annot-swatch',
+              'aria-pressed': annotColor === color ? 'true' : 'false',
+              'aria-label': color,
+              title: format('annotColorHint'),
+              style: { background: color },
+              onClick: () => setAnnotColor(color),
+            })),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
+              title: format('annotWidthHint'),
+              onClick: () => setAnnotWidth(value => (value === 2 ? 4 : 2)),
+            }, annotWidth === 2 ? format('annotThin') : format('annotThick')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               disabled: strokes.length === 0,
-              title: format('annotClearHint'),
+              title: format('annotClearHint'), 'aria-label': format('annotClear'),
               onClick: () => setStrokes([]),
-            }, format('annotClear')),
+            }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
@@ -4695,7 +4780,13 @@ window.__ModuleLoader__.load({
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
-.md-annot[data-tool="pen"], .md-annot[data-tool="erase"] { pointer-events: auto; cursor: crosshair; }
+.md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; cursor: crosshair; }
+.md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; text-shadow: 0 0 3px var(--dsw-alias-bg-base); }
+.md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
+.md-icon { display: block; }
+.md-annot-swatch { width: 16px; height: 16px; min-width: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--dsw-alias-border-l3); }
+.md-annot-swatch[aria-pressed="true"] { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
 .md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
