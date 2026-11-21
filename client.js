@@ -3201,6 +3201,15 @@ window.__ModuleLoader__.load({
         let cancelled = false
         const load = async () => {
           try {
+            // The chapter PDF is rendered from the cached page markdown. Re-render
+            // it when this release changed the renderer (a marker on the Host
+            // keeps it a one-off), so old `\(...\)` left-overs get fixed without
+            // paying for the translation again.
+            try {
+              await request('POST', 'rebuild-translated', { book: reader.bookId, code: reader.code })
+            } catch {
+              // no cached pages yet, or XeLaTeX failed: read what exists
+            }
             const lib = await loadPdfjs()
             const make = variant => {
               const params = new URLSearchParams({ book: reader.bookId, code: reader.code })

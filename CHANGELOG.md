@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.49.4
+
+- 新增 `POST /mathdesk/rebuild-translated`：用 `~/.dsh/mathdesk/translation/<书>/<章>/page-NNN.md` 缓存重新渲染 `_translated.pdf`，不调用 API；打开双语/叠加时自动检查，`<缓存目录>/.render-version` 与插件版本一致就跳过，避免每次都跑 XeLaTeX。
+- 配合 v0.49.3 的 `\(...\)` 归一化：已翻译过的章节不用重新付费翻译，双语右栏里的 `\(\rho\)` 乱码会就地修掉。
+
 ## v0.49.3
 
 - 叠加排版修整（针对「叠加层文字叠在一起、小到看不清」）：

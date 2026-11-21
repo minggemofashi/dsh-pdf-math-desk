@@ -495,6 +495,61 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/rebuild-translated`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          let pages = []
+          try {
+            pages = (await readdir(cacheDir)).filter(name => /^page-\d+\.md$/.test(name)).sort()
+          } catch {
+            pages = []
+          }
+          if (pages.length === 0) {
+            fail(response, 404, 'no-cache', '还没有可复用的逐页译文，请先翻译这一章')
+            return
+          }
+          const outPath = join(dirname(source), `${basename(source, '.pdf')}_translated.pdf`)
+          // Re-render only when the renderer changed: the marker keeps re-opening
+          // bilingual mode from spending seconds in XeLaTeX every time.
+          const marker = join(cacheDir, '.render-version')
+          let rendered = ''
+          try {
+            rendered = (await readFile(marker, 'utf8')).trim()
+          } catch {
+            rendered = ''
+          }
+          if (rendered === PLUGIN_VERSION) {
+            sendJson(response, 200, { ok: true, skipped: true, pdf: basename(outPath) })
+            return
+          }
+          const chunks = []
+          for (const name of pages) chunks.push(await readFile(join(cacheDir, name), 'utf8'))
+          const draft = join(cacheDir, `.render-${PLUGIN_VERSION}.md`)
+          await writeFile(draft, chunks.join('\n\n\\newpage\n\n'), 'utf8')
+          try {
+            await renderMarkdown(options.md2texScript, draft, outPath)
+          } finally {
+            await unlink(draft).catch(() => {})
+          }
+          await writeFile(marker, PLUGIN_VERSION, 'utf8').catch(() => {})
+          sendJson(response, 200, { ok: true, pdf: basename(outPath) })
+        } catch (error) {
+          fail(response, 500, 'rebuild-translated-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/translate-page`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
