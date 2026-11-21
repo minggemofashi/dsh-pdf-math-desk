@@ -1360,9 +1360,9 @@ window.__ModuleLoader__.load({
         h('span', { className: 'md-collection-stack', 'aria-hidden': true },
           h('span', { className: 'md-collection-sheet md-sheet-3' }),
           h('span', { className: 'md-collection-sheet md-sheet-2' }),
-          h('span', { className: 'md-collection-sheet md-sheet-1' })
+          h('span', { className: 'md-collection-sheet md-sheet-1' }),
+          h('span', { className: 'md-collection-title' }, props.name)
         ),
-        h('span', { className: 'md-collection-name' }, props.name),
         h('span', { className: 'md-collection-count' }, format('shelfCount', { n: props.count }))
       )
     }
@@ -1587,10 +1587,6 @@ window.__ModuleLoader__.load({
         onPointerMove,
         onPointerUp,
       },
-        h('div', { className: 'md-shelf-head' },
-          h('h2', { className: 'md-heading' }, props.groupName === null ? format('shelf') : props.groupName),
-          h('span', { className: 'md-shelf-sub' }, format('shelfCount', { n: props.books.length }))
-        ),
         props.groupName === null && props.collections.length > 0
           ? h('div', { className: 'md-collection-row' },
             props.collections.map(item => h(CollectionCard, {
@@ -2694,6 +2690,7 @@ window.__ModuleLoader__.load({
 .md-collection-sheet.md-sheet-3 { transform: translate(-12px, 12px) rotate(-4deg); opacity: .55; }
 .md-collection-name { font-size: 13px; font-weight: 550; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .md-collection-count { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.md-collection-title { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 14px; text-align: center; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--dsw-alias-label-primary); word-break: break-word; }
 .md-marquee { position: absolute; z-index: 3; border: 1px solid var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent); border-radius: 4px; pointer-events: none; }
 .md-shelf-actions { position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; }
 .md-shelf-selected { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-right: 4px; }
@@ -4442,21 +4439,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (updateBusy) return
         setUpdateBusy(true)
         try {
-          const controller = typeof AbortController === 'function' ? new AbortController() : null
-          const timer = controller === null ? null : window.setTimeout(() => controller.abort(), 8000)
-          const response = await fetch('https://api.github.com/repos/minggemofashi/dsh-pdf-math-desk/releases/latest', {
-            headers: { accept: 'application/vnd.github+json' },
-            signal: controller === null ? undefined : controller.signal,
-          })
-          if (timer !== null) window.clearTimeout(timer)
-          if (response.status === 404) {
-            showNotice(format('updateNoRelease'))
+          // The Host performs the request: it can follow a local proxy, while the
+          // Electron renderer cannot.
+          const payload = await request('GET', 'update')
+          const current = catalog !== null && typeof catalog.version === 'string' ? catalog.version : '0.0.0'
+          if (payload === null || payload.ok !== true) {
+            showNotice(format('updateFailed'))
             return
           }
-          if (!response.ok) throw new Error(String(response.status))
-          const payload = await response.json()
-          const latest = typeof payload.tag_name === 'string' ? payload.tag_name : ''
-          const current = catalog !== null && typeof catalog.version === 'string' ? catalog.version : '0.0.0'
+          const latest = typeof payload.latest === 'string' ? payload.latest : ''
           if (latest === '') {
             showNotice(format('updateNoRelease'))
             return
@@ -4934,6 +4925,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         : group === null
           ? null
           : (shelfGroups.shelves.find(shelf => shelf.id === group) ?? { name: null }).name
+      const libraryName = library === null || typeof library.name !== 'string' || library.name === ''
+        ? format('shelf')
+        : library.name
 
       // Candidates for the import dialog: every real conversation, minus the
       // ones this chapter already shows, most recent first.
@@ -5005,23 +4999,26 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
             librariesView
               ? null
-              : book === null
-                ? h('span', {
-                  className: 'md-crumb-current', 'aria-current': 'page',
-                  title: format('librariesTitleHint'),
-                  onDoubleClick: () => backToLibraries(),
-                }, format('shelf'))
+              : book === null && groupName === null
+                ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, libraryName)
                 : h('button', {
                   type: 'button', className: 'md-crumb',
                   onClick: () => {
                     setGroup(null)
                     backToShelf()
                   },
-                }, format('shelf')),
-            book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title),
+                }, libraryName),
             groupName === null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            groupName === null ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
+            groupName === null
+              ? null
+              : book === null
+                ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
+                : h('button', {
+                  type: 'button', className: 'md-crumb',
+                  onClick: () => openGroup(group),
+                }, groupName),
+            book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
+            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title)
           ),
           inlineError === '' ? null : h('div', { className: 'md-alert', role: 'alert', inert: covered ? '' : undefined },
             h('span', { className: 'md-alert-text' }, inlineError),

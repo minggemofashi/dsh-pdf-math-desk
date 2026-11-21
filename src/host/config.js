@@ -100,6 +100,7 @@ export function resolveConfig(rawConfig) {
     toolsDir,
     samplesDir,
     resumeRatio,
+    updateProxy: textField(source, 'updateProxy'),
     statePath: join(dataDir, 'state.json'),
     pendingPath: join(dataDir, 'pending.json'),
     linksPath: join(dataDir, 'links.json'),

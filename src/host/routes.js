@@ -29,6 +29,7 @@ import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
+import { checkForUpdate } from './update.js'
 import { readState, writeState } from './state.js'
 
 /** Route prefix owned by this plugin. */
@@ -228,6 +229,16 @@ export function createHandler(config, options = {}) {
           warnings: fresh.warnings,
           state,
         })
+        return
+      }
+
+      if (path === `${PREFIX}/update`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const result = await checkForUpdate(config.updateProxy)
+        sendJson(response, 200, result)
         return
       }
 
