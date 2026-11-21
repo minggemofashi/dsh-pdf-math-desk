@@ -263,7 +263,12 @@ export function createHandler(config, options = {}) {
           }
           const dir = chapterArtifactDir(config, body.book, body.code)
           const source = join(dir, name)
-          await stat(source)
+          try {
+            await stat(source)
+          } catch {
+            fail(response, 404, 'missing-file', '文件不存在（可能已被删除），请点「重新读取」刷新列表')
+            return
+          }
           const out = `${source.slice(0, source.length - 3)}.pdf`
           await renderMarkdown(options.md2texScript, source, out)
           sendJson(response, 200, { ok: true, path: out })
