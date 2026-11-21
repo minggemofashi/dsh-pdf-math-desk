@@ -112,6 +112,22 @@ export async function startChapterJob(options) {
           }
           const index = next
           next += 1
+          // Resume: a page whose markdown is already cached costs nothing, so a
+          // chapter interrupted by a crash or a failed page finishes where it
+          // stopped instead of re-translating everything.
+          if (options.resume === true && typeof options.cacheDir === 'string') {
+            try {
+              const cached = await readFile(join(options.cacheDir, `page-${String(index + 1).padStart(3, '0')}.md`), 'utf8')
+              if (cached.trim() !== '') {
+                chunks[index] = cached
+                state.done += 1
+                await save()
+                continue
+              }
+            } catch {
+              // no cached page: translate it below
+            }
+          }
           const image = `data:image/png;base64,${(await readFile(join(temporary, files[index]))).toString('base64')}`
           let pageMarkdown = ''
           if (typeof options.cacheDir === 'string' && typeof options.toolsDir === 'string') {

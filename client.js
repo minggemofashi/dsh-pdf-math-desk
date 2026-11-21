@@ -184,6 +184,9 @@ window.__ModuleLoader__.load({
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translateCancel: '取消翻译',
+      translateResume: '补译缺失页',
+      translateResumeHint: '只翻译还没有缓存的页：已有译文不会重新生成，只按缺失页数花 token',
+      translatingResume: '正在补译缺失页…',
       translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
       translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
@@ -496,6 +499,9 @@ window.__ModuleLoader__.load({
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translateCancel: 'Cancel translation',
+      translateResume: 'Fill missing pages',
+      translateResumeHint: 'Translate only the pages without cached text; pages that already have one are reused, so only the missing pages cost tokens',
+      translatingResume: 'Filling in the missing pages…',
       translateCancelled: 'Translation cancelled',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
       translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
@@ -3210,6 +3216,26 @@ window.__ModuleLoader__.load({
         if (missing.length === 0) return `${format('translateDone')}：${state.pdf}`
         return format('translateDonePartial', { n: missing.length, pages: missing.join('、') })
       }
+      const partialKey = `mathdesk:partial:${reader.bookId}:${reader.code}`
+      const [partialPages, setPartialPages] = useState([])
+      const rememberPartial = state => {
+        const missing = Array.isArray(state.failedPages) ? state.failedPages : []
+        setPartialPages(missing)
+        try {
+          if (missing.length === 0) window.localStorage.removeItem(partialKey)
+          else window.localStorage.setItem(partialKey, JSON.stringify(missing))
+        } catch {
+          // storage unavailable
+        }
+      }
+      useEffect(() => {
+        try {
+          const raw = window.localStorage.getItem(partialKey)
+          setPartialPages(raw === null ? [] : JSON.parse(raw))
+        } catch {
+          setPartialPages([])
+        }
+      }, [partialKey])
       useEffect(() => {
         try {
           const raw = window.localStorage.getItem(noteKey)
@@ -3464,6 +3490,7 @@ window.__ModuleLoader__.load({
               deskStatus.job = ''
               setDeskStatus('done')
               setTimeout(() => setDeskStatus('idle'), 8000)
+              rememberPartial(state)
               updateNote(doneNote(state))
               window.localStorage.removeItem(key)
               return
@@ -3605,16 +3632,17 @@ window.__ModuleLoader__.load({
         }
         props.onPage(value)
       }
-      const runTranslate = async () => {
+      const runTranslate = async (resume = false) => {
         if (translating || reader.phase !== 'ready') return
         setTranslating(true)
         setDeskStatus('busy')
-        updateNote(format('translating'))
+        updateNote(format(resume ? 'translatingResume' : 'translating'))
         try {
           const started = await request('POST', 'translate-chapter', {
             book: reader.bookId,
             code: reader.code,
             target: translateTarget,
+            resume,
           })
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
           const jobId = started.jobId
@@ -3636,6 +3664,7 @@ window.__ModuleLoader__.load({
               }
             }
             if (state.status === 'done') {
+              rememberPartial(state)
               updateNote(doneNote(state))
               break
             }
@@ -3908,7 +3937,14 @@ window.__ModuleLoader__.load({
           translating ? h('button', {
             type: 'button', className: 'md-btn md-btn-small',
             onClick: cancelTranslate,
-          }, format('translateCancel')) : null
+          }, format('translateCancel')) : null,
+          !translating && partialPages.length > 0
+            ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('translateResumeHint'),
+              onClick: () => { void runTranslate(true) },
+            }, format('translateResume'))
+            : null
         ),
         overlay && (overlayNote !== '' || translatedImage === '')
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },

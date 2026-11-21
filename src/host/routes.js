@@ -435,6 +435,9 @@ async function activeLibrary() {
         try {
           const body = await readJson(request)
           const target = body.target === 'zh' ? 'zh' : 'en'
+          // `resume` fills pages that never came back, reusing the cached
+          // per-page markdown instead of paying to translate them again.
+          const resume = body.resume === true
           const library = await activeLibrary()
           const source = await chapterPdf(library, body.book, body.code)
           if (source === null) {
@@ -455,6 +458,7 @@ async function activeLibrary() {
             target,
             book: body.book,
             code: body.code,
+            resume,
           })
           sendJson(response, 200, { ok: true, jobId })
         } catch (error) {
