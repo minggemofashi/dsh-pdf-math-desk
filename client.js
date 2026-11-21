@@ -2051,7 +2051,7 @@ window.__ModuleLoader__.load({
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
       const artifactStem = item => String(item.name).replace(/\.(md|pdf)$/i, '')
       const row = (item, index) => {
-        const groups = props.sessionIndex !== undefined && props.sessionIndex.byArtifact !== undefined
+        const groups = item.kind === 'pdf' && props.sessionIndex !== undefined && props.sessionIndex.byArtifact !== undefined
           ? props.sessionIndex.byArtifact.get(`${props.bookId}|${props.code}|${artifactStem(item)}`)
           : undefined
         return h('li', { key: `${index}:${item.name}`, className: 'md-artifact-item' },
@@ -3744,7 +3744,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           showNotice('M7.2: session creator not ready')
           return
         }
-        void create(chapter, mode, { jump: true, continuation: 0, artifact: stem })
+        void create(chapter, mode, { jump: true, continuation: 0, artifact: stem, skipPdf: true })
       }, [showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
@@ -4601,7 +4601,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (options !== undefined && options.jump === true) {
             await flushSave()
             openHostSession(sessionId)
-            void openPdfInSession(sessionId)
+            if (!(options !== undefined && options.skipPdf === true)) void openPdfInSession(sessionId)
           }
           if (draftReference !== null) {
             try { draftReference.release() } catch { /* already released */ }
