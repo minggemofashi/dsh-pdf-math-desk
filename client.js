@@ -102,7 +102,7 @@ window.__ModuleLoader__.load({
       shelf: '书架',
       libraries: '书库',
       librariesTitle: '书库',
-      librariesHint: '数学书库：单击切换为当前书库，双击直接进入它的书架。目前只支持数学布局（分片 / 产物 / 封面 / 索引）。',
+      librariesHint: '单击切换书库，双击进入书架。库根里按「分片 / 整本」放 PDF 即可。',
       libraryActive: '当前',
       libraryUse: '切换',
       libraryRemove: '移除',
@@ -114,11 +114,11 @@ window.__ModuleLoader__.load({
       libraryPick: '选择目录…',
       libraryAdd: '添加书库',
       libraryBusy: '处理中…',
-      libraryFailed: '书库操作失败',
+      libraryFailed: '书库操作失败，检查目录权限后重试',
       libraryBooks: '{n} 本',
       modeMath: '数学',
       manualTitle: '书库说明书',
-      manualWhy: '「分片」= 把书**按章节**切成小 PDF：一章一个文件，每个会话只读一章，上下文小、定位也清楚。**先由你手动按章节拆**（每章从哪页到哪页看目录），工具负责按规则重命名与校验；不要整本拆（整本拆=整本 OCR，贵且容易撑爆上下文）。**目录必须有**（放进 c00，它是定位各章的索引）。只适合读数学书；阅读器只读，不做标注/笔记。',
+      manualWhy: '「分片」= 把书**按章节**切成小 PDF：一章一个文件，每个会话只读一章，上下文小、定位也清楚。**先由你手动按章节拆**（每章从哪页到哪页看目录），工具负责按规则重命名与校验；不要整本拆（整本拆=整本 OCR，贵且容易撑爆上下文）。**目录必须有**（放进 c00，它是定位各章的索引）。任何 PDF 都可以这样读；注解、框选翻译与导出都在阅读器里完成，不会改动原文件。',
       manualStructure: '放法：{root}\\分片\\<书 id>\\ 下，一章一个 PDF，保留目录。文件名带页码范围（如 概率论_积分和数学期望_97-138.pdf）即可，工作台会按页序自动编号；也可以写成 <书 id>_cNN_章名_p起-止.pdf。产物\\ 与 封面\\ 可选。',
       manualIdNote: '书 id 就是书目名/分片名前缀，添加书库后不要再改名：会话标题与产物目录都按它关联，改名会让旧会话和产物对不上（书名可以改显示，目录名请保持稳定）。',
       manualSplit: '拆分：任意 PDF 工具按章节切开、保留目录，放进 分片\\<书 id>\\ 即可；不需要自己编号，页码范围会自动排序（目录/前言归 c00，附录 c90+）。',
@@ -134,7 +134,7 @@ window.__ModuleLoader__.load({
       importFilesHint: '导入 md/txt/pdf：md/txt 自动渲染为 PDF 放进当前书库的 整本\\（当作整本书）；PDF 直接放进 整本\\。',
       importFilesDone: '已导入 {n} 个文件到 库根\\整本\\',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
-      splitFailed: '拆分工具启动失败',
+      splitFailed: '拆分工具没启动：确认库目录可写后重试',
       librariesTitleHint: '双击标题回到书库',
       back: '返回',
       refresh: '刷新',
@@ -142,6 +142,7 @@ window.__ModuleLoader__.load({
       retry: '重试',
       crumbsLabel: '位置',
       chapters: '{n} 章',
+      chaptersMore: '再显示 {n} 章',
       pages: '{range} 页',
       untitled: '{code}（未命名）',
       pdfLabel: 'PDF',
@@ -188,58 +189,58 @@ window.__ModuleLoader__.load({
       sideMenuPaging: '翻页',
       sideMenuPreview: '预览',
       blocksToggle: '块',
-      blocksHint: '显示/隐藏文本块边框（调试）',
+      blocksHint: '显示文本块边框（调试用）',
       dualToggle: '双语',
-      dualHint: '原文与译文并排显示（需要先生成译文）',
-      dualNeedsTranslation: '还没有译文。是否现在翻译本章？会消耗 token，并需要先在设置里填写 DeepSeek API Key。',
+      dualHint: '原文与译文并排（需先翻译）',
+      dualNeedsTranslation: '还没有译文。现在翻译本章？会消耗 token，并需要先在设置里填 DeepSeek API Key。',
       dualOriginal: '原文',
       dualTranslated: '译文',
       toolsToggle: '收起/展开工具条',
       overlayToggle: '叠加',
-      overlayHint: '拖拽画框，框内露出译文；点框可删除（需要先生成译文）',
+      overlayHint: '拖框露出框内译文；点框可删除（需先翻译）',
       overlayRemove: '点击删除这个框',
       overlayBlocks: '框住本页块',
-      overlayBlocksHint: '按本页文本块自动画框，避免手画的框把译文截掉（需要先翻译本章）',
+      overlayBlocksHint: '按文本块自动画框，避免把译文截断（需先翻译）',
       annotPen: '笔',
       annotErase: '擦',
       annotClear: '清空标注',
-      annotHint: '在本页手写批注；再点一次退出。标注按页保存，缩放后位置不变',
-      annotEraseHint: '点/划到笔画上删除该笔画',
-      annotClearHint: '清空本页所有手写标注',
+      annotHint: '手写批注；再点一次退出。按页保存，缩放不跑位',
+      annotEraseHint: '点或划过笔画即可删除',
+      annotClearHint: '清空本页手写标注',
       annotText: '文本框',
-      annotTextHint: '在页面上点一下，输入文字生成文本框；用「擦」可以删除',
+      annotTextHint: '在页面上点一下输入文字；用「擦」删除',
       annotTextPrompt: '文本框内容',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       exportPage: '导出本页',
-      exportHint: '导出本页 PDF：原文 + 框选露出的译文 + 标注，保存到本章产物',
+      exportHint: '导出本页：原文 + 框内译文 + 标注，存到本章产物',
       exporting: '正在导出本页…',
       exportDone: '已导出',
       exportFailed: '导出失败',
       exportChapter: '导出整章',
-      exportChapterHint: '导出整章 PDF：每页原文 + 框选露出的译文 + 标注，另存一份 sidecar JSON 到产物目录',
+      exportChapterHint: '导出整章：每页原文 + 框内译文 + 标注，并另存 sidecar JSON',
       exportingChapter: '正在导出整章…',
       exportAnnotatedPages: '带标注/遮罩 {n} 页',
       exportGroup: '导出…',
-      exportGroupHint: '导出本页 / 整章，或从 sidecar 导入标注',
+      exportGroupHint: '导出本页/整章，或导入标注',
       importAnnots: '导入标注',
-      importAnnotsHint: '从本章产物的 `<章代码>_export.annots.json` 恢复遮罩与标注（会覆盖对应页的现有标注）',
+      importAnnotsHint: '从 `<章代码>_export.annots.json` 恢复遮罩与标注（覆盖对应页）',
       importingAnnots: '正在导入标注…',
       importAnnotsDone: '已导入 {n} 页的遮罩与标注',
       importAnnotsFailed: '导入标注失败',
       retryAction: '重试',
       exportCancel: '取消导出',
       exportCancelled: '已取消导出',
-      overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
-      overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
-      overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
+      overlayMissing: '叠加层还没准备好：先翻译本章，再打开叠加',
+      overlayFallback: '叠加层 PDF 不可用：框内是整页译文的对应区域，位置可能对不齐',
+      overlayEmpty: '这一页的叠加层没有文字，框内无译文；重新翻译本章可重建',
       overlayLoading: '正在准备叠加层…',
-      overlayTwoColumns: '这一页疑似双栏排版：叠加位置可能不准，逐段对照建议用「双语」',
+      overlayTwoColumns: '这一页疑似双栏：叠加位置可能不准，逐段对照建议用「双语」',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translateCancel: '取消翻译',
       translateResume: '补译缺失页',
-      translateResumeHint: '只翻译还没有缓存的页：已有译文不会重新生成，只按缺失页数花 token',
+      translateResumeHint: '只译还没有缓存的页，按缺失页数花 token',
       translatingResume: '正在补译缺失页…',
       translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
@@ -249,7 +250,7 @@ window.__ModuleLoader__.load({
       translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页），已用 {tokens} tokens；可以点「补译缺失页」只补这几页',
       translateTokens: '共 {n} tokens',
       translateFailed: '翻译失败',
-      translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
+      translateHint: '把本章翻成另一种语言（需要 DeepSeek API Key）',
       translateFor: '翻译为：',
       langZh: '中文',
       langEn: 'English',
@@ -259,45 +260,45 @@ window.__ModuleLoader__.load({
       translatedDelete: '删除译文',
       translatedDeleteConfirm: '删除这份译文？原 PDF 不会被改动，译文会移动到 回收站\\译文\\，可恢复。',
       readerNewLabel: '从这一章开始：',
-      readerNewHint: '接着本章该分组的会话并跳过去；快满时自动另起续会话；本章 PDF 会自动开在会话右侧',
-      readerInSessionFailed: '会话已建好，但右侧 PDF 没打开（可能不在库工作区）。',
+      readerNewHint: '接着本章该分组的会话；快满时另起续会话；右侧同时开 PDF',
+      readerInSessionFailed: '会话建好了，但右侧 PDF 没打开（可能不在库工作区）',
       sessionsTitle: '会话',
       newSession: '新建',
       newSessionOf: '新建{mode}会话',
-      newSessionHint: '优先接着本章这个分组的会话；快满时自动另起一个续会话',
+      newSessionHint: '优先接着本章该分组的会话，快满时另起续会话',
       forceNew: '另起',
       forceNewOf: '另起一个新的{mode}会话（不续接）',
-      forceNewHint: '跳过续接，直接开一个新的续会话（编号接着往下排）',
+      forceNewHint: '跳过续接，直接开新的续会话',
       digest: '整理提纲',
       digestOf: '把本章会话整理成提纲',
-      digestWorking: '正在整理…（一次模型调用，稍等）',
+      digestWorking: '正在整理…（一次模型调用）',
       digestFailed: '整理提纲失败',
       digestDone: '提纲已保存到本章产物',
       digestTitle: '本章提纲',
       digestCopy: '复制',
       digestCopied: '已复制提纲',
       digestEmpty: '这一章还没有可总结的会话',
-      digestHint: '由当前默认模型总结本章所有会话；结果存到 产物/<书>/<章>/提纲-all.md，再点「重新读取」就能在产物里看到。',
+      digestHint: '用当前模型总结本章会话，结果存到 产物/<书>/<章>/提纲-all.md',
       sessionWithOutline: '本章提纲已放进新会话的输入框，可直接改或发送',
       sessionWithContext: '已把本章与 PDF 信息放进新会话的输入框',
       creating: '正在新建…',
       sessionsCount: '{n} 个会话',
       sessionLoading: '正在读取会话…',
       sessionUnresolved: '{n} 个会话标题没对上书或章',
-      sessionUnavailable: '会话服务不可用。',
+      sessionUnavailable: '会话服务不可用',
       sessionCreated: '已新建：{title}',
-      sessionResumed: '接着本章的「{mode}」会话（上下文 {pct}%）',
-      sessionContinued: '上一段上下文已用 {pct}%，已另起一个续会话',
-      sessionCreateFailed: '新建会话失败',
-      sessionRenameFailed: '会话已创建，但标题没写成约定格式。',
-      pendingHint: '发送第一条消息后写入会话标题；没发送的不会保留。',
+      sessionResumed: '接着「{mode}」会话（上下文 {pct}%）',
+      sessionContinued: '上下文已用 {pct}%，已另起续会话',
+      sessionCreateFailed: '新建会话失败，检查工作区设置后重试',
+      sessionRenameFailed: '会话已建，但标题没写成约定格式',
+      pendingHint: '发出第一条消息后才写入标题；没发送的不保留',
       importSessions: '导入',
       importOf: '导入已有会话到{mode}组',
-      importHint: '把一个已有会话挂到本章；不会改它的标题。',
+      importHint: '把一个已有会话挂到本章，不改它的标题',
       importTitle: '导入已有会话',
       importChapter: '挂到 {code} · {title}',
       importSearch: '搜索标题…',
-      importEmpty: '没有可导入的会话。',
+      importEmpty: '没有可导入的会话',
       importAlready: '已在本章',
       importForeign: '不在库工作区',
       importTruncated: '只显示前 {n} 个',
@@ -305,12 +306,12 @@ window.__ModuleLoader__.load({
       importFailed: '挂载失败',
       linkedHint: '挂载到本章',
       unlink: '取消挂载',
-      unlinkDone: '已从本章移除（对话本身没动）',
+      unlinkDone: '已从本章移除（对话没动）',
       rename: '重命名',
       renameSave: '保存',
       renameCancel: '取消',
       renameEmpty: '标题不能为空',
-      renameHint: '工作台按标题 `[书 cNN] 模式` 归类；改掉前缀会从章节里移出。',
+      renameHint: '标题按 `[书 cNN] 模式` 归类；改掉前缀会从本章移出',
       renameDone: '已重命名',
       renameFailed: '重命名失败',
       cleanup: '清理空会话',
@@ -318,19 +319,19 @@ window.__ModuleLoader__.load({
       previewPdf: '右侧预览',
       previewOn: '开',
       previewOff: '关',
-      previewPdfHint: '创建会话时自动在右栏显示本章 PDF（只是预览，不进入上下文）',
+      previewPdfHint: '新建会话时在右栏显示本章 PDF（预览，不进上下文）',
       deleteNonPdf: '非PDF删除',
-      deleteNonPdfHint: '开启后，md/txt 等非 PDF 产物也会显示「删除」按钮；关闭时只允许删除 PDF',
+      deleteNonPdfHint: '开启后 md/txt 等产物也能删除；关闭时只删 PDF',
       settings: '设置',
       version: '版本',
       githubRepo: 'GitHub 仓库',
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
-      libraryPathHint: '这里统一显示为 {root}：绝对路径只在本机有效，不随插件或仓库迁移。',
+      libraryPathHint: '这里统一显示为 {root}；绝对路径只在本机有效',
       readLocalPath: '读取本机路径',
       hideLocalPath: '隐藏本机路径',
-      tipsLeftClick: '左键：单击书卡＝选中/取消选中，双击＝打开书本；单击章节名＝展开/收起。',
-      tipsRightClick: '右键：书卡与章节没有右键操作；产物（转 PDF / 删除）与会话（归档）支持右键。',
+      tipsLeftClick: '左键：书卡单击选中/取消，双击打开；章节名单击展开/收起。',
+      tipsRightClick: '右键：产物可转 PDF/删除，会话可归档；书卡与章节没有右键菜单。',
       tipsTitle: '使用提示',
       splitToolTitle: '拆分工具',
       importToolTitle: '导入文件',
@@ -351,7 +352,7 @@ window.__ModuleLoader__.load({
       settingsNotesTitle: '笔记与备份',
       settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.mathdesk\\annotations\\（随库走）；清掉浏览器数据或换机器后，打开该章会自动恢复。',
       shortcutsTitle: '快捷键',
-      shortcutsHint: '默认是阅读器一直在用的键。点「录制」后按新键即可替换，Esc 取消录制。',
+      shortcutsHint: '默认是阅读器一直用的键；点「录制」按新键替换，Esc 取消',
       shortcutsRecord: '录制',
       shortcutsRecording: '请按键…',
       shortcutsCancel: '取消',
@@ -496,7 +497,7 @@ window.__ModuleLoader__.load({
       shelf: 'Books',
       libraries: 'Libraries',
       librariesTitle: 'Libraries',
-      librariesHint: 'Math libraries: click to switch the active one, double-click to open its bookshelf. Only the math layout is supported (分片 / 产物 / 封面 / 索引).',
+      librariesHint: 'Click to switch libraries, double-click to open the shelf. Keep PDFs under 分片/ or 整本/.',
       libraryActive: 'Active',
       libraryUse: 'Switch',
       libraryRemove: 'Remove',
@@ -508,11 +509,11 @@ window.__ModuleLoader__.load({
       libraryPick: 'Choose…',
       libraryAdd: 'Add library',
       libraryBusy: 'Working…',
-      libraryFailed: 'Library operation failed',
+      libraryFailed: 'Library operation failed — check the folder permissions and retry',
       libraryBooks: '{n} books',
       modeMath: 'Math',
       manualTitle: 'Library manual',
-      manualWhy: '"分片" = the book cut into one PDF **per chapter**: each conversation reads one chapter, so its context stays small and the chapter is easy to locate. **You split manually, chapter by chapter** (page ranges from the contents); the tools rename and verify. Never split the whole book (whole-book splitting means whole-book OCR: expensive and context-blowing). The **table of contents must stay in c00** — it is the index that locates chapters. Math books only; the reader is read-only: no annotations or notes.',
+      manualWhy: '"分片" = the book cut into one PDF **per chapter**: each conversation reads one chapter, so its context stays small and the chapter is easy to locate. **You split manually, chapter by chapter** (page ranges from the contents); the tools rename and verify. Never split the whole book (whole-book splitting means whole-book OCR: expensive and context-blowing). The **table of contents must stay in c00** — it is the index that locates chapters. Any PDF can be read this way; ink, boxed translation and exports happen in the reader and never touch the original file.',
       manualStructure: 'Put one PDF per chapter under {root}\\分片\\<book id>\\, keep the contents. Page ranges in the name (e.g. 概率论_积分和数学期望_97-138.pdf) are enough — the workbench numbers chapters by page order; explicit <book id>_cNN_章名_p起-止.pdf also works. 产物\\ and 封面\\ optional.',
       manualSplit: 'Split with any PDF tool by chapter, keep the contents, and drop the files into 分片\\<book id>\\. No manual numbering: page ranges sort the chapters (contents/preface become c00, appendices c90+).',
       manualSession: 'Split session: the button below copies the toolkit into 工具\\ of this library and opens a conversation whose prompt already names the library path, the target folder, and the naming rules.',
@@ -527,7 +528,7 @@ window.__ModuleLoader__.load({
       importFilesHint: 'Import md/txt/pdf: md/txt are rendered to PDF in this library\'s 整本\\ as a whole book; PDFs go there directly.',
       importFilesDone: 'Imported {n} file(s) into the library\'s 整本\\ folder',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
-      splitFailed: 'Could not start the split conversation',
+      splitFailed: 'The split conversation did not start — check that the library folder is writable',
       librariesTitleHint: 'Double-click the title for the libraries',
       back: 'Back',
       refresh: 'Refresh',
@@ -535,6 +536,7 @@ window.__ModuleLoader__.load({
       retry: 'Retry',
       crumbsLabel: 'Location',
       chapters: '{n} chapters',
+      chaptersMore: 'Show {n} more chapters',
       pages: 'pp. {range}',
       untitled: '{code} (untitled)',
       pdfLabel: 'PDF',
@@ -581,51 +583,51 @@ window.__ModuleLoader__.load({
       sideMenuPaging: 'Pages',
       sideMenuPreview: 'Preview',
       blocksToggle: 'Blocks',
-      blocksHint: 'Show or hide text block boxes (debug)',
+      blocksHint: 'Show text block boxes (debug)',
       dualToggle: 'Bilingual',
-      dualHint: 'Show the original and the translation side by side (translate the chapter first)',
+      dualHint: 'Original and translation side by side (translate first)',
       dualNeedsTranslation: 'No translation yet. Translate this chapter now? It costs tokens and needs a DeepSeek API key in Settings.',
       dualOriginal: 'Original',
       dualTranslated: 'Translation',
       toolsToggle: 'Collapse or expand the tool row',
       overlayToggle: 'Overlay',
-      overlayHint: 'Drag to draw a box that reveals the translation underneath; click a box to remove it (translate the chapter first)',
+      overlayHint: 'Drag a box to reveal the translation inside; click a box to remove it (translate first)',
       overlayRemove: 'Click to remove this box',
       overlayBlocks: 'Box the page blocks',
-      overlayBlocksHint: 'Draw a box around every text block on this page so a hand-drawn box cannot clip the translation (translate the chapter first)',
+      overlayBlocksHint: 'Box each text block automatically, so a hand-drawn box cannot clip the translation (translate first)',
       annotPen: 'Pen',
       annotErase: 'Erase',
       annotClear: 'Clear',
-      annotHint: 'Write on this page; click again to leave the tool. Notes are saved per page and keep their place at any zoom',
-      annotEraseHint: 'Click or drag over a stroke to delete it',
-      annotClearHint: 'Remove every freehand note on this page',
+      annotHint: 'Write on this page; click again to stop. Saved per page and keeps its place at any zoom',
+      annotEraseHint: 'Click or drag across a stroke to delete it',
+      annotClearHint: 'Remove every freehand stroke on this page',
       annotText: 'Text box',
-      annotTextHint: 'Click the page, type the text, and a note appears there; use Erase to remove it',
+      annotTextHint: 'Click the page and type; remove it with Erase',
       annotTextPrompt: 'Text box',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       exportPage: 'Export page',
-      exportHint: 'Export this page as PDF: original + revealed translation + notes, saved into the chapter artifacts',
+      exportHint: 'Export this page: original + revealed translation + ink, into the chapter artifacts',
       exporting: 'Exporting this page…',
       exportDone: 'Exported',
       exportFailed: 'Export failed',
       exportChapter: 'Export chapter',
-      exportChapterHint: 'Export the whole chapter: every page as original + revealed translation + notes, plus a sidecar JSON next to it',
+      exportChapterHint: 'Export the whole chapter: original + revealed translation + ink per page, plus a sidecar JSON',
       exportingChapter: 'Exporting the chapter…',
       exportAnnotatedPages: '{n} page(s) with marks',
       exportGroup: 'Export…',
-      exportGroupHint: 'Export this page or the chapter, or import annotations from a sidecar',
+      exportGroupHint: 'Export this page or the chapter, or import annotations',
       importAnnots: 'Import notes',
-      importAnnotsHint: 'Restore masks and notes from this chapter\'s `<code>_export.annots.json` (overwrites those pages)',
+      importAnnotsHint: 'Restore masks and notes from `<code>_export.annots.json` (overwrites those pages)',
       importingAnnots: 'Importing notes…',
       importAnnotsDone: 'Restored masks and notes for {n} page(s)',
       importAnnotsFailed: 'Importing notes failed',
       retryAction: 'Retry',
       exportCancel: 'Cancel export',
       exportCancelled: 'Export cancelled',
-      overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
-      overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
-      overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
+      overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay',
+      overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page and may not line up',
+      overlayEmpty: 'This overlay page has no text, so its boxes stay empty; translate the chapter again to rebuild it',
       overlayLoading: 'Preparing the overlay layer…',
       overlayTwoColumns: 'This page looks two-column: the overlay boxes may be off; use the bilingual view for a reliable reading',
       translateAction: 'Translate page',
@@ -642,7 +644,7 @@ window.__ModuleLoader__.load({
       translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
       translateTokens: '{n} tokens',
       translateFailed: 'Translation failed',
-      translateHint: 'Translate the current page; needs a DeepSeek API key',
+      translateHint: 'Translate this chapter into another language (needs a DeepSeek API key)',
       translateFor: 'Translate to:',
       langZh: 'Chinese',
       langEn: 'English',
@@ -652,45 +654,45 @@ window.__ModuleLoader__.load({
       translatedDelete: 'Delete translation',
       translatedDeleteConfirm: 'Delete this translation? The original PDF is untouched; the translation moves to 回收站\\译文\\ and can be restored.',
       readerNewLabel: 'Start from this chapter:',
-      readerNewHint: 'Continues this chapter’s conversation in this group and goes there; starts a continuation when it fills up. The chapter PDF opens on the session’s right.',
-      readerInSessionFailed: 'The session was created, but the PDF could not open on its right side.',
+      readerNewHint: 'Continues this chapter’s group conversation; starts a continuation when it fills up; opens the PDF on the right',
+      readerInSessionFailed: 'The session was created, but the PDF could not open on its right side',
       sessionsTitle: 'Sessions',
       newSession: 'New',
       newSessionOf: 'New {mode} session',
-      newSessionHint: 'Continues this chapter’s conversation in this group; starts a continuation when it fills up',
+      newSessionHint: 'Continues this chapter’s group conversation; starts a continuation when it fills up',
       forceNew: 'Start new',
       forceNewOf: 'Start a new {mode} session without continuing',
-      forceNewHint: 'Skip continuing and start a fresh continuation (the chain number keeps counting)',
+      forceNewHint: 'Skip continuing and start a fresh continuation',
       digest: 'Outline',
       digestOf: 'Summarize this chapter’s conversations into an outline',
-      digestWorking: 'Summarizing… (one model call, a moment)',
+      digestWorking: 'Summarizing… (one model call)',
       digestFailed: 'Could not build the outline',
       digestDone: 'The outline was saved beside the chapter’s produced files',
       digestTitle: 'Chapter outline',
       digestCopy: 'Copy',
       digestCopied: 'Outline copied',
       digestEmpty: 'This chapter has no conversation to summarize yet',
-      digestHint: 'The default model summarizes every conversation under this chapter; the result is saved as 产物/<book>/<cNN>/提纲-all.md and appears after Reload.',
+      digestHint: 'The current model summarizes this chapter’s conversations into 产物/<book>/<cNN>/提纲-all.md',
       sessionWithOutline: 'The chapter outline is in the new conversation’s composer — edit or send it',
       sessionWithContext: 'The chapter and PDF are in the new conversation’s composer',
       creating: 'Creating…',
       sessionsCount: '{n} sessions',
       sessionLoading: 'Reading sessions…',
       sessionUnresolved: '{n} session titles matched no book or chapter',
-      sessionUnavailable: 'The session service is unavailable.',
+      sessionUnavailable: 'The session service is unavailable',
       sessionCreated: 'Created: {title}',
-      sessionResumed: 'Continuing this chapter’s "{mode}" conversation (context {pct}%)',
-      sessionContinued: 'The previous context was {pct}% full, so a continuation was started',
-      sessionCreateFailed: 'Could not create the session',
-      sessionRenameFailed: 'The session was created, but its title was not written.',
-      pendingHint: 'The title is written when you send the first message; unsent ones are not kept.',
+      sessionResumed: 'Continuing the "{mode}" conversation (context {pct}%)',
+      sessionContinued: 'Context was {pct}% full, so a continuation was started',
+      sessionCreateFailed: 'Could not create the session — check the workspace and retry',
+      sessionRenameFailed: 'The session was created, but its title was not written',
+      pendingHint: 'The title is written after the first message; unsent ones are not kept',
       importSessions: 'Import',
       importOf: 'Import an existing session into the {mode} group',
-      importHint: 'Attach an existing session to this chapter; its title is not changed.',
+      importHint: 'Attach an existing session to this chapter; its title is not changed',
       importTitle: 'Import an existing session',
       importChapter: 'Attach to {code} · {title}',
       importSearch: 'Search titles…',
-      importEmpty: 'No session to import.',
+      importEmpty: 'No session to import',
       importAlready: 'already here',
       importForeign: 'outside the library workspace',
       importTruncated: 'showing the first {n}',
@@ -703,7 +705,7 @@ window.__ModuleLoader__.load({
       renameSave: 'Save',
       renameCancel: 'Cancel',
       renameEmpty: 'The title cannot be empty',
-      renameHint: 'The workbench classifies by the title `[<book> cNN] <mode>`; changing the prefix moves it out of the chapter.',
+      renameHint: 'Titles follow `[<book> cNN] <mode>`; changing the prefix moves it out of the chapter',
       renameDone: 'Renamed',
       renameFailed: 'Could not rename',
       cleanup: 'Clean unused',
@@ -711,20 +713,20 @@ window.__ModuleLoader__.load({
       previewPdf: 'Side preview',
       previewOn: 'on',
       previewOff: 'off',
-      previewPdfHint: 'Automatically show this chapter\'s PDF in the side column when creating a session (preview only, not context)',
+      previewPdfHint: 'Show this chapter\'s PDF in the side column when a session is created (preview only, not context)',
       deleteNonPdf: 'Delete non-PDF',
-      deleteNonPdfHint: 'When on, md/txt artifacts also show a Delete button; when off, only PDFs can be deleted',
+      deleteNonPdfHint: 'When on, md/txt artifacts can be deleted too; when off, only PDFs',
       settings: 'Settings',
       version: 'Version',
       githubRepo: 'GitHub repository',
       manualIdNote: 'A book id is its folder name / filename prefix. Do not rename it after adding the library: session titles and artifact folders key off it, so renaming breaks old sessions and artifacts (display names may change; keep the folder stable).',
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
-      libraryPathHint: 'Shown as {root} here: absolute paths are local to this machine and never travel with the plugin.',
+      libraryPathHint: 'Shown as {root} here: absolute paths are local to this machine',
       readLocalPath: 'Read local path',
       hideLocalPath: 'Hide local path',
-      tipsLeftClick: 'Left click: a book cover selects/deselects, double click opens the book; a chapter row expands/collapses.',
-      tipsRightClick: 'Right click: books and chapters have no menu; artifacts (To PDF / Delete) and sessions (Archive) do.',
+      tipsLeftClick: 'Left click: a cover selects/deselects, double click opens the book; a chapter row expands/collapses',
+      tipsRightClick: 'Right click: artifacts can convert or delete, sessions can be archived; books and chapters have no menu',
       tipsTitle: 'Interaction tips',
       splitToolTitle: 'Split toolkit',
       importToolTitle: 'Import files',
@@ -745,7 +747,7 @@ window.__ModuleLoader__.load({
       settingsNotesTitle: 'Notes and backup',
       settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.mathdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
       shortcutsTitle: 'Shortcuts',
-      shortcutsHint: 'These are the keys the reader has always used. Press “Record”, then press the new key; Esc cancels.',
+      shortcutsHint: 'These are the keys the reader has always used; press “Record”, then the new key (Esc cancels)',
       shortcutsRecord: 'Record',
       shortcutsRecording: 'Press a key…',
       shortcutsCancel: 'Cancel',
@@ -3816,36 +3818,32 @@ window.__ModuleLoader__.load({
 
 
     /**
-     * One overlay mask's translated page: the whole overlay page painted into a
-     * canvas whose CSS size is the page box, positioned so the mask shows its
-     * own region.
-     * @param {{ doc: object, pageNumber: number, zoom: number, style: object }} props - overlay document, page and geometry.
-     * @returns {import('react').ReactElement} the masked page.
+     * Paint one overlay/translated page into a JPEG data URL. Both editors use
+     * the result as a shared CSS background for every box on that page, which is
+     * what keeps a many-box page at one bitmap instead of one canvas per box.
+     * @param {object} doc - the overlay or translated pdf.js document.
+     * @param {number} pageNumber - 1-based page.
+     * @param {number} targetWidth - preferred raster width in pixels.
+     * @returns {Promise<{ url: string, hasText: boolean }>} the data URL and whether the page has a text layer.
      */
-    function OverlayMaskPage(props) {
-      const canvas = useRef(null)
-      useEffect(() => {
-        if (props.doc === null || props.doc === undefined) return undefined
-        let cancelled = false
-        void (async () => {
-          try {
-            const number = Math.min(props.pageNumber, props.doc.numPages || 1)
-            const page = await props.doc.getPage(number)
-            const node = canvas.current
-            if (node === null || cancelled) return
-            const viewport = page.getViewport({ scale: Math.max(2, (props.zoom ?? 1) * 2) })
-            node.width = Math.floor(viewport.width)
-            node.height = Math.floor(viewport.height)
-            await page.render({ canvasContext: node.getContext('2d'), viewport }).promise
-          } catch {
-            // the mask stays empty; the note above the stage explains why
-          }
-        })()
-        return () => {
-          cancelled = true
-        }
-      }, [props.doc, props.pageNumber, props.zoom])
-      return h('canvas', { ref: canvas, className: 'md-mask-page', 'aria-hidden': true, style: props.style })
+    async function maskPageImage(doc, pageNumber, targetWidth) {
+      try {
+        const number = Math.min(pageNumber, doc.numPages || 1)
+        const page = await doc.getPage(number)
+        const base = page.getViewport({ scale: 1 })
+        const width = targetWidth > 0 ? targetWidth : 1200
+        const viewport = page.getViewport({ scale: Math.min(2.5, Math.max(1.6, width / base.width)) })
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.floor(viewport.width)
+        canvas.height = Math.floor(viewport.height)
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+        // A page with no text means the overlay PDF has nothing to reveal there.
+        const text = await page.getTextContent()
+        const hasText = text.items.some(item => typeof item.str === 'string' && item.str.trim() !== '')
+        return { url: canvas.toDataURL('image/jpeg', 0.9), hasText }
+      } catch {
+        return { url: '', hasText: false }
+      }
     }
 
     /**
@@ -4246,31 +4244,20 @@ window.__ModuleLoader__.load({
           return undefined
         }
         let cancelled = false
-        const render = async () => {
-          try {
-            const pageNumber = Math.min(reader.page, dualDoc.numPages || 1)
-            const page = await dualDoc.getPage(pageNumber)
-            const base = page.getViewport({ scale: 1 })
-            const viewport = page.getViewport({ scale: Math.min(3, Math.max(1.6, 1400 / base.width)) })
-            const canvas = document.createElement('canvas')
-            canvas.width = Math.floor(viewport.width)
-            canvas.height = Math.floor(viewport.height)
-            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-            // A page with no text means the overlay PDF has nothing to reveal
-            // there. Say it out loud: a blank reveal would just look English.
-            const text = await page.getTextContent()
-            const hasText = text.items.some(item => typeof item.str === 'string' && item.str.trim() !== '')
-            if (cancelled) return
-            setTranslatedImage(canvas.toDataURL('image/jpeg', 0.9))
-            if (overlaySource.current === 'overlay') setOverlayNote(hasText ? '' : format('overlayEmpty'))
-          } catch {
-            if (!cancelled) {
-              setTranslatedImage('')
-              if (overlaySource.current === 'overlay') setOverlayNote(format('overlayEmpty'))
-            }
+        void (async () => {
+          const pageNumber = Math.min(reader.page, dualDoc.numPages || 1)
+          const rendered = await maskPageImage(dualDoc, pageNumber, 1400)
+          if (cancelled) return
+          // A page with no text means the overlay PDF has nothing to reveal
+          // there. Say it out loud: a blank reveal would just look English.
+          if (rendered.url === '') {
+            setTranslatedImage('')
+            if (overlaySource.current === 'overlay') setOverlayNote(format('overlayEmpty'))
+            return
           }
-        }
-        void render()
+          setTranslatedImage(rendered.url)
+          if (overlaySource.current === 'overlay') setOverlayNote(rendered.hasText ? '' : format('overlayEmpty'))
+        })()
         return () => {
           cancelled = true
         }
@@ -4872,12 +4859,12 @@ window.__ModuleLoader__.load({
               height: `${mask.h * 100}%`,
             },
           },
-            dualDoc === null || mask.w <= 0 || mask.h <= 0
+            dualDoc === null || mask.w <= 0 || mask.h <= 0 || translatedImage === ''
               ? null
-              : h(OverlayMaskPage, {
-                doc: dualDoc,
-                pageNumber: reader.page,
-                zoom: reader.scale ?? 1,
+              // One decoded page image serves every box: the boxes share the
+              // same data URL, so a page with ten boxes costs one bitmap, not ten.
+              : h('div', {
+                className: 'md-mask-page-image',
                 style: {
                   position: 'absolute',
                   left: `${-(mask.x / mask.w) * 100}%`,
@@ -4885,6 +4872,9 @@ window.__ModuleLoader__.load({
                   width: `${100 / mask.w}%`,
                   height: `${100 / mask.h}%`,
                   maxWidth: 'none',
+                  backgroundImage: `url("${translatedImage}")`,
+                  backgroundSize: '100% 100%',
+                  backgroundRepeat: 'no-repeat',
                 },
               }))),
           maskDraft === null
@@ -5438,6 +5428,24 @@ window.__ModuleLoader__.load({
     function BookSheet(props) {
       const book = props.book
       const chapters = Array.isArray(book.chapters) ? book.chapters : []
+      // A 300-chapter book used to mount every row (with its observers) at once.
+      // Render a window and grow it when the sentinel comes near the viewport.
+      const WINDOW = 40
+      const [visible, setVisible] = useState(WINDOW)
+      const sentinel = useRef(null)
+      useEffect(() => { setVisible(WINDOW) }, [book.id])
+      useEffect(() => {
+        const node = sentinel.current
+        if (node === null || typeof IntersectionObserver !== 'function' || visible >= chapters.length) return undefined
+        const observer = new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting)) {
+            setVisible(count => Math.min(chapters.length, count + WINDOW))
+          }
+        }, { rootMargin: '600px 0px' })
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [visible, chapters.length, book.id])
+      const shown = chapters.slice(0, visible)
       const errorForChapter = chapter => props.createError !== null
         && props.createError.bookId === book.id
         && props.createError.code === chapter.code
@@ -5454,7 +5462,7 @@ window.__ModuleLoader__.load({
         chapters.length === 0
           ? h('div', { className: 'md-empty' }, h('div', { className: 'md-empty-title' }, format('bookEmpty')))
           : h('ul', { className: 'md-chapters' },
-            chapters.map(chapter => {
+            shown.map(chapter => {
               const key = `${book.id}|${chapter.code}`
               const error = errorForChapter(chapter)
               return h(ChapterRow, {
@@ -5502,7 +5510,15 @@ window.__ModuleLoader__.load({
                 registerRef: props.registerChapterRef,
                 registerFileRef: props.registerFileRef,
               })
-            })
+            }),
+            visible < chapters.length
+              ? h('li', { key: '__more', className: 'md-chapters-more', ref: sentinel },
+                h('button', {
+                  type: 'button',
+                  className: 'md-btn md-btn-small',
+                  onClick: () => setVisible(count => Math.min(chapters.length, count + WINDOW)),
+                }, format('chaptersMore', { n: chapters.length - visible })))
+              : null
           )
       )
     }
@@ -5704,6 +5720,7 @@ window.__ModuleLoader__.load({
 .md-book-title:focus-visible { outline-offset: 4px; }
 .md-book-meta { display: flex; gap: 10px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--dsw-alias-border-l2); }
+.md-chapters-more { display: flex; justify-content: center; padding: 10px 0; }
 .md-chapter { border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto auto 18px; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 11px 8px; font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 8px; cursor: pointer; transition: background .15s ease, transform .12s ease; }
 .md-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
@@ -5796,14 +5813,16 @@ window.__ModuleLoader__.load({
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
-.md-mask-page { display: block; }
+.md-mask-page-image { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
 .md-annot[data-tool="text"] { cursor: text; }
 .md-annot[data-tool="erase"] { cursor: cell; }
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; text-shadow: 0 0 3px var(--dsw-alias-bg-base); }
+/* A text note sits on the white PDF page, so it needs its own backing: the chip
+   follows the theme (light or dark) and keeps any ink colour readable. */
+.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-border-l3) 55%, transparent); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 .md-icon { display: block; }
 .md-annot-swatch { width: 16px; height: 16px; min-width: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--dsw-alias-border-l3); }
@@ -6331,6 +6350,41 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return found === null ? null : found.id
       }
 
+      // The translated page as one image: every box reads it through CSS, so a
+      // page with ten boxes holds one decoded bitmap instead of ten canvases.
+      const [maskImage, setMaskImage] = useState('')
+      const maskImageCache = useRef(new Map())
+      const wantMaskImage = maskDoc !== null && (masks.length > 0 || tool === 'mask') && shownVariant !== 'translated'
+      useEffect(() => {
+        if (!wantMaskImage) return undefined
+        const key = `${page}|${docRev}`
+        const cached = maskImageCache.current.get(key)
+        if (cached !== undefined) {
+          setMaskImage(cached)
+          return undefined
+        }
+        let cancelled = false
+        void (async () => {
+          const doc = maskDoc
+          if (doc === null) return
+          const rendered = await maskPageImage(doc, page, 1200)
+          if (cancelled) return
+          if (rendered.url === '') {
+            setMaskImage('')
+            return
+          }
+          const cache = maskImageCache.current
+          cache.set(key, rendered.url)
+          // Keep only the pages just looked at: the string is a full page.
+          while (cache.size > 2) {
+            const oldest = cache.keys().next().value
+            cache.delete(oldest)
+          }
+          setMaskImage(rendered.url)
+        })()
+        return () => { cancelled = true }
+      }, [wantMaskImage, maskDoc, page, docRev])
+
       // One page fits the column: page 1's width at scale 1 against the stage's
       // content width. Recomputed whenever either side of that ratio changes, so
       // resizing the pane, the window or the dock refits on its own. `stageWidth`
@@ -6580,10 +6634,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               width: `${mask.w * 100}%`,
               height: `${mask.h * 100}%`,
             },
-          }, maskDoc === null ? null : h(OverlayMaskPage, {
-            doc: maskDoc,
-            pageNumber: page,
-            zoom: renderScale,
+          }, maskImage === '' ? null : h('div', {
+            className: 'md-mask-page-image',
             style: {
               position: 'absolute',
               left: `${-(mask.x / mask.w) * 100}%`,
@@ -6591,6 +6643,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               width: `${100 / mask.w}%`,
               height: `${100 / mask.h}%`,
               maxWidth: 'none',
+              backgroundImage: `url("${maskImage}")`,
+              backgroundSize: '100% 100%',
+              backgroundRepeat: 'no-repeat',
             },
           }))))
 
