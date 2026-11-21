@@ -2113,22 +2113,30 @@ window.__ModuleLoader__.load({
             : null
           ),
           h('div', { className: 'md-artifact-modes' },
-            MODES.map(mode => h('button', {
-              key: mode,
-              type: 'button',
-              className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
-              onClick: event => {
-                event.stopPropagation()
-                const rows = groups === undefined ? [] : (Array.isArray(groups[mode]) ? groups[mode] : [])
-                // Reuse the conversation this artifact already has for that mode;
-                // only start a new one when there is none.
-                if (rows.length > 0) {
-                  props.onOpenSession(rows[0])
-                  return
-                }
-                props.onArtifactSession(props.chapter, item, mode, 0)
-              },
-            }, format(`mode.${mode}`)))
+            MODES.map(mode => h(React.Fragment, { key: mode },
+              h('button', {
+                type: 'button',
+                className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
+                onClick: event => {
+                  event.stopPropagation()
+                  const rows = groups === undefined ? [] : (Array.isArray(groups[mode]) ? groups[mode] : [])
+                  if (rows.length > 0) {
+                    props.onOpenSession(rows[0])
+                    return
+                  }
+                  props.onArtifactSession(props.chapter, item, mode, 0)
+                },
+              }, format(`mode.${mode}`)),
+              h('button', {
+                type: 'button',
+                className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
+                title: format('forceNewHint'),
+                onClick: event => {
+                  event.stopPropagation()
+                  props.onArtifactSession(props.chapter, item, mode, 0)
+                },
+              }, `+ ${format('forceNew')}`)
+            ))
           ),
           groups === undefined
             ? null
