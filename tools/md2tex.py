@@ -261,19 +261,26 @@ def cover_tex():
 
 
 def sanitize_display_math(text):
-    """Drop single `$` inside `$$...$$` and close an unmatched display block.
+    """Normalize display math before conversion.
 
-    The translation model sometimes mixes inline math into a display block,
-    which makes XeLaTeX abort with "Display math should end with $$".
+    The translation model sometimes mixes inline math into a display block or
+    puts prose after the closing `$$` on the same line, which makes XeLaTeX
+    abort with "Display math should end with $$". Display blocks are rebuilt on
+    their own lines, with inner single `$` removed; trailing prose stays prose.
     """
+    text = text.replace("\\[", "$$").replace("\\]", "$$")
+    text = text.replace("\\(", "$").replace("\\)", "$")
     parts = text.split("$$")
-    cleaned = []
-    for index, part in enumerate(parts):
-        cleaned.append(part.replace("$", "") if index % 2 == 1 else part)
-    merged = "$$".join(cleaned)
     if len(parts) % 2 == 0:
-        merged += "\n\n$$"
-    return merged
+        parts.append("")
+    rebuilt = []
+    for index, part in enumerate(parts):
+        if index % 2 == 1:
+            body = part.replace("$", "")
+            rebuilt.append("\n\n$$\n" + body.strip() + "\n$$\n\n")
+        else:
+            rebuilt.append(part)
+    return "".join(rebuilt)
 
 
 def main():

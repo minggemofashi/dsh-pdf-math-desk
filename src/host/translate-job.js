@@ -63,6 +63,7 @@ export async function startChapterJob(options) {
 
   void (async () => {
     let temporary = null
+    let savedMarkdown = ''
     try {
       temporary = await mkdtemp(join(tmpdir(), 'mathdesk-translate-'))
       await rasterize(options.rasterScript, options.source, temporary)
@@ -83,6 +84,7 @@ export async function startChapterJob(options) {
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
       const markdown = chunks.join('\n\n')
+      savedMarkdown = markdown
       const markdownPath = join(tmpdir(), `${jobId}.md`)
       await writeFile(markdownPath, markdown, 'utf8')
       try {
@@ -95,6 +97,11 @@ export async function startChapterJob(options) {
     } catch (error) {
       state.status = 'error'
       state.error = String(error !== null && error !== undefined && error.message ? error.message : error)
+      if (savedMarkdown !== '') {
+        const keep = join(options.jobDir, `${jobId}.md`)
+        await writeFile(keep, savedMarkdown, 'utf8').catch(() => {})
+        state.error = `${state.error}（译文已保留：${keep}）`
+      }
     } finally {
       await save()
       if (temporary !== null) await rm(temporary, { recursive: true, force: true })
