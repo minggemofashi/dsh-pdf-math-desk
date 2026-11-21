@@ -198,6 +198,8 @@ window.__ModuleLoader__.load({
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
       libraryPathHint: '这里统一显示为 <库根>：绝对路径只在本机有效，不随插件或仓库迁移。',
+      readLocalPath: '读取本机路径',
+      hideLocalPath: '隐藏本机路径',
       diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
@@ -448,6 +450,8 @@ window.__ModuleLoader__.load({
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
       libraryPathHint: 'Shown as <root> here: absolute paths are local to this machine and never travel with the plugin.',
+      readLocalPath: 'Read local path',
+      hideLocalPath: 'Hide local path',
       diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
@@ -1489,6 +1493,7 @@ window.__ModuleLoader__.load({
       const [dir, setDir] = useState('')
       const [name, setName] = useState('')
       const [confirmId, setConfirmId] = useState('')
+      const [showLocalPath, setShowLocalPath] = useState(false)
       const clickTimer = useRef(null)
       const busy = props.busy
       // A single click switches the library; a double click enters its shelf. The
@@ -1608,7 +1613,11 @@ window.__ModuleLoader__.load({
           }, format('aiPromptCopy')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
-            h('code', { className: 'md-path' }, '<库根>'),
+            h('code', { className: 'md-path' }, showLocalPath ? props.libraryDir : '<库根>'),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              onClick: () => setShowLocalPath(value => !value),
+            }, showLocalPath ? format('hideLocalPath') : format('readLocalPath')),
             h('span', { className: 'md-shelf-sub' }, format('libraryPathHint'))
           )
         ),
