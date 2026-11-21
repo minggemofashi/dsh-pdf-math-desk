@@ -169,6 +169,8 @@ window.__ModuleLoader__.load({
       dualToggle: '双语',
       dualHint: '原文与译文并排显示（需要先生成译文）',
       dualNeedsTranslation: '还没有译文。是否现在翻译本章？会消耗 token，并需要先在设置里填写 DeepSeek API Key。',
+      dualOriginal: '原文',
+      dualTranslated: '译文',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translating: '翻译中…',
@@ -464,6 +466,8 @@ window.__ModuleLoader__.load({
       dualToggle: 'Bilingual',
       dualHint: 'Show the original and the translation side by side (translate the chapter first)',
       dualNeedsTranslation: 'No translation yet. Translate this chapter now? It costs tokens and needs a DeepSeek API key in Settings.',
+      dualOriginal: 'Original',
+      dualTranslated: 'Translation',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
@@ -3301,20 +3305,6 @@ window.__ModuleLoader__.load({
                 setDual(value => !value)
               },
             }, format('dualToggle')),
-            dual
-              ? h(React.Fragment, null,
-                h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-                h('button', {
-                  type: 'button', className: 'md-btn md-btn-small',
-                  onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
-                }, '−'),
-                h('span', { className: 'md-reader-scale', 'aria-hidden': true }, String(Math.round((rightScale ?? reader.scale ?? 1) * 100)) + '%'),
-                h('button', {
-                  type: 'button', className: 'md-btn md-btn-small',
-                  onClick: () => setRightScale(value => Math.min(3, (value ?? reader.scale ?? 1) + 0.1)),
-                }, '+')
-              )
-              : null,
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('span', { className: 'md-reader-lang-label' }, format('translateFor')),
             h('select', {
@@ -3360,6 +3350,13 @@ window.__ModuleLoader__.load({
           dual && dualDoc !== null
             ? h('div', { className: 'md-reader-dual' },
               h('div', { className: 'md-reader-column', ref: dualLeft },
+                h('div', { className: 'md-reader-colhead' },
+                  h('span', { className: 'md-reader-coltitle' }, format('dualOriginal')),
+                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onZoomOut }, '−'),
+                  h('span', { className: 'md-reader-scale' }, String(Math.round((reader.scale ?? 1) * 100)) + '%'),
+                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onZoomIn }, '+'),
+                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onFit }, format('readerFit'))
+                ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? dualDoc : props.doc,
                   showBlocks,
@@ -3378,6 +3375,18 @@ window.__ModuleLoader__.load({
                 })
               ),
               h('div', { className: 'md-reader-column', ref: dualRight },
+                h('div', { className: 'md-reader-colhead' },
+                  h('span', { className: 'md-reader-coltitle' }, format('dualTranslated')),
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
+                  }, '−'),
+                  h('span', { className: 'md-reader-scale' }, String(Math.round((rightScale ?? reader.scale ?? 1) * 100)) + '%'),
+                  h('button', {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    onClick: () => setRightScale(value => Math.min(3, (value ?? reader.scale ?? 1) + 0.1)),
+                  }, '+')
+                ),
                 h(ContinuousView, {
                   doc: reader.variant === 'translated' ? props.doc : dualDoc,
                   showBlocks: false,
@@ -3916,6 +3925,8 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
+.md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--dsw-alias-bg-base); border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.md-reader-coltitle { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-right: auto; }
 .md-reader-page-wrap { position: relative; display: inline-block; max-width: 100%; }
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: transparent; }
