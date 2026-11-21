@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.23.0
+
+- 产物列表里的 `.md` 文件行内新增可见的「转 PDF」按钮（右键仍可用）；
+- 书库页导入 `.md` 时，Host 会尝试自动生成同名 PDF（有 Python+TeX 时），PDF 与 md 同在 `导入\`。
+
 ## v0.22.0
 
 - 产物列表里右键 .md → 「渲染为 PDF」：Host 调 	ools/md2tex.py（Python + xelatex），

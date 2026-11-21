@@ -256,6 +256,8 @@ window.__ModuleLoader__.load({
       artifactsBookId: '路径里的「{id}」是书 id，不是书名。',
       artifactsReload: '重新读取',
       renderConfirm: '把 {name} 渲染为 PDF？会生成同名 PDF 放在 md 旁边。',
+      renderAction: '转 PDF',
+      renderActionHint: '渲染为 PDF，与 md 同目录',
       renderWorking: '正在渲染 PDF…（首次可能较慢）',
       renderDone: '已生成 {name}',
       renderFailed: '渲染失败：需要 Python 与 TeX Live（xelatex），详见 README',
@@ -476,6 +478,8 @@ window.__ModuleLoader__.load({
       artifactsBookId: 'The “{id}” in the path is the book id, not the book title.',
       artifactsReload: 'Reload',
       renderConfirm: 'Render {name} to PDF next to the markdown file?',
+      renderAction: 'To PDF',
+      renderActionHint: 'Render to PDF in the same folder',
       renderWorking: 'Rendering PDF… (the first run can be slow)',
       renderDone: 'Created {name}',
       renderFailed: 'Render failed: needs Python and TeX Live (xelatex), see README',
@@ -1993,7 +1997,23 @@ window.__ModuleLoader__.load({
           h('span', { className: 'md-file-kind', 'aria-hidden': true }, artifactBadge(item)),
           h('span', { className: 'md-file-name' }, item.name),
           h('span', { className: 'md-file-meta', 'aria-hidden': true },
-            [formatSize(item.size), formatDate(item.mtime)].filter(Boolean).join(' · '))
+            [formatSize(item.size), formatDate(item.mtime)].filter(Boolean).join(' · ')),
+          /\.md$/i.test(item.name)
+            ? h('span', {
+              className: 'md-file-action', role: 'button', tabIndex: 0,
+              title: format('renderActionHint'),
+              onClick: event => {
+                event.stopPropagation()
+                props.onRender(item, props.code)
+              },
+              onKeyDown: event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                event.stopPropagation()
+                props.onRender(item, props.code)
+              },
+            }, format('renderAction'))
+            : null
         )
       )
       let body
@@ -2706,6 +2726,8 @@ window.__ModuleLoader__.load({
 .md-file[data-kind="text"] .md-file-kind { color: var(--dsw-alias-brand-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent); }
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
+.md-file-action { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); cursor: pointer; }
+.md-file-action:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l4); }
 .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
 .md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
 .md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }

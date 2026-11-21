@@ -308,7 +308,15 @@ export function createHandler(config, options = {}) {
           }
         }
         await writeFile(target, Buffer.concat(chunks))
-        sendJson(response, 200, { ok: true, path: target, bytes: total })
+        let pdf = ''
+        if (/\.md$/i.test(target) && options.md2texScript !== undefined) {
+          try {
+            pdf = await renderMarkdown(options.md2texScript, target, `${target.slice(0, target.length - 3)}.pdf`)
+          } catch {
+            pdf = ''
+          }
+        }
+        sendJson(response, 200, { ok: true, path: target, pdf, bytes: total })
         return
       }
 
