@@ -3592,7 +3592,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         } catch (error) {
           showNotice(error !== undefined && error !== null && typeof error.message === 'string' ? error.message.slice(0, 200) : format('trashFailed'))
         }
-      }, [saveShelfGroups, shelfGroups, showNotice])
+      }, [shelfGroups, showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
