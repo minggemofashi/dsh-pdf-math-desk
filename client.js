@@ -89,6 +89,10 @@ window.__ModuleLoader__.load({
       manualStructure: '放法：<库根>\\分片\\<书 id>\\ 下，一章一个 PDF，保留目录。文件名带页码范围（如 概率论_积分和数学期望_97-138.pdf）即可，工作台会按页序自动编号；也可以写成 <书 id>_cNN_章名_p起-止.pdf。产物\\ 与 封面\\ 可选。',
       manualSplit: '拆分：任意 PDF 工具按章节切开、保留目录，放进 分片\\<书 id>\\ 即可；不需要自己编号，页码范围会自动排序（目录/前言归 c00，附录 c90+）。',
       manualSession: '拆分会话：点下面的按钮，工具会复制到当前书库的 工具\\，并新开一个会话，提示词里已经写好当前书库的路径、目标目录和命名规则。',
+      aiPromptHint: '让 AI 直接产出可用的 Markdown（复制下面这句发给它）：',
+      aiPromptText: '给我一份报告，用 markdown 格式，数学公式行内用 $ 格式，行间用 $$ 格式，不要出现 \\[ 和 \\( 格式',
+      aiPromptCopy: '复制提示词',
+      aiPromptCopied: '提示词已复制',
       splitStart: '拆分工具：开一个会话',
       splitHint: '把工具复制到当前书库的 工具\\，并新建一个带预设提示词的会话。',
       importStart: '导入文件',
@@ -320,6 +324,10 @@ window.__ModuleLoader__.load({
       manualStructure: 'Put one PDF per chapter under <root>\\分片\\<book id>\\, keep the contents. Page ranges in the name (e.g. 概率论_积分和数学期望_97-138.pdf) are enough — the workbench numbers chapters by page order; explicit <book id>_cNN_章名_p起-止.pdf also works. 产物\\ and 封面\\ optional.',
       manualSplit: 'Split with any PDF tool by chapter, keep the contents, and drop the files into 分片\\<book id>\\. No manual numbering: page ranges sort the chapters (contents/preface become c00, appendices c90+).',
       manualSession: 'Split session: the button below copies the toolkit into 工具\\ of this library and opens a conversation whose prompt already names the library path, the target folder, and the naming rules.',
+      aiPromptHint: 'Ask the AI for usable Markdown (copy the sentence below):',
+      aiPromptText: 'Give me a report in markdown; inline math with $...$, display math with $$...$$, never use \\[ or \\( forms.',
+      aiPromptCopy: 'Copy prompt',
+      aiPromptCopied: 'Prompt copied',
       splitStart: 'Split a book (opens a conversation)',
       splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
       importStart: 'Import files',
@@ -1538,6 +1546,14 @@ window.__ModuleLoader__.load({
           h('p', { className: 'md-shelf-sub' }, format('manualSplit')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhole')),
           h('p', { className: 'md-shelf-sub' }, format('manualSession')),
+          h('div', { className: 'md-manual-block' },
+            h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
+            h('code', { className: 'md-path' }, format('aiPromptText')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onCopyPrompt,
+            }, format('aiPromptCopy'))
+          ),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
@@ -4808,6 +4824,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReloadKey(key => key + 1)
       }, [showNotice])
 
+      /** Copy the AI prompt to the clipboard (falls back to showing it). */
+      const copyAiPrompt = useCallback(async () => {
+        const text = format('aiPromptText')
+        try {
+          await navigator.clipboard.writeText(text)
+          showNotice(format('aiPromptCopied'))
+        } catch {
+          showNotice(text)
+        }
+      }, [showNotice])
+
       /** Copy the bundled sample book into the active library. */
       const installSample = useCallback(async () => {        if (sampleBusy) return
         setSampleBusy(true)
@@ -5098,6 +5125,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           importBusy,
           onImport: () => importInput.current?.click(),
           onLoadSample: installSample,
+          onCopyPrompt: copyAiPrompt,
           libraryDir: library === null ? (catalog === null ? '' : catalog.libraryDir) : library.libraryDir,
         })
       } else if (book !== null) {
