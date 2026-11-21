@@ -61,3 +61,9 @@ GitHub: https://github.com/minggemofashi/dsh-pdf-math-desk
 ## 归档不是删除
 
 会话行的「归档」只把会话移出工作台列表，不会删除会话本身；已归档会话仍保存在 DSH 中，可从 DSH 的归档恢复或在 DSH 里清理。工作台的「清理空会话」只处理没有发过消息的空白会话。
+
+## 平台支持
+
+- **仅支持 Windows 10 / 11（x64）**，且只在这两个系统上验证过。
+- macOS / Linux 未适配、未测试：路径分隔符、`py`/`python` 启动器、TeX 检测目录都按 Windows 编写，其他系统上大概率无法正常工作。
+- 可选环境：Python 3 + TeX Live（xelatex、ctex）；缺失时「md→PDF」按钮隐藏，其余功能正常。
