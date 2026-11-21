@@ -5579,6 +5579,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               book === null ? null : h('button', {
                 type: 'button', className: 'md-btn md-btn-ghost', onClick: backToShelf,
               }, `‹ ${format('back')}`),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-ghost',
+                title: GITHUB_URL,
+                onClick: () => {
+                  try {
+                    window.open(GITHUB_URL, '_blank', 'noopener')
+                  } catch {
+                    // popup blocked: ignore
+                  }
+                },
+              }, 'GitHub'),
               h('div', { className: 'md-settings' },
                 h('button', {
                   type: 'button', className: 'md-btn md-btn-ghost',
