@@ -4685,7 +4685,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
           name: title.slice(0, 60),
           books: [...selected],
-          ...(current === null || current === 'hidden' ? {} : { parent: current }),
+          ...(current === null ? {} : { parent: current }),
         }
         saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
         setShelfName(null)

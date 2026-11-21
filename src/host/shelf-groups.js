@@ -44,7 +44,9 @@ export function sanitizeGroups(value) {
     const name = typeof entry.name === 'string' ? entry.name.trim().slice(0, 60) : ''
     if (name === '') continue
     seen.add(entry.id)
-    const parent = typeof entry.parent === 'string' && SHELF_ID.test(entry.parent) ? entry.parent : undefined
+    const parent = entry.parent === 'hidden'
+      ? 'hidden'
+      : typeof entry.parent === 'string' && SHELF_ID.test(entry.parent) ? entry.parent : undefined
     shelves.push(parent === undefined
       ? { id: entry.id, name, books: bookIds(entry.books) }
       : { id: entry.id, name, books: bookIds(entry.books), parent })
