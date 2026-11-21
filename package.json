@@ -1,6 +1,6 @@
 {
   "name": "dsh-pdf-math-desk",
-  "version": "0.35.1",
+  "version": "0.35.2",
   "private": false,
   "type": "module",
   "description": "A full-page math workbench organized by book and chapter.",
@@ -22,6 +22,7 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
     "./docs/*": "./docs/*",
+    "./docs/DETAIL.md": "./docs/DETAIL.md",
     "./icon": "./icon.svg"
   },
   "files": [
