@@ -2536,6 +2536,19 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-detail-actions' },
             h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => props.onOpenPdf(chapter) }, format('openPdf'))
           ),
+          h(ChapterArtifacts, {
+            bookId: props.bookId,
+            bookTitle: props.bookTitle,
+            code: chapter.code,
+            state: props.artifacts,
+            onOpen: item => props.onOpenArtifact(chapter, item),
+            onRetry: props.onRetryArtifacts,
+            onReload: props.onReloadArtifacts,
+            onRender: (item, code) => props.onRenderArtifact(item, code),
+            onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
+            onCopyPath: props.onCopyPath,
+            registerRef: props.registerFileRef,
+          }),
           h(ChapterSessions, {
             chapter,
             groups: props.groups,
@@ -2555,19 +2568,6 @@ window.__ModuleLoader__.load({
             onRenameInput: props.onRenameInput,
             onCommitRename: props.onCommitRename,
             onCancelRename: props.onCancelRename,
-          }),
-          h(ChapterArtifacts, {
-            bookId: props.bookId,
-            bookTitle: props.bookTitle,
-            code: chapter.code,
-            state: props.artifacts,
-            onOpen: item => props.onOpenArtifact(chapter, item),
-            onRetry: props.onRetryArtifacts,
-            onReload: props.onReloadArtifacts,
-            onRender: (item, code) => props.onRenderArtifact(item, code),
-            onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
-            onCopyPath: props.onCopyPath,
-            registerRef: props.registerFileRef,
           })
         ) : null
       )
