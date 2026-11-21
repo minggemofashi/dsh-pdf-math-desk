@@ -2443,7 +2443,7 @@ window.__ModuleLoader__.load({
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous'))
           ),
-          props.wholeBook === true
+          false
             ? null
             : h(React.Fragment, null,
               h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
