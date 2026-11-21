@@ -32,11 +32,15 @@
     "vendor",
     "tools",
     "samples",
+    "market",
+    "assets",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
+    "screenshots.json",
     "icon.svg",
     "README.md",
+    "LICENSE",
     "安装与分发.md"
   ],
   "engines": {
@@ -54,5 +58,6 @@
         "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
-  }
+  },
+  "license": "MIT"
 }
