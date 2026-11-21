@@ -38,8 +38,21 @@ def page_options():
     return "margin=2.4cm"
 
 
+def cjk_font():
+    """The Chinese face used on screen.
+
+    SimSun (the ctex default here) is hairline-thin on a monitor; Microsoft
+    YaHei is present on every Windows 10/11 the plugin supports and stays
+    readable at 100–150%. MATH_DESK_CJKFONT overrides it (pass a family name
+    XeLaTeX can find, e.g. `Source Han Serif SC`)."""
+    raw = os.environ.get("MATH_DESK_CJKFONT", "").strip()
+    return raw if raw != "" else "Microsoft YaHei"
+
+
 PREAMBLE = r"""\documentclass[UTF8,11pt,a4paper]{ctexart}
 \usepackage[%s]{geometry}
+\usepackage{fontspec}
+\setCJKmainfont{%s}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs,tabularx,array}
 \usepackage{fancyvrb}
@@ -255,7 +268,7 @@ def convert(lines, chapter_title):
 
 def write_tex(path, body):
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(PREAMBLE.replace("11pt", font_size(), 1) % page_options())
+        handle.write(PREAMBLE.replace("11pt", font_size(), 1) % (page_options(), cjk_font()))
         handle.write(body)
         handle.write("\\end{document}\n")
 

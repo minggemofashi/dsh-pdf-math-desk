@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.49.5
+
+- 叠加露底改回「每个框一张整页 canvas」：canvas 不设自己的宽高样式，由浏览器按页面盒子缩放，几何只跟框走；去掉 SVG + `clipPath` + JPEG 这条链（放大后文字被拉伸、看起来叠字就出在这条链上）。
+- 中文字体换掉 `ctex` 默认的宋体细笔画：默认用 **Microsoft YaHei**（屏上更厚、更清楚），可用环境变量 `MATH_DESK_CJKFONT` 换成 XeLaTeX 能识别的其它字体（如 `Source Han Serif SC`）；`_translated.pdf` 与叠加层同时生效。
+- 打开叠加时仍会先重建 overlay，缓存块译文不用重新翻译。
+
 ## v0.49.4
 
 - 新增 `POST /mathdesk/rebuild-translated`：用 `~/.dsh/mathdesk/translation/<书>/<章>/page-NNN.md` 缓存重新渲染 `_translated.pdf`，不调用 API；打开双语/叠加时自动检查，`<缓存目录>/.render-version` 与插件版本一致就跳过，避免每次都跑 XeLaTeX。

@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 
-from md2tex import convert
+from md2tex import cjk_font, convert
 
 blocks_path, out_path = sys.argv[1], sys.argv[2]
 page_width = float(sys.argv[3])
@@ -153,6 +153,8 @@ for block in blocks:
 
 tex = r"""\documentclass[UTF8,%s]{ctexart}
 \usepackage[paperwidth=%.4fin,paperheight=%.4fin,margin=0pt]{geometry}
+\usepackage{fontspec}
+\setCJKmainfont{%s}
 \usepackage{amsmath,amssymb}
 \usepackage[absolute,overlay]{textpos}
 \usepackage{adjustbox}
@@ -162,7 +164,7 @@ tex = r"""\documentclass[UTF8,%s]{ctexart}
 \begin{document}
 %s
 \end{document}
-""" % (font_class, page_width / 72.0, page_height / 72.0, "\n".join(parts))
+""" % (font_class, page_width / 72.0, page_height / 72.0, cjk_font(), "\n".join(parts))
 
 work = tempfile.mkdtemp(prefix="md2overlay-")
 tex_path = os.path.join(work, "doc.tex")

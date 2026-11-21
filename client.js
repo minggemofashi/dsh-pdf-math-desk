@@ -3028,6 +3028,39 @@ window.__ModuleLoader__.load({
 
 
     /**
+     * One overlay mask's translated page: the whole overlay page painted into a
+     * canvas whose CSS size is the page box, positioned so the mask shows its
+     * own region.
+     * @param {{ doc: object, pageNumber: number, zoom: number, style: object }} props - overlay document, page and geometry.
+     * @returns {import('react').ReactElement} the masked page.
+     */
+    function OverlayMaskPage(props) {
+      const canvas = useRef(null)
+      useEffect(() => {
+        if (props.doc === null || props.doc === undefined) return undefined
+        let cancelled = false
+        void (async () => {
+          try {
+            const number = Math.min(props.pageNumber, props.doc.numPages || 1)
+            const page = await props.doc.getPage(number)
+            const node = canvas.current
+            if (node === null || cancelled) return
+            const viewport = page.getViewport({ scale: Math.max(2, (props.zoom ?? 1) * 2) })
+            node.width = Math.floor(viewport.width)
+            node.height = Math.floor(viewport.height)
+            await page.render({ canvasContext: node.getContext('2d'), viewport }).promise
+          } catch {
+            // the mask stays empty; the note above the stage explains why
+          }
+        })()
+        return () => {
+          cancelled = true
+        }
+      }, [props.doc, props.pageNumber, props.zoom])
+      return h('canvas', { ref: canvas, className: 'md-mask-page', 'aria-hidden': true, style: props.style })
+    }
+
+    /**
      * One scrollable PDF view: the stage, the page box, the painting, and the
      * zoom value it reports back. Bilingual columns pass `variant: 'column'`
      * so the caller owns the scroll container. Extra layers (the overlay
@@ -3144,7 +3177,6 @@ window.__ModuleLoader__.load({
       const [translatedImage, setTranslatedImage] = useState('')
       const [overlayNote, setOverlayNote] = useState('')
       const overlaySource = useRef('')
-      const maskClipId = useRef(`md-mask-clip-${Math.random().toString(36).slice(2, 8)}`)
       const overlayLayer = useRef(null)
       const overlayStart = useRef(null)
       const [translateTarget, setTranslateTarget] = useState('zh')
@@ -3582,9 +3614,10 @@ window.__ModuleLoader__.load({
       const ready = reader.phase === 'ready'
       const sub = [reader.bookTitle, `${reader.code} ${reader.title}`].filter(item => typeof item === 'string' && item !== '').join(' · ')
       const modeOf = mode => reader.mode === mode
-      // The overlay layer sits on the page box, not on the stage: one page-sized
-      // image plus a clip path through every mask. Drawing each mask from its own
-      // canvas used to drift, because a zoomed page box is wider than the stage.
+      // Each mask paints the translated page into its own canvas, sized as a
+      // whole page and shifted by -mask origin. The canvas has no width/height
+      // style of its own, so the browser scales the bitmap to exactly the page
+      // box: no aspect guess, no SVG clip path, no stretched text.
       const masksLayer = overlay
         ? h('div', {
           className: 'md-overlay-layer',
@@ -3594,33 +3627,6 @@ window.__ModuleLoader__.load({
           onPointerUp: maskUp,
           onPointerLeave: maskUp,
         },
-          masks.length === 0 || translatedImage === ''
-            ? null
-            : h('svg', {
-              className: 'md-overlay-svg',
-              viewBox: '0 0 1 1',
-              preserveAspectRatio: 'none',
-              'aria-hidden': true,
-            },
-              h('defs', null,
-                h('clipPath', { id: maskClipId.current, clipPathUnits: 'userSpaceOnUse' },
-                  masks.map((mask, index) => h('rect', {
-                    key: index,
-                    x: mask.x,
-                    y: mask.y,
-                    width: mask.w,
-                    height: mask.h,
-                  })))),
-              h('image', {
-                href: translatedImage,
-                x: 0,
-                y: 0,
-                width: 1,
-                height: 1,
-                preserveAspectRatio: 'none',
-                clipPath: `url(#${maskClipId.current})`,
-              })
-            ),
           masks.map((mask, index) => h('div', {
             key: `${mask.x}-${mask.y}-${index}`,
             className: 'md-mask',
@@ -3635,7 +3641,22 @@ window.__ModuleLoader__.load({
               width: `${mask.w * 100}%`,
               height: `${mask.h * 100}%`,
             },
-          })),
+          },
+            dualDoc === null || mask.w <= 0 || mask.h <= 0
+              ? null
+              : h(OverlayMaskPage, {
+                doc: dualDoc,
+                pageNumber: reader.page,
+                zoom: reader.scale ?? 1,
+                style: {
+                  position: 'absolute',
+                  left: `${-(mask.x / mask.w) * 100}%`,
+                  top: `${-(mask.y / mask.h) * 100}%`,
+                  width: `${100 / mask.w}%`,
+                  height: `${100 / mask.h}%`,
+                  maxWidth: 'none',
+                },
+              }))),
           maskDraft === null
             ? null
             : h('div', {
@@ -4436,7 +4457,7 @@ window.__ModuleLoader__.load({
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
-.md-overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.md-mask-page { display: block; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
 .md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
