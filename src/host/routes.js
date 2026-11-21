@@ -27,6 +27,7 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
+import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from './annotations.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
@@ -505,8 +506,58 @@ async function activeLibrary() {
         return
       }
 
-      if (path === `${PREFIX}/import-annots`) {
+      if (path === `${PREFIX}/annotations`) {
+        try {
+          const library = await activeLibrary()
+          if (request.method === 'POST') {
+            const body = await readJson(request)
+            const book = pathSegment(body.book)
+            const code = pathSegment(String(body.code ?? '').toLowerCase())
+            const page = Number.parseInt(String(body.page ?? ''), 10)
+            if (book === '' || code === '' || !Number.isFinite(page) || page < 1) {
+              fail(response, 400, 'bad-annotations-request', '书、章或页码不合法')
+              return
+            }
+            const result = await writeAnnotations(library.libraryDir, book, code, page, body)
+            sendJson(response, 200, { ok: true, updatedAt: result.updatedAt })
+            return
+          }
+          const book = pathSegment(url.searchParams.get('book'))
+          const code = pathSegment((url.searchParams.get('code') ?? '').toLowerCase())
+          if (book === '' || code === '') {
+            fail(response, 400, 'bad-annotations-request', '书或章不合法')
+            return
+          }
+          sendJson(response, 200, { ok: true, ...(await readAnnotations(library.libraryDir, book, code)) })
+        } catch (error) {
+          fail(response, 500, 'annotations-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/annotations-bulk`) {
         if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const book = pathSegment(body.book)
+          const code = pathSegment(String(body.code ?? '').toLowerCase())
+          if (book === '' || code === '') {
+            fail(response, 400, 'bad-annotations-request', '书或章不合法')
+            return
+          }
+          const library = await activeLibrary()
+          const result = await seedAnnotations(library.libraryDir, book, code, body.pages)
+          sendJson(response, 200, { ok: true, added: result.added })
+        } catch (error) {
+          fail(response, 500, 'annotations-bulk-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/import-annots`) {        if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
           return
         }

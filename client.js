@@ -185,6 +185,8 @@ window.__ModuleLoader__.load({
       sideMenuSessions: '跳到会话',
       sideHideToolbar: '隐藏工具条',
       sideShowToolbar: '显示工具条',
+      sideMenuPaging: '翻页',
+      sideMenuPreview: '预览',
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
@@ -553,6 +555,8 @@ window.__ModuleLoader__.load({
       sideMenuSessions: 'Jump to a conversation',
       sideHideToolbar: 'Hide the toolbar',
       sideShowToolbar: 'Show the toolbar',
+      sideMenuPaging: 'Pages',
+      sideMenuPreview: 'Preview',
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
@@ -1789,6 +1793,124 @@ window.__ModuleLoader__.load({
       const next = (Number(link.state.annotRev) || 0) + 1
       syncView(bookId, code, { annotRev: next }, origin)
       return next
+    }
+
+    /** Delay before one edited page is mirrored to the library. */
+    const MIRROR_DELAY_MS = 800
+    /** Pending per-page mirror timers, keyed `book:code:page`. */
+    const mirrorTimers = new Map()
+
+    /**
+     * Mirror one page's annotations to the library, debounced.
+     *
+     * localStorage is the live store, but it dies with site data or a new
+     * browser; the Host keeps `<库根>\.mathdesk\annotations\<书>\<章>.json` so the
+     * notes travel with the library and survive plugin updates.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {number} page - 1-based page number.
+     * @returns {void}
+     */
+    function mirrorPageAnnotations(bookId, code, page) {
+      if (bookId === '' || code === '' || !Number.isFinite(page) || page < 1) return
+      const key = `${bookId}:${code}:${page}`
+      const held = mirrorTimers.get(key)
+      if (held !== undefined) window.clearTimeout(held)
+      mirrorTimers.set(key, window.setTimeout(() => {
+        mirrorTimers.delete(key)
+        let masks = []
+        let annots = []
+        try {
+          masks = JSON.parse(window.localStorage.getItem(`mathdesk:masks:${bookId}:${code}:${page}`) ?? '[]')
+          annots = JSON.parse(window.localStorage.getItem(`mathdesk:annots:${bookId}:${code}:${page}`) ?? '[]')
+        } catch {
+          return
+        }
+        request('POST', 'annotations', { book: bookId, code, page, masks, annots }).catch(() => {
+          // offline or a read-only library: the page stays in localStorage only
+        })
+      }, MIRROR_DELAY_MS))
+    }
+
+    /**
+     * Every page of one chapter that this browser holds.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Map<number, { page: number, masks: object[], annots: object[] }>} pages by number.
+     */
+    function localChapterPages(bookId, code) {
+      const pages = new Map()
+      const prefixMasks = `mathdesk:masks:${bookId}:${code}:`
+      const prefixAnnots = `mathdesk:annots:${bookId}:${code}:`
+      try {
+        for (let index = 0; index < window.localStorage.length; index += 1) {
+          const key = window.localStorage.key(index)
+          if (key === null) continue
+          const kind = key.startsWith(prefixMasks) ? 'masks' : key.startsWith(prefixAnnots) ? 'annots' : ''
+          if (kind === '') continue
+          const prefix = kind === 'masks' ? prefixMasks : prefixAnnots
+          const page = Number.parseInt(key.slice(prefix.length), 10)
+          if (!Number.isFinite(page) || page < 1) continue
+          const entry = pages.get(page) ?? { page, masks: [], annots: [] }
+          try {
+            const parsed = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+            entry[kind] = Array.isArray(parsed) ? parsed : []
+          } catch {
+            entry[kind] = []
+          }
+          pages.set(page, entry)
+        }
+      } catch {
+        // storage unavailable
+      }
+      return pages
+    }
+
+    /**
+     * Bring this browser and the library mirror together for one chapter:
+     * pages only the mirror knows are restored locally (a cleared browser or a
+     * new machine), pages only this browser knows are handed to the mirror
+     * (first run after the update). A page held locally always wins.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Promise<{ restored: number, seeded: number }>} what changed on each side.
+     */
+    async function syncChapterAnnotations(bookId, code) {
+      if (bookId === '' || code === '') return { restored: 0, seeded: 0 }
+      let payload = null
+      try {
+        payload = await request('GET', `annotations?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
+      } catch {
+        return { restored: 0, seeded: 0 }
+      }
+      const remote = payload !== null && payload.pages !== null && typeof payload.pages === 'object' ? payload.pages : {}
+      const local = localChapterPages(bookId, code)
+      let restored = 0
+      for (const [key, entry] of Object.entries(remote)) {
+        const page = Number.parseInt(key, 10)
+        if (!Number.isFinite(page) || page < 1 || local.has(page)) continue
+        try {
+          window.localStorage.setItem(`mathdesk:masks:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.masks) ? entry.masks : []))
+          window.localStorage.setItem(`mathdesk:annots:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.annots) ? entry.annots : []))
+          restored += 1
+        } catch {
+          // storage unavailable
+        }
+      }
+      const missing = []
+      for (const [page, entry] of local) {
+        if (remote[String(page)] === undefined) missing.push({ page, masks: entry.masks, annots: entry.annots })
+      }
+      let seeded = 0
+      if (missing.length > 0) {
+        try {
+          const result = await request('POST', 'annotations-bulk', { book: bookId, code, pages: missing })
+          seeded = typeof result.added === 'number' ? result.added : 0
+        } catch {
+          // best effort: the next edit mirrors its own page anyway
+        }
+      }
+      return { restored, seeded }
     }
 
     /** A chapter the side preview asked the page to open; the page consumes it on mount. */
@@ -3623,6 +3745,7 @@ window.__ModuleLoader__.load({
         } catch {
           // storage unavailable: the ink stays on screen only
         }
+        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
         seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }
       const savePageMasks = next => {
@@ -3633,8 +3756,21 @@ window.__ModuleLoader__.load({
         } catch {
           // storage unavailable: the boxes stay on screen only
         }
+        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
         seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }
+      // Reconcile with the library mirror on open: a cleared browser gets its
+      // pages back, a browser that predates the mirror hands them over.
+      useEffect(() => {
+        let cancelled = false
+        void (async () => {
+          const result = await syncChapterAnnotations(reader.bookId, reader.code)
+          if (cancelled || result.restored === 0) return
+          seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+          setRemoteAnnotRev(value => value + 1)
+        })()
+        return () => { cancelled = true }
+      }, [reader.bookId, reader.code])
       useEffect(() => {
         if (docRev === 0) return
         syncView(reader.bookId, reader.code, { docRev }, 'reader')
@@ -5740,6 +5876,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         } catch {
           // storage unavailable: the edit stays on screen only
         }
+        mirrorPageAnnotations(bookId, code, pageNumber)
         seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
       }
       const commitStrokes = next => {
@@ -6068,6 +6205,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
       }, [])
 
+      // Reconcile with the library mirror on open, so a cleared browser gets the
+      // notes back even when this panel is the first thing to load them.
+      useEffect(() => {
+        if (bookId === '' || code === '') return undefined
+        let cancelled = false
+        void (async () => {
+          const result = await syncChapterAnnotations(bookId, code)
+          if (cancelled || result.restored === 0) return
+          seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
+          setAnnotRev(seenAnnotRev.current)
+        })()
+        return () => { cancelled = true }
+      }, [bookId, code])
+
       // While the pointer is over the preview, any floating desktop widget that
       // paints above the page fades out of the way (the balance widget's root is
       // `.dshwv-root`); the rule is inert when that plugin is absent.
@@ -6202,25 +6353,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (state === null) return []
         const ready = state.phase === 'ready'
         const check = on => (on ? '✓ ' : '')
+        // Grouped like pages of a tiny menu: paging, tools, zoom, mode, sessions,
+        // and a preview group for the housekeeping rows. Seven root rows beat
+        // fourteen, and submenus only open when asked for.
         return [
-          { id: 'prev', label: format('readerPrev'), disabled: !ready || state.page <= 1, run: () => goPage(state.page - 1) },
-          { id: 'next', label: format('readerNext'), disabled: !ready || state.count === 0 || state.page >= state.count, run: () => goPage(state.page + 1) },
-          { id: 'first', label: format('readerFirst'), disabled: !ready || state.page <= 1, run: () => goPage(1) },
           {
-            id: 'goto',
-            label: format('sideMenuGoto'),
-            disabled: !ready || state.count === 0,
-            run: () => {
-              const answer = window.prompt(format('sideGotoPrompt'), String(state.page))
-              if (answer === null) return
-              const wanted = Number.parseInt(answer, 10)
-              if (Number.isFinite(wanted)) goPage(wanted)
-            },
+            id: 'paging',
+            label: format('sideMenuPaging'),
+            children: [
+              { id: 'prev', label: format('readerPrev'), disabled: !ready || state.page <= 1, run: () => goPage(state.page - 1) },
+              { id: 'next', label: format('readerNext'), disabled: !ready || state.count === 0 || state.page >= state.count, run: () => goPage(state.page + 1) },
+              { id: 'first', label: format('readerFirst'), disabled: !ready || state.page <= 1, run: () => goPage(1) },
+              {
+                id: 'goto',
+                label: format('sideMenuGoto'),
+                disabled: !ready || state.count === 0,
+                run: () => {
+                  const answer = window.prompt(format('sideGotoPrompt'), String(state.page))
+                  if (answer === null) return
+                  const wanted = Number.parseInt(answer, 10)
+                  if (Number.isFinite(wanted)) goPage(wanted)
+                },
+              },
+            ],
           },
           {
             id: 'tools',
             label: format('sideMenuTools'),
-            separatorBefore: true,
             children: [
               { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, disabled: state.mode !== 'single', run: () => toggleTool('pen') },
               { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, disabled: state.mode !== 'single', run: () => toggleTool('erase') },
@@ -6243,7 +6402,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           {
             id: 'zoom',
             label: format('sideMenuZoom'),
-            separatorBefore: true,
             children: [
               { id: 'zoom-in', label: format('readerZoomIn'), run: () => zoomTo(renderScaleRef.current * 1.2) },
               { id: 'zoom-out', label: format('readerZoomOut'), run: () => zoomTo(renderScaleRef.current / 1.2) },
@@ -6263,11 +6421,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             separatorBefore: true,
             run: () => setMode(state.mode === 'single' ? 'continuous' : 'single'),
           },
-          { id: 'reload', label: format('sideMenuReload'), separatorBefore: true, run: () => setDocRev(value => value + 1) },
           {
             id: 'sessions',
             label: format('sideMenuSessions'),
-            separatorBefore: true,
             children: MODES.map(mode => {
               const found = findSession(mode)
               return {
@@ -6290,19 +6446,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             run: () => requestDeskOpen(state.bookId, state.code, state.page),
           },
           {
-            id: 'toolbar',
-            label: format(state.toolsHidden ? 'sideShowToolbar' : 'sideHideToolbar'),
+            id: 'preview',
+            label: format('sideMenuPreview'),
             separatorBefore: true,
-            run: () => toggleTools(),
-          },
-          {
-            id: 'close',
-            label: format('sideMenuClose'),
-            separatorBefore: true,
-            run: () => {
-              const actions = state.tabActions
-              if (actions !== null && actions !== undefined && typeof actions.close === 'function') actions.close()
-            },
+            children: [
+              { id: 'reload', label: format('sideMenuReload'), run: () => setDocRev(value => value + 1) },
+              { id: 'toolbar', label: format(state.toolsHidden ? 'sideShowToolbar' : 'sideHideToolbar'), run: () => toggleTools() },
+              {
+                id: 'close',
+                label: format('sideMenuClose'),
+                separatorBefore: true,
+                run: () => {
+                  const actions = state.tabActions
+                  if (actions !== null && actions !== undefined && typeof actions.close === 'function') actions.close()
+                },
+              },
+            ],
           },
         ]
         // The action bodies read `menuState`, so only the constructors matter.
