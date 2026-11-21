@@ -112,8 +112,12 @@ export async function startChapterJob(options) {
                   target: options.target,
                 })
                 const name = `page-${String(index + 1).padStart(3, '0')}.blocks.json`
-                await writeFile(join(options.cacheDir, name), JSON.stringify(translated), 'utf8').catch(() => {})
                 pageMarkdown = translated.map(block => block.md).filter(part => part !== '').join('\n\n')
+                if (pageMarkdown.trim() !== '') {
+                  await writeFile(join(options.cacheDir, name), JSON.stringify(translated), 'utf8').catch(() => {})
+                } else {
+                  await rm(join(options.cacheDir, name), { force: true }).catch(() => {})
+                }
               }
             } catch {
               pageMarkdown = ''
