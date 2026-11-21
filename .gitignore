@@ -1,0 +1,11 @@
+# build output and local scratch
+dist/
+.dsh-scratch/
+node_modules/
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+tools/py.cmd
+tools/node.cmd

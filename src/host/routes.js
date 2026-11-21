@@ -1,0 +1,673 @@
+/**
+ * The `/mathdesk/*` surface.
+ *
+ *   GET  /mathdesk/bootstrap        catalog + stored position + pending intents + links
+ *   GET  /mathdesk/artifacts        one chapter's produced files
+ *   GET  /mathdesk/artifact         one produced file's text, for the preview
+ *   GET  /mathdesk/pdf              one chapter's PDF, or a produced PDF, for the reader
+ *   GET  /mathdesk/pdf-ref          that PDF as a workspace-relative path
+ *   GET  /mathdesk/cover            a user-provided book cover image
+ *   GET  /mathdesk/context          how full one session's context is
+ *   POST /mathdesk/digest           summarize a chapter's conversations
+ *   GET  /mathdesk/vendor/<file>    the reader's pdf.js build
+ *   POST /mathdesk/links            attach an existing session to a chapter
+ *   POST /mathdesk/links/remove     detach one chapter from a session
+ *   PUT  /mathdesk/state            persist the position
+ *   POST /mathdesk/pending          record a created-but-unused session
+ *   POST /mathdesk/pending/remove   forget one pending session
+ *
+ * The browser half owns no filesystem access, so every read the page needs
+ * arrives through `bootstrap` or one of the read routes.
+ *
+ * @module dsh-pdf-math-desk/routes
+ */
+import { readFile, readdir } from 'node:fs/promises'
+import { isAbsolute, join, relative } from 'node:path'
+
+import { countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
+import { PLUGIN_VERSION } from './config.js'
+import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
+import { loadCatalog } from './index-source.js'
+import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
+import { readState, writeState } from './state.js'
+
+/** Route prefix owned by this plugin. */
+export const PREFIX = '/mathdesk'
+
+/** The reader's pdf.js build, served by name so a path can never escape. */
+const VENDOR_FILES = new Set(['pdf.min.mjs', 'pdf.worker.min.mjs'])
+
+/** Cover image extensions the shelf accepts, in preference order. */
+const COVER_TYPES = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+}
+
+/**
+ * Book ids that have a user-provided cover, so the shelf can skip the 404 probe.
+ * @param {string} dir - the active library's cover directory.
+ * @returns {Promise<string[]>} ids without a known solution (may be empty).
+ */
+async function coverIds(dir) {
+  try {
+    const names = await readdir(dir)
+    const ids = []
+    for (const name of names) {
+      const match = /^(.+)\.(png|jpe?g|webp)$/i.exec(name)
+      if (match !== null) ids.push(match[1])
+    }
+    return ids
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Read the request body for a mutation.
+ * @param {import('node:http').IncomingMessage} request - inbound request.
+ * @param {import('node:http').ServerResponse} response - outbound response.
+ * @returns {Promise<unknown | undefined>} the body, or undefined after a failure was answered.
+ */
+async function mutationBody(request, response) {
+  if (!isSameOrigin(request)) {
+    fail(response, 403, 'cross-origin', '拒绝跨站写入')
+    return undefined
+  }
+  try {
+    return await readJson(request)
+  } catch (error) {
+    fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+    return undefined
+  }
+}
+
+/**
+ * Build the prefix handler for the plugin's routes.
+ * @param {{ libraryDir: string, fragmentDir: string, artifactDir: string, coverDir: string, indexPath: string, statePath: string, resumeRatio?: number, toolsDir?: string }} config - resolved paths and behavior (the profile's library is the fallback).
+ * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, pending?: { list: () => Promise<object>, put: Function, remove: Function }, links?: { list: () => Promise<Record<string, object[]>>, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object> }} [options] - host capabilities the routes expose.
+ * @returns {(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<void>} the handler.
+ */
+export function createHandler(config, options = {}) {
+  const pending = options.pending
+  const links = options.links
+  const libraries = options.libraries
+  // A burst of artifact reads (expand a chapter, click three files) must not
+  // rescan the whole library each time; a short window is enough for that and
+  // still refreshes on the next deliberate look.
+  const CATALOG_TTL_MS = 2000
+  let cachedCatalog = null
+  let cachedAt = 0
+  let cachedLibraryId = ''
+
+  /**
+   * The library every read route works on.
+   * @returns {Promise<object>} the active library, or the profile's fallback.
+   */
+  async function activeLibrary() {
+    if (libraries !== undefined && typeof libraries.active === 'function') {
+      const active = await libraries.active()
+      if (active !== null && active !== undefined) return active
+    }
+    return {
+      id: 'default',
+      name: '',
+      mode: 'math',
+      libraryDir: config.libraryDir,
+      fragmentDir: config.fragmentDir,
+      artifactDir: config.artifactDir,
+      coverDir: config.coverDir,
+      indexPath: config.indexPath,
+    }
+  }
+
+  /**
+   * The catalog of one library, reused for a couple of seconds; `fresh` rescans.
+   * @param {boolean} [fresh] - ignore the cached copy.
+   * @returns {Promise<Awaited<ReturnType<typeof loadCatalog>>>} the catalog.
+   */
+  async function catalog(fresh) {
+    const library = await activeLibrary()
+    if (fresh !== true && cachedCatalog !== null && cachedLibraryId === library.id && Date.now() - cachedAt < CATALOG_TTL_MS) {
+      return cachedCatalog
+    }
+    cachedCatalog = await loadCatalog({
+      fragmentDir: library.fragmentDir,
+      indexPath: library.indexPath,
+      libraryDir: library.libraryDir,
+      artifactDir: library.artifactDir,
+      coverDir: library.coverDir,
+    })
+    cachedLibraryId = library.id
+    cachedAt = Date.now()
+    return cachedCatalog
+  }
+
+  /**
+   * Resolve `book` + `code` from the query against the live catalog.
+   * @param {URL} url - the request URL.
+   * @returns {Promise<{ ok: true, book: object, chapter: object } | { ok: false, status: number, code: string, message: string }>} the match or the refusal to answer.
+   */
+  async function chapterFromQuery(url) {
+    const match = resolveChapter(await catalog(), url.searchParams.get('book') ?? '', (url.searchParams.get('code') ?? '').toLowerCase())
+    if (match.ok) return match
+    return { ...match, status: match.code === 'unknown-chapter' ? 404 : 400 }
+  }
+
+  return async function handle(request, response) {
+    try {
+      if (!isLoopback(request)) {
+        fail(response, 403, 'forbidden', '只接受本机请求')
+        return
+      }
+      const url = new URL(request.url ?? '/', 'http://localhost')
+      const path = url.pathname.replace(/\/+$/, '')
+
+      if (path === `${PREFIX}/bootstrap`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        // The Refresh button is a deliberate look: bypass the short reuse window.
+        const fresh = await catalog(true)
+        const library = await activeLibrary()
+        const state = await readState(config.statePath)
+        const target = typeof options.resolveTarget === 'function'
+          ? await options.resolveTarget()
+          : { workspaceId: null, cwd: library.libraryDir }
+        const libraryList = libraries === undefined || typeof libraries.list !== 'function'
+          ? { items: [library], activeId: library.id }
+          : await libraries.list()
+        sendJson(response, 200, {
+          ok: true,
+          version: PLUGIN_VERSION,
+          source: fresh.source,
+          indexIgnored: fresh.indexIgnored,
+          problem: fresh.problem,
+          library: {
+            id: library.id,
+            name: library.name,
+            mode: library.mode,
+            libraryDir: library.libraryDir,
+            fragmentDir: library.fragmentDir,
+            artifactDir: library.artifactDir,
+            coverDir: library.coverDir,
+          },
+          libraries: libraryList,
+          libraryDir: library.libraryDir,
+          artifactDir: library.artifactDir,
+          indexPath: library.indexPath,
+          covers: await coverIds(library.coverDir),
+          target,
+          resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
+          pending: pending === undefined ? {} : await pending.list(),
+          links: links === undefined ? {} : await links.list(),
+          books: fresh.books,
+          skipped: fresh.skipped,
+          warnings: fresh.warnings,
+          state,
+        })
+        return
+      }
+
+      if (path === `${PREFIX}/libraries`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        if (libraries === undefined) {
+          fail(response, 503, 'unavailable', '书库存储不可用')
+          return
+        }
+        sendJson(response, 200, { ok: true, ...(await libraries.list()) })
+        return
+      }
+
+      if (path === `${PREFIX}/libraries/add`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (libraries === undefined) {
+          fail(response, 503, 'unavailable', '书库存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        try {
+          const library = await libraries.add({
+            libraryDir: typeof record.libraryDir === 'string' ? record.libraryDir : '',
+            name: typeof record.name === 'string' ? record.name : '',
+          })
+          cachedLibraryId = ''
+          sendJson(response, 200, { ok: true, library, ...(await libraries.list()) })
+        } catch (error) {
+          fail(response, 400, 'invalid-library', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/libraries/active`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (libraries === undefined) {
+          fail(response, 503, 'unavailable', '书库存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const changed = typeof record.id === 'string' && await libraries.setActive(record.id)
+        if (!changed) {
+          fail(response, 404, 'unknown-library', '没有这个书库')
+          return
+        }
+        cachedLibraryId = ''
+        sendJson(response, 200, { ok: true, ...(await libraries.list()) })
+        return
+      }
+
+      if (path === `${PREFIX}/libraries/remove`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (libraries === undefined) {
+          fail(response, 503, 'unavailable', '书库存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        if (typeof record.id === 'string') await libraries.remove(record.id)
+        cachedLibraryId = ''
+        sendJson(response, 200, { ok: true, ...(await libraries.list()) })
+        return
+      }
+
+      if (path === `${PREFIX}/toolkit/install`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (typeof options.installToolkit !== 'function') {
+          fail(response, 503, 'unavailable', '工具包不可用')
+          return
+        }
+        const library = await activeLibrary()
+        try {
+          const result = await options.installToolkit(library.libraryDir)
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 500, 'toolkit-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/artifact-counts`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const bookId = url.searchParams.get('book') ?? ''
+        const current = await catalog()
+        const book = Array.isArray(current.books) ? current.books.find(item => item.id === bookId) : undefined
+        if (book === undefined) {
+          fail(response, 404, 'unknown-book', `书库里没有 ${bookId}`)
+          return
+        }
+        sendJson(response, 200, {
+          ok: true,
+          book: { id: book.id, title: book.title },
+          counts: await countArtifacts(await activeLibrary(), book),
+        })
+        return
+      }
+
+      if (path === `${PREFIX}/artifacts`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const listing = await listArtifacts(await activeLibrary(), match.book, match.chapter)
+        sendJson(response, 200, {
+          ok: true,
+          book: { id: match.book.id, title: match.book.title },
+          chapter: { code: match.chapter.code, title: match.chapter.title },
+          dir: listing.dir,
+          missing: listing.missing,
+          truncated: listing.truncated,
+          artifacts: listing.artifacts,
+        })
+        return
+      }
+
+      if (path === `${PREFIX}/artifact`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const name = url.searchParams.get('name') ?? ''
+        const preview = await readArtifact(await activeLibrary(), match.book, match.chapter, name)
+        if (!preview.ok) {
+          const status = preview.reason === 'not-found' ? 404 : preview.reason === 'bad-name' ? 400 : 415
+          const messages = {
+            'bad-name': '文件名不合法',
+            'not-found': `这个章里没有 ${name}`,
+            'not-text': '这种文件不在页内预览里显示（PDF 阅读器还没接入）',
+            binary: '看起来是二进制文件，不在页内预览里显示',
+            directory: '这是一个目录，不是文件',
+          }
+          fail(response, status, preview.reason, messages[preview.reason] ?? '读不了这个文件')
+          return
+        }
+        sendJson(response, 200, { ok: true, ...preview })
+        return
+      }
+
+      if (path === `${PREFIX}/pdf`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const name = url.searchParams.get('name') ?? ''
+        const source = name === ''
+          ? chapterPdfPath(await activeLibrary(), match.book, match.chapter)
+          : artifactPdfPath(await activeLibrary(), match.book, match.chapter, name)
+        if (!source.ok) {
+          fail(response, 400, source.reason, '这个文件不能作为 PDF 打开')
+          return
+        }
+        const file = await readPdf(source.path)
+        if (!file.ok) {
+          const status = file.reason === 'too-large' ? 413 : 404
+          fail(response, status, file.reason, file.reason === 'too-large' ? '这个 PDF 太大了' : '找不到这个 PDF')
+          return
+        }
+        sendBytes(response, 200, file.bytes, 'application/pdf')
+        return
+      }
+
+      if (path.startsWith(`${PREFIX}/vendor/`)) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const name = path.slice(`${PREFIX}/vendor/`.length)
+        if (!VENDOR_FILES.has(name)) {
+          fail(response, 404, 'not-found', '没有这个阅读器文件')
+          return
+        }
+        try {
+          const body = await readFile(join(config.vendorDir, name))
+          sendBytes(response, 200, body, 'text/javascript; charset=utf-8')
+        } catch {
+          fail(response, 404, 'missing-vendor', '阅读器文件缺失，请重新安装插件')
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/pdf-ref`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const name = url.searchParams.get('name') ?? ''
+        const source = name === ''
+          ? chapterPdfPath(await activeLibrary(), match.book, match.chapter)
+          : artifactPdfPath(await activeLibrary(), match.book, match.chapter, name)
+        if (!source.ok) {
+          fail(response, 400, source.reason, '这个文件不能作为 PDF 打开')
+          return
+        }
+        // What the host's right-pane preview needs: a path relative to the
+        // session's workspace, so no absolute library path leaves the Host.
+        const rel = relative((await activeLibrary()).libraryDir, source.path)
+        const inside = rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+        sendJson(response, 200, { ok: true, rel: inside ? rel.replace(/\\/g, '/') : '' })
+        return
+      }
+
+      if (path === `${PREFIX}/cover`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const bookId = url.searchParams.get('book') ?? ''
+        const current = await catalog()
+        const book = Array.isArray(current.books) ? current.books.find(item => item.id === bookId) : undefined
+        if (book === undefined) {
+          fail(response, 404, 'unknown-book', `书库里没有 ${bookId}`)
+          return
+        }
+        for (const [extension, contentType] of Object.entries(COVER_TYPES)) {
+          try {
+            const body = await readFile(join((await activeLibrary()).coverDir, `${bookId}.${extension}`))
+            sendBytes(response, 200, body, contentType)
+            return
+          } catch {
+            // Try the next extension; a missing cover is normal.
+          }
+        }
+        fail(response, 404, 'no-cover', '这本书没有自定义封面')
+        return
+      }
+
+      if (path === `${PREFIX}/context`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const sessionId = url.searchParams.get('session') ?? ''
+        if (!/^[\w-]{1,80}$/.test(sessionId)) {
+          fail(response, 400, 'invalid-session', '会话 id 不合法')
+          return
+        }
+        const reading = typeof options.contextPressure === 'function'
+          ? await options.contextPressure(sessionId)
+          : null
+        sendJson(response, 200, {
+          ok: true,
+          sessionId,
+          context: reading === null ? null : {
+            tokens: reading.tokens,
+            window: reading.window,
+            ratio: reading.ratio,
+            source: reading.source,
+          },
+        })
+        return
+      }
+
+      if (path === `${PREFIX}/digest`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (typeof options.digest !== 'function') {
+          fail(response, 503, 'unavailable', '提纲生成不可用（缺少模型服务）')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), typeof record.bookId === 'string' ? record.bookId : '', String(record.code ?? '').toLowerCase())
+        if (!match.ok) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        const ids = Array.isArray(record.sessionIds)
+          ? record.sessionIds.filter(id => typeof id === 'string' && /^[\w-]{1,80}$/.test(id)).slice(0, 50)
+          : []
+        if (ids.length === 0) {
+          fail(response, 400, 'no-sessions', '这一章还没有可总结的会话')
+          return
+        }
+        try {
+          const result = await options.digest({
+            book: match.book,
+            chapter: match.chapter,
+            sessionIds: ids,
+            mode: typeof record.mode === 'string' && /^[\w-]{1,16}$/.test(record.mode) ? record.mode : 'all',
+          })
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 502, 'digest-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/links`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (links === undefined) {
+          fail(response, 503, 'unavailable', '挂载存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        if (typeof record.sessionId !== 'string' || record.sessionId === '') {
+          fail(response, 400, 'invalid-body', 'sessionId 缺失')
+          return
+        }
+        // Only a chapter the catalog knows can be linked, so a typo cannot
+        // create a placement the page would never render.
+        const match = resolveChapter(await catalog(), typeof record.bookId === 'string' ? record.bookId : '', String(record.code ?? '').toLowerCase())
+        if (!match.ok) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        try {
+          await links.add(record.sessionId, {
+            bookId: match.book.id,
+            code: match.chapter.code,
+            mode: typeof record.mode === 'string' ? record.mode : 'qa',
+          })
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
+        sendJson(response, 200, { ok: true, links: await links.list() })
+        return
+      }
+
+      if (path === `${PREFIX}/links/remove`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        if (links !== undefined && typeof record.sessionId === 'string' && record.sessionId !== '') {
+          try {
+            await links.remove(record.sessionId, String(record.bookId ?? ''), String(record.code ?? '').toLowerCase())
+          } catch (error) {
+            fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+            return
+          }
+        }
+        sendJson(response, 200, { ok: true, links: links === undefined ? {} : await links.list() })
+        return
+      }
+
+      if (path === `${PREFIX}/pending`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (pending === undefined) {
+          fail(response, 503, 'unavailable', 'pending 存储不可用')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        if (typeof record.sessionId !== 'string' || record.sessionId === '') {
+          fail(response, 400, 'invalid-body', 'sessionId 缺失')
+          return
+        }
+        try {
+          await pending.put(record.sessionId, record)
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
+        sendJson(response, 200, { ok: true, pending: await pending.list() })
+        return
+      }
+
+      if (path === `${PREFIX}/pending/remove`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        if (pending !== undefined && typeof record.sessionId === 'string' && record.sessionId !== '') {
+          await pending.remove(record.sessionId)
+        }
+        sendJson(response, 200, { ok: true, pending: pending === undefined ? {} : await pending.list() })
+        return
+      }
+
+      if (path === `${PREFIX}/purge`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const result = typeof options.purge === 'function' ? await options.purge() : { purged: 0 }
+        sendJson(response, 200, { ok: true, purged: result.purged })
+        return
+      }
+
+      if (path === `${PREFIX}/state`) {
+        if (request.method !== 'PUT' && request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 PUT')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const state = await writeState(config.statePath, body)
+        sendJson(response, 200, { ok: true, state })
+        return
+      }
+
+      fail(response, 404, 'not-found', `没有这个接口：${path}`)
+    } catch (error) {
+      fail(response, 500, 'internal', String(error && error.message ? error.message : error))
+    }
+  }
+}
