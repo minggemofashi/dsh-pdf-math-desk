@@ -2823,6 +2823,15 @@ window.__ModuleLoader__.load({
         line.top = line.baseline - line.h
       }
       lines.sort((a, b) => a.top - b.top)
+      const marginLeft = Math.min(...lines.map(line => line.left))
+      const marginRight = Math.max(...lines.map(line => line.right))
+      const contentWidth = Math.max(1, marginRight - marginLeft)
+      for (const line of lines) {
+        const width = line.right - line.left
+        line.formula = width < contentWidth * 0.78
+          && line.left - marginLeft > line.h * 2.5
+          && marginRight - line.right > line.h * 2.5
+      }
       const blocks = []
       let current = null
       for (const line of lines) {
@@ -2830,7 +2839,7 @@ window.__ModuleLoader__.load({
         if (current !== null) {
           const gap = line.top - current.bottom
           const indented = line.left > current.lastLeft + Math.max(3, line.h * 0.8)
-          if (!indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
+          if (line.formula === current.formula && !indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
             current.bottom = Math.max(current.bottom, line.baseline)
             current.left = Math.min(current.left, line.left)
@@ -2848,6 +2857,7 @@ window.__ModuleLoader__.load({
           right: line.right,
           h: line.h,
           lastLeft: line.left,
+          formula: line.formula === true,
         }
         blocks.push(current)
       }
@@ -2858,7 +2868,7 @@ window.__ModuleLoader__.load({
         return {
           id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
           page: page.pageNumber,
-          kind: block.h > median * 1.25 ? 'heading' : 'paragraph',
+          kind: block.formula === true ? 'formula' : (block.h > median * 1.25 ? 'heading' : 'paragraph'),
           bbox: [
             Math.max(0, (block.left - pad) / width),
             Math.max(0, (block.top - pad) / height),
@@ -3724,6 +3734,7 @@ window.__ModuleLoader__.load({
 .md-blocklayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: transparent; }
 .md-blockbox[data-kind="heading"] { border-color: rgba(60, 130, 235, .95); background: transparent; }
+.md-blockbox[data-kind="formula"] { border-color: rgba(40, 160, 90, .95); background: transparent; }
 .md-reader-continuous { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
 .md-reader-slot { display: flex; flex-direction: column; align-items: center; min-height: 240px; position: relative; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
