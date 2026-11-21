@@ -177,6 +177,7 @@ window.__ModuleLoader__.load({
       overlayRemove: '点击删除这个框',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
+      translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
       translating: '翻译中…',
       translateDone: '已生成',
       translateFailed: '翻译失败',
@@ -478,6 +479,7 @@ window.__ModuleLoader__.load({
       overlayRemove: 'Click to remove this box',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
+      translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
       translating: 'Translating…',
       translateDone: 'Created',
       translateFailed: 'Translation failed',
@@ -3406,7 +3408,10 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               disabled: translating || reader.phase !== 'ready',
               title: format('translateHint'),
-              onClick: () => { void runTranslate() },
+              onClick: () => {
+                if (hasTranslation && !window.confirm(format('translateOverwriteConfirm'))) return
+                void runTranslate()
+              },
             }, translating ? format('translating') : format('translateChapterAction'))
           ),
           false
