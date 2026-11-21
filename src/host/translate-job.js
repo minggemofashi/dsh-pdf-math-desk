@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { renderMarkdown } from './render.js'
 import { translatePage } from './translate.js'
+import { translatePageBlocks } from './translate-blocks.js'
 
 const PYTHONS = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
 const CONCURRENCY = 3
@@ -98,7 +99,30 @@ export async function startChapterJob(options) {
           const index = next
           next += 1
           const image = `data:image/png;base64,${(await readFile(join(temporary, files[index]))).toString('base64')}`
-          chunks[index] = await translatePage({ apiKey: options.apiKey, image, target: options.target })
+          let pageMarkdown = ''
+          if (typeof options.cacheDir === 'string' && typeof options.toolsDir === 'string') {
+            try {
+              const raw = await capture(join(options.toolsDir, 'pdf_blocks.py'), [options.source, String(index + 1)])
+              const blocks = JSON.parse(raw)
+              if (Array.isArray(blocks) && blocks.length > 0) {
+                const translated = await translatePageBlocks({
+                  apiKey: options.apiKey,
+                  image,
+                  blocks,
+                  target: options.target,
+                })
+                const name = `page-${String(index + 1).padStart(3, '0')}.blocks.json`
+                await writeFile(join(options.cacheDir, name), JSON.stringify(translated), 'utf8').catch(() => {})
+                pageMarkdown = translated.map(block => block.md).filter(part => part !== '').join('\n\n')
+              }
+            } catch {
+              pageMarkdown = ''
+            }
+          }
+          if (pageMarkdown.trim() === '') {
+            pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target })
+          }
+          chunks[index] = pageMarkdown
           state.done += 1
           await save()
         }
