@@ -4222,7 +4222,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // A double click's first click already toggled the row; `detail > 1` is its second click.
       const onClickRow = useCallback((event, chapter) => {
-        if (event !== null && typeof event.detail === 'number' && event.detail > 1) return
         toggleChapter(chapter.code)
       }, [toggleChapter])
 
