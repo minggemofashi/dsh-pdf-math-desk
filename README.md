@@ -159,6 +159,8 @@ DSH → Plugins → Add plugin → 选择本目录。
 
 ## 开发
 
+干净环境验收步骤见 [docs/TESTING.md](./docs/TESTING.md)（VirtualBox + Win10 测试清单）。
+
 ```bash
 node --check client.js
 node --check index.js
