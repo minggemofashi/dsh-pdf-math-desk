@@ -168,6 +168,7 @@ window.__ModuleLoader__.load({
       blocksHint: '显示/隐藏文本块边框（调试）',
       dualToggle: '双语',
       dualHint: '原文与译文并排显示（需要先生成译文）',
+      dualNeedsTranslation: '还没有译文。是否现在翻译本章？会消耗 token，并需要先在设置里填写 DeepSeek API Key。',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translating: '翻译中…',
@@ -462,6 +463,7 @@ window.__ModuleLoader__.load({
       blocksHint: 'Show or hide text block boxes (debug)',
       dualToggle: 'Bilingual',
       dualHint: 'Show the original and the translation side by side (translate the chapter first)',
+      dualNeedsTranslation: 'No translation yet. Translate this chapter now? It costs tokens and needs a DeepSeek API key in Settings.',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
@@ -2955,6 +2957,7 @@ window.__ModuleLoader__.load({
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
+      const [hasTranslation, setHasTranslation] = useState(false)
       const [dualDoc, setDualDoc] = useState(null)
       const dualLeft = useRef(null)
       const dualRight = useRef(null)
@@ -3011,6 +3014,17 @@ window.__ModuleLoader__.load({
         }
       }, [dual, dualDoc])
 
+      useEffect(() => {
+        let cancelled = false
+        request('GET', `translated-info?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&name=${encodeURIComponent(`${reader.fileName}.pdf`)}`)
+          .then(payload => {
+            if (!cancelled && payload !== null) setHasTranslation(payload.exists === true)
+          })
+          .catch(() => {})
+        return () => {
+          cancelled = true
+        }
+      }, [reader.bookId, reader.code, reader.fileName])
       // A chapter translation runs on the Host; reopening the reader resumes
       // watching it instead of losing the progress.
       useEffect(() => {
@@ -3028,6 +3042,7 @@ window.__ModuleLoader__.load({
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
             if (cancelled) return
             if (state.status === 'done') {
+              setHasTranslation(true)
               setTranslateNote(`${format('translateDone')}：${state.pdf}`)
               window.localStorage.removeItem(key)
               return
@@ -3271,7 +3286,16 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': dual ? 'true' : 'false',
               title: format('dualHint'),
-              onClick: () => setDual(value => !value),
+              onClick: () => {
+                if (!hasTranslation) {
+                  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                    && window.confirm(format('dualNeedsTranslation'))) {
+                    void runTranslate()
+                  }
+                  return
+                }
+                setDual(value => !value)
+              },
             }, format('dualToggle')),
             dual
               ? h(React.Fragment, null,
