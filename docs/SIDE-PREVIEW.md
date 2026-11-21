@@ -226,6 +226,7 @@ ctx.contextMenus.register({
 - **自动适应与滚动条**：`ResizeObserver` 测内容盒宽度，理论上「刚好不再出竖滚动条」的边界可能来回一次，差值 ≤1px 时忽略。
 - **同一章多个标签**：地址即内容 id，同一章在同一栏只有一张标签；重复打开是「指向同页」而不是新标签。
 - **跨书跳转**：`openFromSide` 会先切书页再开阅读器，避免「返回章节」落到旧书。
+- **桌面挂件遮挡**：`dsh-whale-widget-bowl` 的根节点是 `.dshwv-root`（`position:fixed; z-index:9999`，本身 `pointer-events:none`），跨插件无法把它压到页面下方，所以做成**悬停淡化**：指针进入预览时给 `body` 打 `data-mathdesk-reading`，注入的样式把它淡到 28%；该插件不在时规则匹配不到元素。若以后挂件类名变了，淡化失效但不影响阅读功能。
 
 ## 10. 关键代码位置（`client.js`）
 

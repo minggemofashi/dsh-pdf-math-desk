@@ -5435,6 +5435,10 @@ window.__ModuleLoader__.load({
    moving when the page grows a scrollbar. */
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
 .md-side .md-reader-state { margin: 16px; }
+/* While the reader is in use, the floating balance widget fades so the page and
+   its translation boxes stay readable underneath. The selector belongs to
+   dsh-whale-widget-bowl; with that plugin absent the rule matches nothing. */
+body[data-mathdesk-reading='1'] .dshwv-root { opacity: .28; }
 .md-annot-readonly { pointer-events: none; }
 /* The side preview's own ink: only the tool layer takes pointer events. */
 .md-annot-edit { pointer-events: auto; cursor: crosshair; touch-action: none; }
@@ -5560,6 +5564,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const boxRef = useRef(null)
       const boxSize = useRef({ width: 400, height: 600 })
       const seenAnnotRev = useRef(0)
+      const sideRoot = useRef(null)
       const stage = useRef(null)
       const slots = useRef(new Map())
       const visibleTimer = useRef(null)
@@ -6063,6 +6068,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
       }, [])
 
+      // While the pointer is over the preview, any floating desktop widget that
+      // paints above the page fades out of the way (the balance widget's root is
+      // `.dshwv-root`); the rule is inert when that plugin is absent.
+      useEffect(() => {
+        const node = sideRoot.current
+        if (node === null || typeof document === 'undefined' || document.body === undefined) return undefined
+        const enter = () => { document.body.dataset.mathdeskReading = '1' }
+        const leave = () => { delete document.body.dataset.mathdeskReading }
+        node.addEventListener('pointerenter', enter)
+        node.addEventListener('pointerleave', leave)
+        return () => {
+          node.removeEventListener('pointerenter', enter)
+          node.removeEventListener('pointerleave', leave)
+          delete document.body.dataset.mathdeskReading
+        }
+      }, [])
+
       // The reader's annotation layer without its pointer handlers: this side
       // only shows what the workbench holds.
       const ink = strokes.filter(entry => entry.kind !== 'text')
@@ -6348,6 +6370,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       return h('div', {
         className: 'md-side',
+        ref: sideRoot,
         'data-mode': mode,
         'data-toolbar': toolsHidden ? 'hidden' : 'shown',
         onContextMenu: openSideMenu,
