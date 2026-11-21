@@ -2766,7 +2766,7 @@ window.__ModuleLoader__.load({
             onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
             onCopyPath: props.onCopyPath,
             registerRef: props.registerFileRef,
-          }))
+          })
         ) : null
       )
     }
