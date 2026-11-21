@@ -199,6 +199,12 @@ def convert(lines, chapter_title):
             out.append("\\par\\noindent\\rule{\\linewidth}{0.4pt}\\par\\medskip\n")
             i += 1
             continue
+        if raw.strip() in ("\\newpage", "<!-- pagebreak -->"):
+            flush_paragraph()
+            flush_list()
+            out.append("\\newpage\n\n")
+            i += 1
+            continue
         if raw.strip().startswith("$$"):
             flush_paragraph()
             flush_list()

@@ -83,7 +83,7 @@ export async function startChapterJob(options) {
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
-      const markdown = chunks.join('\n\n')
+      const markdown = chunks.join('\n\n\\newpage\n\n')
       savedMarkdown = markdown
       const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
       const markdownPath = join(tmpdir(), `${title}.md`)
