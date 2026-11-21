@@ -1559,26 +1559,19 @@ window.__ModuleLoader__.load({
                 item.id === props.activeId ? h('span', { className: 'md-badge' }, format('libraryActive')) : null,
                 h('span', { className: 'md-badge md-badge-quiet' }, format('modeMath'))
               ),
-              h('code', { className: 'md-path' }, '<库根>'),
+              h('code', { className: 'md-path' }, item.libraryDir),
               h('div', { className: 'md-library-actions' },
-                item.id === props.activeId
-                  ? null
-                  : h('button', {
-                    type: 'button', className: 'md-btn md-btn-small', disabled: busy,
-                    onClick: () => scheduleSwitch(item.id),
-                    onDoubleClick: () => enterNow(item.id),
-                  }, format('libraryUse')),
                 h('button', {
-                  type: 'button', className: 'md-btn md-btn-small md-btn-ghost', disabled: busy,
+                  type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-icon-btn',
+                  disabled: busy,
+                  title: format('libraryRemove'),
+                  'aria-label': format('libraryRemove'),
                   onClick: () => {
-                    if (confirmId === item.id) {
-                      setConfirmId('')
-                      props.onRemove(item.id)
-                      return
-                    }
-                    setConfirmId(item.id)
+                    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                      && !window.confirm(format('libraryRemoveConfirm'))) return
+                    props.onRemove(item.id)
                   },
-                }, confirmId === item.id ? format('libraryRemoveConfirm') : format('libraryRemove'))
+                }, '🗑')
               )
             ))
           ),
@@ -3000,13 +2993,18 @@ window.__ModuleLoader__.load({
 .md-shelf-head { display: flex; flex-direction: column; gap: 4px; }
 .md-heading { margin: 0; font-size: 17px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-shelf-sub { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
-.md-libraries { display: flex; flex-direction: column; gap: 18px; max-width: 880px; }
+.md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: none; }
+.md-libraries > .md-shelf-head, .md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p, .md-libraries > .md-details, .md-libraries > .md-library-tools { grid-column: 1 / -1; }
+.md-libraries > .md-library-add { grid-column: 1; }
+.md-libraries > .md-library-samples { grid-column: 2; }
 .md-library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .md-library { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .md-library:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .md-library-active { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, var(--dsw-alias-border-l3)); box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary); }
 .md-library-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.md-library-name { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.md-library-name { font-size: 16px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.md-libraries .md-path { font-size: 12.5px; }
+.md-libraries .md-shelf-sub { font-size: 13.5px; line-height: 1.65; }
 .md-badge { font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 999px; color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 13%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent); }
 .md-badge-quiet { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border-color: var(--dsw-alias-border-l3); }
 .md-library-actions { display: flex; gap: 8px; justify-content: flex-end; }
