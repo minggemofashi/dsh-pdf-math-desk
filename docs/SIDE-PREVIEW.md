@@ -130,7 +130,7 @@ const VIEW_PUBLISHED = {
 - 菜单动作：撤销、重做、清除本页标注、清空本页框选；
 - 持久化：`commitStrokes` / `commitMasks` 写同一条 localStorage 键，然后 `bumpAnnotRev`；
 - 单页、连续都能用（`v0.70.0`）：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在**当前页**的页面盒里渲染它，所以连续模式下图层跟着阅读位置走；跨页连续画不支持，翻页时草稿会关掉；
-- 阅读器双语模式：左右两栏各挂一个可写图层，笔记按页共享（同一份数据），草稿带 `side`，文字框只在打开它的那一栏显示编辑器；
+- 阅读器双语模式：左右两栏各挂一个可写图层，**两栏各自独立**——原文栏用主页图层（`mathdesk:annots:<book>:<code>:<page>`，与单页/译文视图共用），译文栏用独立的 `ColumnInk`（`…:<page>:right` 后缀），两栏可以停在不同页、各写各的；
 - 框选模式下会**提前加载**叠加/译文文档（`wantsMaskDoc` 把 `tool === 'mask'` 也算进去），这样画完第一框马上能看到译文。
 
 ### 6.1.3 文本框就地编辑（`v0.69.0`）
@@ -238,7 +238,8 @@ ctx.contextMenus.register({
 - **自定义 target kind**：`ContextMenuTargetMap` 是 TS 声明合并表，运行时不校验 kind，外部插件自定义 kind 属于预期用法；但若将来 DSH 加了运行时校验，菜单会静默不弹（阅读功能不受影响）。
 - **样式注入**：`document.head` 里多一份样式表；与页面内 `<style>` 内容相同，重复无害。
 - **标注与遮罩画在当前页上（v0.70.0）**：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在当前页的页面盒里渲染，所以连续/双语也能写；跨页连续画仍不支持（图层跟着当前页走），翻页时未保存的草稿会关闭。
-- **双栏页码与两栏对齐（v0.72.4）**：两栏各自滚动，画笔层只画在 `reader.page` 上，所以进入双语时先把两栏滚到当前页（`alignColumn` 用每栏自己的 slot 表算 `scrollTop`，不依赖 `scrollIntoView`），并让**两栏都驱动页码**：滚动哪一栏，另一栏跟到同一页（`dualLastSide` 记住谁在动，程序滚动期间 `dualAligning` 忽略观察器回报，避免自己触发自己）。翻页框/前后页按键（`reader.jump`）则两栏一起跳。
+- **双语两栏各自独立（v0.72.5）**：两栏分别跟踪自己的可见页（左栏 `reader.page`、右栏 `dualRightPage`），**不做页码同步**；进入双语时只做一次“落到当前页”的定位（每栏 slot 表算 `scrollTop`，120/420/900ms 重试），之后各滚各的。原文栏沿用主页图层（与单页/译文共用 `mathdesk:annots:<book>:<code>:<page>`）；译文栏用 `ColumnInk` 组件，数据存在 `…:<page>:right` 后缀的键里，自带笔迹、橡皮、文字框和本地撤销栈；工具栏 ↶/↷ 跟着最后动过的那一栏（`activeSide`），两栏的栈互不影响。
+- **译文栏笔记不导出**：`localChapterPages` 只把纯数字页码的键当作页面数据（`/^\d+$/`），`…:right` 的键不会并进导出/镜像；这是有意为之——译文栏是独立的一份笔记。
 - **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('mathdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
 - **撤销/重做按页记录两端的编辑**（v0.71.0）：`pageHistory` 是 `book|code|page` 为键的模块级栈（上限 40 步），阅读器和右栏共用，所以哪一栏写的都能被另一栏的 ↶ 撤回；一次撤销同时恢复笔迹与框选。
 - **遮罩的内存代价（v0.68.0 已降）**：整页只栅格化一次，所有框共用同一张位图（阅读器复用已有的整页 JPEG；右侧预览按页缓存最近两张）。以前是每个框一张整页 canvas。

@@ -196,6 +196,7 @@ window.__ModuleLoader__.load({
       dualNeedsTranslation: '还没有译文。现在翻译本章？会消耗 token，并需要先在设置里填 DeepSeek API Key。',
       dualOriginal: '原文',
       dualTranslated: '译文',
+      dualPage: '第 {n} 页',
       toolsToggle: '收起/展开工具条',
       overlayToggle: '叠加',
       overlayHint: '拖框露出译文；拖圆点移动、拖角改大小、右键删除（需先翻译）',
@@ -223,7 +224,7 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter 保存 · Shift+Enter 换行 · Esc 取消',
       annotTextEditHint: '双击编辑；清空内容再保存即删除',
       annotTextActiveHint: '文本框：点页面任意位置写字，Enter 保存，Esc 取消',
-      annotDualHint: '两栏都能写：笔记属于这一页，单页和译文里也看得到',
+      annotDualHint: '两栏各自独立：原文栏记在本页公共笔记上，译文栏自己保存一份；两栏可以停在不同页',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       exportPage: '导出本页',
@@ -611,6 +612,7 @@ window.__ModuleLoader__.load({
       dualNeedsTranslation: 'No translation yet. Translate this chapter now? It costs tokens and needs a DeepSeek API key in Settings.',
       dualOriginal: 'Original',
       dualTranslated: 'Translation',
+      dualPage: 'p. {n}',
       toolsToggle: 'Collapse or expand the tool row',
       overlayToggle: 'Overlay',
       overlayHint: 'Drag a box to reveal its translation; drag the dot to move, drag a handle to resize, right-click to delete (translate first)',
@@ -638,7 +640,7 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter saves · Shift+Enter newline · Esc cancels',
       annotTextEditHint: 'Double-click to edit; save it empty to delete',
       annotTextActiveHint: 'Text box: click anywhere on the page and type; Enter saves, Esc cancels',
-      annotDualHint: 'Both columns are writable: the notes belong to the page and show in the single-page and translated views too',
+      annotDualHint: 'Each column keeps its own notes: the original column writes the page\'s shared notes, the translated column saves its own; they may sit on different pages',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       exportPage: 'Export page',
@@ -1949,7 +1951,11 @@ window.__ModuleLoader__.load({
           const kind = key.startsWith(prefixMasks) ? 'masks' : key.startsWith(prefixAnnots) ? 'annots' : ''
           if (kind === '') continue
           const prefix = kind === 'masks' ? prefixMasks : prefixAnnots
-          const page = Number.parseInt(key.slice(prefix.length), 10)
+          const rest = key.slice(prefix.length)
+          // A `:right` suffix belongs to the translated column's own ink, not to
+          // this page's shared list; the page's own keys are plain numbers.
+          if (!/^\d+$/.test(rest)) continue
+          const page = Number(rest)
           if (!Number.isFinite(page) || page < 1) continue
           const entry = pages.get(page) ?? { page, masks: [], annots: [] }
           try {
@@ -4012,6 +4018,270 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Ink for the translated column of the bilingual view. The two columns are
+     * independent (they may sit on different pages), so this column keeps its own
+     * strokes under a `:right` storage suffix instead of the page's shared list;
+     * the original column and the single view are unaffected. The reader's pen,
+     * eraser and text tools drive it, but every edit lands only in this column.
+     * @param {{ bookId: string, code: string, page: number, store: string, tool: string,
+     *   color: string, width: number, onReady: Function, onHistory: Function, onActivate: Function }} props - the page and the reader's current tool.
+     * @returns {import('react').ReactElement} the ink layer.
+     */
+    function ColumnInk(props) {
+      const storageKey = `mathdesk:annots:${props.bookId}:${props.code}:${props.page}:${props.store}`
+      const [strokes, setStrokes] = useState([])
+      const [draft, setDraft] = useState(null)
+      const [note, setNote] = useState(null)
+      const strokesRef = useRef([])
+      const draftRef = useRef(null)
+      const noteText = useRef('')
+      const noteSeq = useRef(0)
+      const undoStack = useRef([])
+      const redoStack = useRef([])
+      const erasing = useRef(false)
+      const api = useRef({})
+      const HIT = 0.012
+
+      const pointOf = event => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return null
+        return [
+          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        ]
+      }
+      const within = (entry, point) => {
+        if (entry.kind === 'text') {
+          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
+          return point[0] >= entry.x - HIT && point[0] <= entry.x + width + HIT
+            && point[1] >= entry.y - 0.02 - HIT && point[1] <= entry.y + 0.035 + HIT
+        }
+        const points = Array.isArray(entry.points) ? entry.points : []
+        for (let index = 1; index < points.length; index += 1) {
+          const a = points[index - 1]
+          const b = points[index]
+          const dx = b[0] - a[0]
+          const dy = b[1] - a[1]
+          const length = dx * dx + dy * dy
+          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / length))
+          const x = a[0] + t * dx
+          const y = a[1] + t * dy
+          if (Math.hypot(point[0] - x, point[1] - y) <= HIT + (entry.width ?? 2) / 1000) return true
+        }
+        return false
+      }
+      const persist = () => {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(strokesRef.current))
+        } catch {
+          // storage full or private mode: the strokes last this session only
+        }
+      }
+      const report = () => {
+        if (typeof props.onHistory === 'function') {
+          props.onHistory({ undo: undoStack.current.length, redo: redoStack.current.length, count: strokesRef.current.length })
+        }
+      }
+      const commit = next => {
+        const current = strokesRef.current
+        if (!Array.isArray(next) || sameList(current, next)) return
+        undoStack.current.push(current.map(entry => ({ ...entry })))
+        if (undoStack.current.length > 40) undoStack.current.shift()
+        redoStack.current = []
+        strokesRef.current = next
+        setStrokes(next)
+        persist()
+        report()
+      }
+      const undo = () => {
+        const previous = undoStack.current.pop()
+        if (previous === undefined) return
+        redoStack.current.push(strokesRef.current)
+        strokesRef.current = previous
+        setStrokes(previous)
+        persist()
+        report()
+      }
+      const redo = () => {
+        const next = redoStack.current.pop()
+        if (next === undefined) return
+        undoStack.current.push(strokesRef.current)
+        strokesRef.current = next
+        setStrokes(next)
+        persist()
+        report()
+      }
+      api.current = {
+        undo,
+        redo,
+        clear: () => commit([]),
+        canUndo: () => undoStack.current.length > 0,
+        canRedo: () => redoStack.current.length > 0,
+      }
+      useEffect(() => {
+        if (typeof props.onReady === 'function') props.onReady(api.current)
+      })
+      useEffect(() => {
+        let list = []
+        try {
+          const raw = window.localStorage.getItem(storageKey)
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          list = Array.isArray(parsed) ? parsed : []
+        } catch {
+          list = []
+        }
+        strokesRef.current = list
+        setStrokes(list)
+        draftRef.current = null
+        setDraft(null)
+        setNote(null)
+        noteText.current = ''
+        undoStack.current = []
+        redoStack.current = []
+        report()
+        // The storage key covers the page: a new page replaces the whole state.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [storageKey])
+      const setDraftBoth = value => {
+        draftRef.current = value
+        setDraft(value)
+      }
+      const openNote = point => {
+        const list = strokesRef.current
+        const index = list.findIndex(entry => entry.kind === 'text' && within(entry, point))
+        noteSeq.current += 1
+        const entry = index >= 0 ? list[index] : null
+        noteText.current = entry === null ? '' : String(entry.text ?? '')
+        setNote({
+          id: noteSeq.current,
+          index,
+          x: entry === null ? point[0] : entry.x,
+          y: entry === null ? point[1] : entry.y,
+          text: noteText.current,
+          color: entry === null ? props.color : (entry.color ?? props.color),
+        })
+      }
+      const saveNote = () => {
+        const current = note
+        if (current === null) return
+        const next = applyNote(strokesRef.current, { ...current, text: noteText.current }, noteText.current)
+        setNote(null)
+        noteText.current = ''
+        commit(next)
+      }
+      const down = event => {
+        if (props.tool === '') return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        if (typeof props.onActivate === 'function') props.onActivate()
+        if (props.tool === 'erase') {
+          erasing.current = true
+          commit(strokesRef.current.filter(entry => !within(entry, point)))
+          return
+        }
+        if (props.tool === 'text') {
+          openNote(point)
+          return
+        }
+        setDraftBoth({ kind: 'stroke', points: [point], color: props.color, width: props.width })
+      }
+      const move = event => {
+        if (props.tool === 'erase' && erasing.current) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          commit(strokesRef.current.filter(entry => !within(entry, point)))
+          return
+        }
+        const current = draftRef.current
+        if (current === null) return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        const last = current.points[current.points.length - 1]
+        if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return
+        setDraftBoth({ ...current, points: [...current.points, point] })
+      }
+      const up = () => {
+        erasing.current = false
+        const current = draftRef.current
+        if (current === null) return
+        setDraftBoth(null)
+        if (current.points.length > 1) commit([...strokesRef.current, current])
+      }
+      const notes = strokes.filter(entry => entry.kind === 'text')
+      return h('div', {
+        className: 'md-annot',
+        'data-tool': props.tool,
+        onPointerDown: down,
+        onPointerMove: move,
+        onPointerUp: up,
+        onPointerLeave: up,
+      },
+        h('svg', {
+          className: 'md-annot-ink',
+          viewBox: '0 0 1 1',
+          preserveAspectRatio: 'none',
+          'aria-hidden': true,
+        },
+          strokes.filter(entry => entry.kind !== 'text').map((entry, index) => h('polyline', {
+            key: `stroke-${index}`,
+            points: (entry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+            fill: 'none',
+            stroke: entry.color ?? '#e0554a',
+            strokeWidth: entry.width ?? 2,
+            vectorEffect: 'non-scaling-stroke',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          })),
+          draft === null ? null : h('polyline', {
+            points: draft.points.map(point => `${point[0]},${point[1]}`).join(' '),
+            fill: 'none',
+            stroke: draft.color ?? '#e0554a',
+            strokeWidth: draft.width ?? 2,
+            vectorEffect: 'non-scaling-stroke',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          })
+        ),
+        notes.map((entry, index) => h('div', {
+          key: `note-${index}`,
+          className: 'md-annot-text',
+          title: props.tool === '' ? format('annotTextEditHint') : undefined,
+          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+          onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
+          onDoubleClick: props.tool === ''
+            ? event => {
+              event.preventDefault()
+              event.stopPropagation()
+              noteSeq.current += 1
+              noteText.current = String(entry.text ?? '')
+              setNote({
+                id: noteSeq.current,
+                index: strokesRef.current.indexOf(entry),
+                x: entry.x,
+                y: entry.y,
+                text: noteText.current,
+                color: entry.color ?? props.color,
+              })
+            }
+            : undefined,
+        }, entry.text)),
+        note === null ? null : h(NoteEditor, {
+          key: `note-${note.id}`,
+          draft: note,
+          onChange: value => { noteText.current = value },
+          onSave: saveNote,
+          onCancel: () => {
+            setNote(null)
+            noteText.current = ''
+          },
+        })
+      )
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -4465,6 +4735,9 @@ window.__ModuleLoader__.load({
       // Freehand annotations, one array of strokes per page, normalized so they
       // follow the page box through any zoom.
       const [annotTool, setAnnotTool] = useState('')
+      // Which column the undo/redo buttons act on: the original layer or the
+      // translated column's own ink (see ColumnInk).
+      const [activeSide, setActiveSide] = useState('main')
       const [annotColor, setAnnotColor] = useState('#1f1f1f')
       const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
@@ -5038,6 +5311,8 @@ window.__ModuleLoader__.load({
       const erasing = useRef(false)
       const annotDown = (event, side) => {
         if (annotTool === '') return
+        // The main layer is the original page (single view or the left column).
+        setActiveSide('main')
         const point = annotPoint(event)
         if (point === null) return
         event.preventDefault()
@@ -5288,36 +5563,66 @@ window.__ModuleLoader__.load({
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
         visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
       }, [props.onVisible])
-      // Bilingual columns scroll independently, so the page being read can drift
-      // away from the page the ink layer sits on. Both columns therefore drive
-      // the page, and the other column is scrolled to the same page: the boxes
-      // and the pen are always on screen.
-      const dualSlots = useRef({ left: new Map(), right: new Map() })
-      const dualLastSide = useRef('left')
-      const dualAligning = useRef(false)
-      const pageNow = useRef(reader.page)
-      pageNow.current = reader.page
-      const registerDualLeft = useCallback((page, node) => { dualSlots.current.left.set(page, node) }, [])
-      const registerDualRight = useCallback((page, node) => { dualSlots.current.right.set(page, node) }, [])
-      const alignColumn = (side, page) => {
-        const column = side === 'left' ? dualLeft.current : dualRight.current
-        const node = dualSlots.current[side].get(page)
-        if (column === null || node === undefined || node === null) return
+      // The translated column is independent: it keeps its own page (so the two
+      // columns may sit on different pages) and its own ink, and never drives
+      // the reader's page. Page numbers are not synchronised.
+      const rightSlots = useRef(new Map())
+      const registerRightSlot = useCallback((page, node) => { rightSlots.current.set(page, node) }, [])
+      const [dualRightPage, setDualRightPage] = useState(reader.page)
+      useEffect(() => {
+        setDualRightPage(reader.page)
+        // The right column starts on the reader's page but then keeps its own; it
+        // deliberately does not watch reader.page, or scrolling the left column
+        // would drag it along.
+      }, [reader.bookId, reader.code, dual])
+      const onVisibleRight = useCallback(page => {
+        setDualRightPage(current => (current === page ? current : page))
+      }, [])
+      // Undo/redo for the translated column is local to that column; the toolbar
+      // targets whichever column was used last.
+      const rightInk = useRef(null)
+      const [rightHistory, setRightHistory] = useState({ undo: 0, redo: 0, count: 0 })
+      const onRightReady = useCallback(api => { rightInk.current = api }, [])
+      const onRightHistory = useCallback(counts => {
+        setRightHistory(current => (
+          current.undo === counts.undo && current.redo === counts.redo && current.count === counts.count
+            ? current
+            : counts
+        ))
+      }, [])
+      const onRightActivate = useCallback(() => { setActiveSide('right') }, [])
+      // Entering the bilingual view lands both columns on the page being read
+      // (a one-time jump, not synchronised scrolling): the page's ink layer only
+      // exists on that page, and the columns start at the top otherwise.
+      useEffect(() => {
+        if (!dual || dualDoc === null) return undefined
+        const jump = () => {
+          const pairs = [[dualLeft.current, slotRefs.current], [dualRight.current, rightSlots.current]]
+          for (const [column, slots] of pairs) {
+            if (column === null) continue
+            const node = slots.get(reader.page)
+            if (node === null || node === undefined) continue
+            const top = node.getBoundingClientRect().top - column.getBoundingClientRect().top + column.scrollTop
+            if (Math.abs(column.scrollTop - top) > 4) column.scrollTop = Math.max(0, top)
+          }
+        }
+        jump()
+        const timers = [120, 420, 900].map(ms => setTimeout(jump, ms))
+        return () => timers.forEach(timer => clearTimeout(timer))
+        // reader.page is read at entry; later scrolling stays independent.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [dual, dualDoc])
+      // The pager and the page box still move the original column; the translated
+      // column keeps its own position, so the two stay independent after entry.
+      useEffect(() => {
+        if (!dual || dualDoc === null) return
+        const column = dualLeft.current
+        const node = slotRefs.current.get(reader.page)
+        if (column === null || node === null || node === undefined) return
         const top = node.getBoundingClientRect().top - column.getBoundingClientRect().top + column.scrollTop
-        if (Math.abs(column.scrollTop - top) <= 4) return
-        // Writing scrollTop fires the column's observer: ignore its reports for a
-        // moment so the sync itself never feeds the page number back.
-        dualAligning.current = true
-        column.scrollTop = Math.max(0, top)
-        setTimeout(() => { dualAligning.current = false }, 650)
-      }
-      const notifyDual = useCallback((page, side) => {
-        if (dualAligning.current) return
-        dualLastSide.current = side
-        notifyVisible(page)
-      }, [notifyVisible])
-      const onVisibleLeft = useCallback(page => notifyDual(page, 'left'), [notifyDual])
-      const onVisibleRight = useCallback(page => notifyDual(page, 'right'), [notifyDual])
+        if (Math.abs(column.scrollTop - top) > 4) column.scrollTop = Math.max(0, top)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [reader.jump])
 
       // Explicit page changes (buttons, the page box, restore) scroll the
       // continuous column; pages reported by scrolling itself do not, so this
@@ -5366,36 +5671,6 @@ window.__ModuleLoader__.load({
         if (!changed || reader.mode !== 'continuous' || reader.phase !== 'ready') return
         scrollToPage(reader.page)
       }, [reader.mode, reader.scale, reader.phase, scrollToPage])
-      // Entering the bilingual view builds two fresh scroll containers at the top
-      // of the chapter; land them on the page being read so the ink layer (which
-      // only exists for that page) is in view, and let the lazy pages settle.
-      useEffect(() => {
-        if (!dual || dualDoc === null) return undefined
-        const jump = () => {
-          alignColumn('left', pageNow.current)
-          alignColumn('right', pageNow.current)
-        }
-        jump()
-        const timers = [120, 420, 900].map(ms => setTimeout(jump, ms))
-        return () => timers.forEach(timer => clearTimeout(timer))
-        // alignColumn closes over refs only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [dual, dualDoc])
-      // Scrolling either column updates the page; keep the other column on it, so
-      // both columns always show the page the annotations belong to. The column
-      // that was scrolled is left alone (no snapping under the pointer).
-      useEffect(() => {
-        if (!dual || dualDoc === null) return
-        alignColumn(dualLastSide.current === 'left' ? 'right' : 'left', reader.page)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [reader.page, dual, dualDoc])
-      // Pager, page box and keys jump both columns, not just the one that moved.
-      useEffect(() => {
-        if (!dual || dualDoc === null) return
-        alignColumn('left', reader.page)
-        alignColumn('right', reader.page)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [reader.jump, dual, dualDoc])
       // Scroll mode: derive the page from the slot nearest the stage top, so
       // the page indicator matches what the reader actually sees.
       useEffect(() => {
@@ -5493,6 +5768,22 @@ window.__ModuleLoader__.load({
       // The block button is a toggle: pressed while the page still holds exactly
       // the boxes it made, plain when the user has moved or added their own.
       const autoBoxed = autoBoxes !== null && sameMasks(masks, autoBoxes)
+      // In the bilingual view the translated column keeps its own undo stack;
+      // the toolbar acts on the column that was used last.
+      const undoAvailable = dual
+        ? (activeSide === 'right' ? rightHistory.undo : historyCounts.undo)
+        : historyCounts.undo
+      const redoAvailable = dual
+        ? (activeSide === 'right' ? rightHistory.redo : historyCounts.redo)
+        : historyCounts.redo
+      const undoEither = () => {
+        if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.undo()
+        else undoPage()
+      }
+      const redoEither = () => {
+        if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.redo()
+        else redoPage()
+      }
       // Each mask paints the translated page into its own canvas, sized as a
       // whole page and shifted by -mask origin. The canvas has no width/height
       // style of its own, so the browser scales the bitmap to exactly the page
@@ -5815,22 +6106,25 @@ window.__ModuleLoader__.load({
             ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: strokes.length === 0,
+              disabled: dual && activeSide === 'right' ? rightHistory.count === 0 : strokes.length === 0,
               title: format('annotClearHint'), 'aria-label': format('annotClear'),
-              onClick: () => savePageAnnots([]),
+              onClick: () => {
+                if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.clear()
+                else savePageAnnots([])
+              },
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: historyCounts.undo === 0,
+              disabled: undoAvailable === 0,
               title: format('undoHint'), 'aria-label': format('undo'),
-              onClick: undoPage,
+              onClick: undoEither,
             }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: historyCounts.redo === 0,
+              disabled: redoAvailable === 0,
               title: format('redoHint'), 'aria-label': format('redo'),
-              onClick: redoPage,
+              onClick: redoEither,
             }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('select', {
@@ -5949,8 +6243,8 @@ window.__ModuleLoader__.load({
                   page: reader.page,
                   scale: reader.scale ?? 1,
                   rootRef: dualLeft,
-                  onVisible: onVisibleLeft,
-                  registerSlot: registerDualLeft,
+                  onVisible: notifyVisible,
+                  registerSlot,
                   onError: props.onError,
                   overlay: annotLayer('left'),
                   overlayPage: reader.page,
@@ -5959,6 +6253,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'md-reader-column', ref: dualRight },
                 h('div', { className: 'md-reader-colhead' },
                   h('span', { className: 'md-reader-coltitle' }, format('dualTranslated')),
+                  h('span', { className: 'md-reader-scale' }, format('dualPage', { n: dualRightPage })),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(value => Math.max(0.5, (value ?? reader.scale ?? 1) - 0.1)),
@@ -5991,14 +6286,25 @@ window.__ModuleLoader__.load({
                   bookId: reader.bookId,
                   code: reader.code,
                   count: reader.variant === 'translated' ? reader.count : (dualDoc.numPages || 0),
-                  page: reader.page,
+                  page: dualRightPage,
                   scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
                   onVisible: onVisibleRight,
-                  registerSlot: registerDualRight,
+                  registerSlot: registerRightSlot,
                   onError: props.onError,
-                  overlay: annotLayer('right'),
-                  overlayPage: reader.page,
+                  overlay: h(ColumnInk, {
+                    bookId: reader.bookId,
+                    code: reader.code,
+                    page: dualRightPage,
+                    store: 'right',
+                    tool: annotTool,
+                    color: annotColor,
+                    width: annotWidth,
+                    onReady: onRightReady,
+                    onHistory: onRightHistory,
+                    onActivate: onRightActivate,
+                  }),
+                  overlayPage: dualRightPage,
                 })
               )
             ))
