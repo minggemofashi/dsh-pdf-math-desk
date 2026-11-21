@@ -88,4 +88,11 @@ for index, item in enumerate(items):
         item["kind"] = "paragraph"
     item["size"] = item["size"] / median if median > 0 else 1.0
 
+# Page numbers / footers: tiny blocks in the bottom margin carry no paragraph
+# content and were being misread as formulas.
+items = [
+    item for item in items
+    if not (item["bbox"][1] > 0.9 and item["bbox"][3] < 0.03 and item["bbox"][2] < 0.12)
+]
+
 print(json.dumps(items, ensure_ascii=False))
