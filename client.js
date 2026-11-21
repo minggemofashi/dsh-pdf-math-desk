@@ -3011,8 +3011,11 @@ window.__ModuleLoader__.load({
 .md-shelf-sub { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 .md-libraries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: stretch; max-width: none; }
 .md-libraries > .md-shelf-head, .md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p, .md-libraries > .md-details, .md-libraries > .md-library-tools { grid-column: 1 / -1; }
-.md-libraries > .md-library-add { grid-column: 1; grid-row: 2; }
-.md-libraries > .md-library-toolcell { grid-column: 2; grid-row: 2; }
+.md-libraries > .md-shelf-head { grid-row: 1; }
+.md-libraries > .md-library-list, .md-libraries > .md-alert, .md-libraries > p { grid-row: 2; grid-column: 1 / -1; }
+.md-libraries > .md-library-add { grid-column: 1; grid-row: 3; }
+.md-libraries > .md-library-toolcell { grid-column: 2; grid-row: 3; }
+.md-libraries > .md-details { grid-row: 4; }
 .md-library-toolcell { position: relative; height: 100%; }
 .md-library-toolscroll { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
 .md-tool-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
