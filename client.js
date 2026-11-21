@@ -3170,6 +3170,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const cardRefs = useRef(new Map())
       const chapterRefs = useRef(new Map())
       const pendingFocus = useRef('')
+      const clickGuardRef = useRef(0)
       const workRef = useRef(null)
 
       const pendingSave = useRef(null)
@@ -4180,6 +4181,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         pendingFocus.current = 'heading'
         setCreateError(null)
         setPreview(null)
+        // Rapid taps that opened the book must not fall through onto the chapter
+        // rows that appear under the cursor on the next screen.
+        clickGuardRef.current = Date.now() + 400
         const expandedByBook = work === null ? {} : work.expandedByBook
         commit({ view: 'book', bookId: id, activeChapter: null, expandedByBook })
       }, [commit, work])
@@ -4238,6 +4242,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // A double click's first click already toggled the row; `detail > 1` is its second click.
       const onClickRow = useCallback((event, chapter) => {
+        if (Date.now() < clickGuardRef.current) return
         toggleChapter(chapter.code)
       }, [toggleChapter])
 
