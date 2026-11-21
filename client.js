@@ -3031,6 +3031,36 @@ window.__ModuleLoader__.load({
           node.scrollIntoView({ block: 'start' })
         }
       }, [reader.mode])
+      // Scroll mode: derive the page from the slot nearest the stage top, so
+      // the page indicator matches what the reader actually sees.
+      useEffect(() => {
+        if (reader.mode !== 'continuous') return undefined
+        const stage = props.stageRef.current
+        if (stage === null || stage === undefined) return undefined
+        let timer = null
+        const onScroll = () => {
+          if (timer !== null) clearTimeout(timer)
+          timer = setTimeout(() => {
+            const stageTop = stage.getBoundingClientRect().top
+            let best = null
+            let bestDistance = Number.POSITIVE_INFINITY
+            slotRefs.current.forEach((node, page) => {
+              if (node === null || node === undefined) return
+              const distance = Math.abs(node.getBoundingClientRect().top - stageTop - 24)
+              if (distance < bestDistance) {
+                bestDistance = distance
+                best = page
+              }
+            })
+            if (best !== null && best !== reader.page) props.onPage(best)
+          }, 180)
+        }
+        stage.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+          stage.removeEventListener('scroll', onScroll)
+          if (timer !== null) clearTimeout(timer)
+        }
+      }, [reader.mode, reader.page, props.stageRef])
 
       const commitPage = () => {
         const value = Number.parseInt(pageText, 10)

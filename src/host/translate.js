@@ -33,10 +33,14 @@ function balanceMath(markdown) {
     .replace(/\\\]/g, '$$')
     .replace(/\\\(/g, '$')
     .replace(/\\\)/g, '$')
-  // A display block that still carries inline `$...$` breaks XeLaTeX; unwrap
-  // those inner dollars (the content stays math in display mode).
-  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (match, body) => `$$${body.replace(/(?<!\\)\$/g, '')}$$`)
-  if ((text.match(/\$\$/g) ?? []).length % 2 === 1) text = `${text}\n\n$$`
+  // Split on display delimiters: odd chunks are inside `$$...$$`, so their
+  // inline `$` must go. An unmatched trailing display block is cleaned too and
+  // then closed.
+  const parts = text.split('$$')
+  text = parts
+    .map((part, index) => (index % 2 === 1 ? part.replace(/(?<!\\)\$/g, '') : part))
+    .join('$$')
+  if (parts.length % 2 === 0) text = `${text}\n\n$$`
   return text
 }
 
