@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.40.1
+
+- 设置页新增「DeepSeek API Key（翻译用）」输入框与保存按钮；
+- Host 新增 `GET/POST /deepseek-key`，Key 存到 `~/.dsh/mathdesk/deepseek.json`（仅本机、仅当前用户可读；不写入仓库/日志）；
+- 翻译优先用配置/环境变量，其次用这里保存的 Key。
+
 ## v0.40.0
 
 - M2 调整为**整章翻译**：逐页渲染 → 逐页调用 DeepSeek → 汇总 Markdown → 一次性渲染为原 PDF 同目录的 `<原名>_translated.pdf`；按钮改为「翻译本章」，进度显示 `翻译中 n/N`。

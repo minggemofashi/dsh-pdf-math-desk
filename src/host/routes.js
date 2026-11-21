@@ -130,6 +130,21 @@ async function chapterPdf(library, bookId, code) {
   return source.ok ? source.path : null
 }
 
+/**
+ * The DeepSeek key for translation: config or env first, then the stored file.
+ * @returns {Promise<string>} the key, or '' when none is configured.
+ */
+async function deepseekKey() {
+  if (typeof config.deepseekApiKey === 'string' && config.deepseekApiKey !== '') return config.deepseekApiKey
+  try {
+    const raw = await readFile(join(config.dataDir, 'deepseek.json'), 'utf8')
+    const stored = JSON.parse(raw)
+    return typeof stored.apiKey === 'string' ? stored.apiKey : ''
+  } catch {
+    return ''
+  }
+}
+
 async function activeLibrary() {
     if (libraries !== undefined && typeof libraries.active === 'function') {
       const active = await libraries.active()
@@ -312,6 +327,31 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/deepseek-key`) {
+        if (request.method === 'GET') {
+          sendJson(response, 200, { ok: true, configured: (await deepseekKey()) !== '' })
+          return
+        }
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const key = typeof body.key === 'string' ? body.key.trim() : ''
+          if (key !== '' && !key.startsWith('sk-')) {
+            fail(response, 400, 'bad-key', 'API Key 应以 sk- 开头')
+            return
+          }
+          await mkdir(config.dataDir, { recursive: true })
+          await writeFile(join(config.dataDir, 'deepseek.json'), `${JSON.stringify({ apiKey: key })}\n`, { encoding: 'utf8', mode: 0o600 })
+          sendJson(response, 200, { ok: true, configured: key !== '' })
+        } catch (error) {
+          fail(response, 500, 'key-save-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/translate-page`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
@@ -337,7 +377,7 @@ async function activeLibrary() {
           }
           const dir = dirname(source)
           const name = basename(source)
-          const markdown = await translatePage({ apiKey: config.deepseekApiKey, image, target })
+          const markdown = await translatePage({ apiKey: await deepseekKey(), image, target })
           if (body.mdOnly === true) {
             sendJson(response, 200, { ok: true, md: markdown })
             return

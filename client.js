@@ -235,6 +235,10 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live（xelatex + ctex）',
       envTexSize: '约 5 GB',
       settingsFeatures: '特殊功能',
+      apiKeyTitle: 'DeepSeek API Key（翻译用）',
+      apiKeyConfigured: '已配置',
+      apiKeyMissing: '未配置',
+      apiKeySave: '保存',
       envReady: '已就绪：md 可转 PDF',
       envMissing: '未安装：md→PDF 按钮已隐藏，其余功能正常',
       envDownload: '下载 TeX Live（约 5 GB）',
@@ -524,6 +528,10 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live (xelatex + ctex)',
       envTexSize: '~5 GB',
       settingsFeatures: 'Features',
+      apiKeyTitle: 'DeepSeek API key (translation)',
+      apiKeyConfigured: 'configured',
+      apiKeyMissing: 'not configured',
+      apiKeySave: 'Save',
       envReady: 'ready: md can render to PDF',
       envMissing: 'missing: md-to-PDF buttons are hidden, everything else works',
       envDownload: 'Download TeX Live (~5 GB)',
@@ -1579,6 +1587,22 @@ window.__ModuleLoader__.load({
      */
     function SettingsDialog(props) {
       const envTools = props.envTools ?? { python: false, tex: false }
+      const [apiKey, setApiKey] = useState('')
+      const [apiKeyNote, setApiKeyNote] = useState('')
+      useEffect(() => {
+        request('GET', 'deepseek-key')
+          .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
+          .catch(() => {})
+      }, [])
+      const saveApiKey = async () => {
+        try {
+          const payload = await request('POST', 'deepseek-key', { key: apiKey })
+          setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing'))
+          setApiKey('')
+        } catch (error) {
+          setApiKeyNote(error !== null && error !== undefined && error.message ? String(error.message) : String(error))
+        }
+      }
       const ready = envTools.python === true && envTools.tex === true
       const openLink = url => {
         try {
@@ -1608,6 +1632,18 @@ window.__ModuleLoader__.load({
             h('div', { className: 'md-settings-row' },
               h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
               envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
+            )
+          ),
+          h('div', { className: 'md-settings-section' },
+            h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
+            h('p', { className: 'md-shelf-sub' }, apiKeyNote),
+            h('div', { className: 'md-settings-row' },
+              h('input', {
+                className: 'md-settings-input', type: 'password',
+                value: apiKey, placeholder: 'sk-...',
+                onChange: event => setApiKey(event.target.value),
+              }),
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
             )
           ),
           h('div', { className: 'md-settings-section' },
@@ -3397,6 +3433,7 @@ window.__ModuleLoader__.load({
 .md-settings-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.md-settings-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-btn { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
 .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
 .md-btn:disabled { opacity: .55; cursor: default; }
