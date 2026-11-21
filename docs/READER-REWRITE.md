@@ -45,7 +45,7 @@
 
 1. **超宽时不能居中溢出**：容器用 `justify-content: safe center` / `align-items: safe center`，保证放大后左侧可滚动到；
 2. **canvas 重挂载必须重绘**：页面绘制由 Viewer 的 `pageVersion + zoom + layer` 驱动，不依赖 DOM 挂载时序；
-3. **叠加几何**：mask 内 canvas 显示尺寸 = 整页尺寸，偏移 = -mask 起点；不再局部 100%；
+3. **叠加几何**：整页译文只渲染成一张图，放在页面盒子里；每个框只是一条 `clipPath` 矩形（v0.49.2 起不再按框单独渲染 canvas，也不再用局部 100%）；
 4. **overlay 失败要显式提示**（加载/重建），不能静默回退成“看起来是原文”；
 5. **滚动更新页码是静默的**，不触发跳页；
 6. **模式切换是状态机**：single/dual/overlay 互斥，切换时保存/恢复各自滚动位置与缩放；
@@ -69,6 +69,16 @@
 7. **标注层**接入。
 
 每步完成都跑：单页/连续/双语/叠加四条回归路径 + 缩放 200% 后左右滚动可达。
+
+### 进度
+
+- [x] 第 1 步 `PageCanvas`：抽出 `paintPageCanvas`，单页/连续共用（v0.49.1）。
+- [x] 第 2 步 `PdfViewer`：`client.js` 内新增 `PdfViewer`，接管舞台、页面盒子、单页绘制、适配宽度测量与页码上报；`WorkbenchPage` 的两段旧 effect 删除。叠加同时改为「整页译文图 + clipPath 裁剪矩形」，失败显式提示（v0.49.2）。
+- [ ] 第 3 步 双语改用两个 Viewer（当前仍是 `ContinuousView` 两栏，各自独立缩放/滚动已可用）。
+- [ ] 第 4 步 叠加改用 Viewer 的 mask 层（已实际落地：mask 层作为 `PdfViewer` 的 children，几何跟随页面盒子）。
+- [ ] 第 5 步 块调试层接入（已随 children 接入）。
+- [ ] 第 6 步 右侧预览复用 Viewer。
+- [ ] 第 7 步 标注层接入。
 
 ## 7. 验收标准
 

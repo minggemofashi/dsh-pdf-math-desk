@@ -18,8 +18,10 @@
  * Geometry rules (from docs/READER-REWRITE.md):
  * - centered content uses `safe center`, so a zoomed page can still scroll to
  *   its left edge;
- * - a mask canvas is displayed at *page* size with a negative offset, never at
- *   the mask's own size;
+ * - the overlay is ONE page-sized translation image clipped by a `clipPath` of
+ *   rectangle subpaths per mask (v0.49.2). A per-mask canvas drifted because a
+ *   zoomed page box is wider than the stage; `maskPageStyle` below is the old
+ *   per-canvas formula, kept only for reference;
  * - repainting is driven by (doc, page, scale, version), not by DOM mounting.
  */
 
@@ -63,7 +65,8 @@ export async function paintPage(options) {
 }
 
 /**
- * Compute the geometry for a reveal box that shows the translated page.
+ * Compute the geometry a per-mask translated canvas used to need.
+ * @deprecated Superseded by the single-image `clipPath` overlay (v0.49.2).
  * @param {{ x: number, y: number, w: number, h: number }} box - normalized box.
  * @returns {{ left: string, top: string, width: string, height: string }} CSS percentages.
  */

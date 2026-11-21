@@ -175,6 +175,10 @@ window.__ModuleLoader__.load({
       overlayToggle: '叠加',
       overlayHint: '拖拽画框，框内露出译文；点框可删除（需要先生成译文）',
       overlayRemove: '点击删除这个框',
+      overlayMissing: '叠加层还没准备好：请先翻译本章，再打开叠加框选',
+      overlayFallback: '叠加层 PDF 不可用：框内显示的是整页译文的对应区域，位置可能与原文不对齐',
+      overlayEmpty: '这一页的叠加层没有文字，框内无译文可显示；请重新翻译本章以重建叠加层',
+      overlayLoading: '正在准备叠加层…',
       translateAction: '翻译本页',
       translateChapterAction: '翻译本章',
       translateCancel: '取消翻译',
@@ -480,6 +484,10 @@ window.__ModuleLoader__.load({
       overlayToggle: 'Overlay',
       overlayHint: 'Drag to draw a box that reveals the translation underneath; click a box to remove it (translate the chapter first)',
       overlayRemove: 'Click to remove this box',
+      overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay boxes',
+      overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page, which may not line up with the original',
+      overlayEmpty: 'This page of the overlay layer has no text, so its boxes stay empty; translate the chapter again to rebuild it',
+      overlayLoading: 'Preparing the overlay layer…',
       translateAction: 'Translate page',
       translateChapterAction: 'Translate chapter',
       translateCancel: 'Cancel translation',
@@ -3002,38 +3010,110 @@ window.__ModuleLoader__.load({
     }
 
 
-    function TranslatedPageCanvas(props) {
+    /**
+     * One scrollable PDF view: the stage, the page box, the painting, and the
+     * zoom value it reports back. Bilingual columns pass `variant: 'column'`
+     * so the caller owns the scroll container. Extra layers (the overlay
+     * masks) arrive as children so their geometry is the page box, never the
+     * stage: that is what keeps a mask on the right spot at any zoom.
+     * @param {{ variant: string, mode: string, doc: object, page: number, count: number, scale: number | null, fitScale: Function, stageRef: object, rootRef: object, onScale: Function, onVisible: Function, onError: Function, registerSlot: Function, showBlocks: boolean, bookId: string, code: string, children: object }} props - the document, the position and the callbacks.
+     * @returns {import('react').ReactElement} the view.
+     */
+    function PdfViewer(props) {
       const canvas = useRef(null)
+      const stage = useRef(null)
+      const task = useRef(null)
+      // The parent keeps the same ref for keyboard scrolling and fit width, so
+      // the viewer hands its stage to that ref instead of hiding it.
+      const attachStage = node => {
+        stage.current = node
+        if (props.stageRef !== null && props.stageRef !== undefined) props.stageRef.current = node
+      }
+
+      // Paint the single page. A page or zoom change cancels the previous
+      // render, so a fast zoom never leaves a stale bitmap on top.
       useEffect(() => {
-        if (props.doc === null || props.doc === undefined) return undefined
+        if (props.mode !== 'single' || props.doc === null || props.doc === undefined) return undefined
+        const node = canvas.current
+        if (node === null) return undefined
         let cancelled = false
-        const paint = async () => {
+        void (async () => {
           try {
-            const pageNumber = Math.min(props.pageNumber, props.doc.numPages || 1)
-            const page = await props.doc.getPage(pageNumber)
-            const viewport = page.getViewport({ scale: props.scale ?? 2 })
-            const node = canvas.current
-            if (node === null || cancelled) return
-            node.width = Math.floor(viewport.width)
-            node.height = Math.floor(viewport.height)
-            await page.render({ canvasContext: node.getContext('2d'), viewport }).promise
-          } catch {
-            // the mask stays empty when the page cannot be rendered
+            const page = await props.doc.getPage(props.page)
+            if (cancelled) return
+            const base = page.getViewport({ scale: 1 })
+            const used = props.scale === null ? props.fitScale(base.width) : props.scale
+            if (task.current !== null) {
+              try { task.current.cancel() } catch { /* already finished */ }
+              task.current = null
+            }
+            const render = paintPageCanvas(page, node, used)
+            task.current = render
+            await render.promise
+            if (cancelled) return
+            // The document starts at "fit width", which is only known after the
+            // first page's size is; record it so later zoom is relative to it.
+            if (props.scale === null) props.onScale(used)
+          } catch (error) {
+            if (cancelled) return
+            const name = error !== null && error !== undefined ? String(error.name) : ''
+            if (name === 'RenderingCancelledException' || name === 'AbortException') return
+            props.onError(error)
           }
-        }
-        void paint()
+        })()
         return () => {
           cancelled = true
+          if (task.current !== null) {
+            try { task.current.cancel() } catch { /* already finished */ }
+            task.current = null
+          }
         }
-      }, [props.doc, props.pageNumber, props.scale])
-      return h('canvas', { ref: canvas, className: 'md-mask-page', style: props.style })
+      }, [props.doc, props.page, props.scale, props.mode, props.fitScale, props.onScale, props.onError])
+
+      // Continuous mode has no single-page paint to learn the page size from,
+      // so measure page one instead of leaving the scale unknown.
+      useEffect(() => {
+        if (props.scale !== null || props.mode !== 'continuous' || props.doc === null || props.doc === undefined) return undefined
+        let cancelled = false
+        void props.doc.getPage(1).then(page => {
+          if (cancelled) return
+          props.onScale(props.fitScale(page.getViewport({ scale: 1 }).width))
+        }).catch(() => {})
+        return () => { cancelled = true }
+      }, [props.doc, props.mode, props.scale, props.fitScale, props.onScale])
+
+      const content = props.mode === 'single'
+        ? h('div', { className: 'md-reader-single' },
+          h('div', { className: 'md-reader-single-page' },
+            h('canvas', { className: 'md-reader-canvas', ref: canvas }),
+            props.children
+          ))
+        : h(ContinuousView, {
+          doc: props.doc,
+          count: props.count,
+          scale: props.scale === null ? 1 : props.scale,
+          rootRef: props.rootRef === null || props.rootRef === undefined ? stage : props.rootRef,
+          showBlocks: props.showBlocks,
+          bookId: props.bookId,
+          code: props.code,
+          onVisible: props.onVisible,
+          registerSlot: props.registerSlot,
+          onError: props.onError,
+        })
+
+      if (props.variant === 'column') return content
+      return h('div', {
+        className: 'md-reader-stage',
+        'data-mode': props.mode,
+        ref: attachStage,
+      }, content)
     }
 
     /**
      * The full-page PDF reader: one page or a continuous column, page
      * navigation, zoom, reading-mode switch, and the chapter's three New
      * buttons (which start a session and leave for it).
-     * @param {{ reader: object, doc: object, busy: boolean, forceNew: boolean, canvasRef: Function, stageRef: Function, paneRef: Function, onBack: Function, onShelf: Function, onPrev: Function, onNext: Function, onPage: Function, onZoomIn: Function, onZoomOut: Function, onFit: Function, onRetry: Function, onMode: Function, onNewSession: Function, onForceNew: Function, onVisible: Function }} props - the open reader and its handlers.
+     * @param {{ reader: object, doc: object, busy: boolean, forceNew: boolean, fitScale: Function, onScale: Function, stageRef: Function, paneRef: Function, onBack: Function, onShelf: Function, onPrev: Function, onNext: Function, onPage: Function, onZoomIn: Function, onZoomOut: Function, onFit: Function, onRetry: Function, onMode: Function, onNewSession: Function, onForceNew: Function, onVisible: Function }} props - the open reader and its handlers.
      * @returns {import('react').ReactElement} the reader.
      */
     function ReaderView(props) {
@@ -3045,6 +3125,9 @@ window.__ModuleLoader__.load({
       const [masks, setMasks] = useState([])
       const [maskDraft, setMaskDraft] = useState(null)
       const [translatedImage, setTranslatedImage] = useState('')
+      const [overlayNote, setOverlayNote] = useState('')
+      const overlaySource = useRef('')
+      const maskClipId = useRef(`md-mask-clip-${Math.random().toString(36).slice(2, 8)}`)
       const overlayLayer = useRef(null)
       const overlayStart = useRef(null)
       const [translateTarget, setTranslateTarget] = useState('zh')
@@ -3093,7 +3176,11 @@ window.__ModuleLoader__.load({
         if (dual && rightScale === null) setRightScale(reader.scale ?? 1)
       }, [dual, reader.scale, rightScale])
       useEffect(() => {
-        if (!dual && !overlay) return undefined
+        if (!dual && !overlay) {
+          overlaySource.current = ''
+          setOverlayNote('')
+          return undefined
+        }
         let cancelled = false
         const load = async () => {
           try {
@@ -3105,6 +3192,7 @@ window.__ModuleLoader__.load({
               return lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             }
             let doc = null
+            let notice = ''
             if (overlay && reader.variant !== 'translated') {
               // Rebuild from the cached per-page blocks so an old overlay PDF
               // rendered by an earlier release cannot hide the fix.
@@ -3118,15 +3206,26 @@ window.__ModuleLoader__.load({
               } catch {
                 doc = null
               }
-              if (doc === null) doc = await make('translated').promise
+              if (doc === null) {
+                // No overlay layer to reveal: show the whole translation instead
+                // and say so, rather than silently leaving the original.
+                doc = await make('translated').promise
+                notice = format('overlayFallback')
+              }
             } else if (reader.variant !== 'translated') {
               doc = await make('translated').promise
             } else {
               doc = await make('').promise
             }
-            if (!cancelled) setDualDoc(doc)
+            overlaySource.current = doc !== null && notice === '' && overlay ? 'overlay' : 'translated'
+            if (!cancelled) {
+              setOverlayNote(notice)
+              setDualDoc(doc)
+            }
           } catch {
             if (!cancelled) {
+              overlaySource.current = ''
+              setOverlayNote(overlay ? format('overlayMissing') : '')
               updateNote(format('translateFailed'))
               setDual(false)
             }
@@ -3177,14 +3276,23 @@ window.__ModuleLoader__.load({
             const pageNumber = Math.min(reader.page, dualDoc.numPages || 1)
             const page = await dualDoc.getPage(pageNumber)
             const base = page.getViewport({ scale: 1 })
-            const viewport = page.getViewport({ scale: Math.min(2, Math.max(1, 1200 / base.width)) })
+            const viewport = page.getViewport({ scale: Math.min(3, Math.max(1.6, 1400 / base.width)) })
             const canvas = document.createElement('canvas')
             canvas.width = Math.floor(viewport.width)
             canvas.height = Math.floor(viewport.height)
             await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-            if (!cancelled) setTranslatedImage(canvas.toDataURL('image/jpeg', 0.86))
+            // A page with no text means the overlay PDF has nothing to reveal
+            // there. Say it out loud: a blank reveal would just look English.
+            const text = await page.getTextContent()
+            const hasText = text.items.some(item => typeof item.str === 'string' && item.str.trim() !== '')
+            if (cancelled) return
+            setTranslatedImage(canvas.toDataURL('image/jpeg', 0.9))
+            if (overlaySource.current === 'overlay') setOverlayNote(hasText ? '' : format('overlayEmpty'))
           } catch {
-            if (!cancelled) setTranslatedImage('')
+            if (!cancelled) {
+              setTranslatedImage('')
+              if (overlaySource.current === 'overlay') setOverlayNote(format('overlayEmpty'))
+            }
           }
         }
         void render()
@@ -3415,6 +3523,73 @@ window.__ModuleLoader__.load({
       const ready = reader.phase === 'ready'
       const sub = [reader.bookTitle, `${reader.code} ${reader.title}`].filter(item => typeof item === 'string' && item !== '').join(' · ')
       const modeOf = mode => reader.mode === mode
+      // The overlay layer sits on the page box, not on the stage: one page-sized
+      // image plus a clip path through every mask. Drawing each mask from its own
+      // canvas used to drift, because a zoomed page box is wider than the stage.
+      const masksLayer = overlay
+        ? h('div', {
+          className: 'md-overlay-layer',
+          ref: overlayLayer,
+          onPointerDown: maskDown,
+          onPointerMove: maskMove,
+          onPointerUp: maskUp,
+          onPointerLeave: maskUp,
+        },
+          masks.length === 0 || translatedImage === ''
+            ? null
+            : h('svg', {
+              className: 'md-overlay-svg',
+              viewBox: '0 0 1 1',
+              preserveAspectRatio: 'none',
+              'aria-hidden': true,
+            },
+              h('defs', null,
+                h('clipPath', { id: maskClipId.current, clipPathUnits: 'userSpaceOnUse' },
+                  masks.map((mask, index) => h('rect', {
+                    key: index,
+                    x: mask.x,
+                    y: mask.y,
+                    width: mask.w,
+                    height: mask.h,
+                  })))),
+              h('image', {
+                href: translatedImage,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+                preserveAspectRatio: 'none',
+                clipPath: `url(#${maskClipId.current})`,
+              })
+            ),
+          masks.map((mask, index) => h('div', {
+            key: `${mask.x}-${mask.y}-${index}`,
+            className: 'md-mask',
+            title: format('overlayRemove'),
+            onPointerDown: event => {
+              event.stopPropagation()
+              setMasks(list => list.filter((item, position) => position !== index))
+            },
+            style: {
+              left: `${mask.x * 100}%`,
+              top: `${mask.y * 100}%`,
+              width: `${mask.w * 100}%`,
+              height: `${mask.h * 100}%`,
+            },
+          })),
+          maskDraft === null
+            ? null
+            : h('div', {
+              className: 'md-mask md-mask-draft',
+              style: {
+                left: `${maskDraft.x * 100}%`,
+                top: `${maskDraft.y * 100}%`,
+                width: `${maskDraft.w * 100}%`,
+                height: `${maskDraft.h * 100}%`,
+              },
+            })
+        )
+        : null
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -3538,6 +3713,13 @@ window.__ModuleLoader__.load({
               title: format('overlayHint'),
               onClick: () => {
                 if (reader.variant === 'translated') return
+                if (!overlay && !hasTranslation) {
+                  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                    && window.confirm(format('dualNeedsTranslation'))) {
+                    void runTranslate()
+                  }
+                  return
+                }
                 if (reader.mode !== 'single') props.onMode('single')
                 if (dual) {
                   setDual(false)
@@ -3598,11 +3780,16 @@ window.__ModuleLoader__.load({
             onClick: cancelTranslate,
           }, format('translateCancel')) : null
         ),
-        h('div', { className: 'md-reader-stage', ref: props.stageRef, 'data-mode': reader.mode },
-          dual && dualDoc === null
-            ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
-            : dual && dualDoc !== null
-            ? h('div', { className: 'md-reader-dual' },
+        overlay && (overlayNote !== '' || translatedImage === '')
+          ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
+            overlayNote === '' ? format('overlayLoading') : overlayNote)
+          : null,
+        dual && dualDoc === null
+          ? h('div', { className: 'md-reader-stage' },
+            h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading')))
+          : dual && dualDoc !== null
+          ? h('div', { className: 'md-reader-stage' },
+            h('div', { className: 'md-reader-dual' },
               h('div', { className: 'md-reader-column', ref: dualLeft },
                 h('div', { className: 'md-reader-colhead' },
                   h('span', { className: 'md-reader-coltitle' }, format('dualOriginal')),
@@ -3670,90 +3857,43 @@ window.__ModuleLoader__.load({
                   onError: props.onError,
                 })
               )
-            )
+            ))
             : reader.phase === 'loading'
-            ? h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading'))
+            ? h('div', { className: 'md-reader-stage' },
+              h('div', { className: 'md-reader-state', role: 'status' }, format('readerLoading')))
             : reader.phase === 'error'
-              ? h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
-                h('div', null, reader.error === '' ? format('readerFailed') : reader.error),
-                h('div', { className: 'md-state-actions' },
-                  h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('readerRetry'))
-                )
-              )
-              : reader.mode === 'continuous'
-                ? h(ContinuousView, {
-                  doc: props.doc,
-                  showBlocks,
-                  bookId: reader.bookId,
-                  code: reader.code,
-                  count: reader.count,
-                  scale: reader.scale ?? 1,
-                  rootRef: props.stageRef,
-                  onVisible: page => {
-                    if (switchingMode.current) return
-                    if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
-                    visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
-                  },
-                  registerSlot,
-                  onError: props.onError,
-                })
-                : h('div', { className: 'md-reader-single' },
-                  h('div', { className: 'md-reader-single-page' },
-                    h('canvas', { className: 'md-reader-canvas', ref: props.canvasRef }),
-                    overlay
-                      ? h('div', {
-                        className: 'md-overlay-layer',
-                        ref: overlayLayer,
-                        onPointerDown: maskDown,
-                        onPointerMove: maskMove,
-                        onPointerUp: maskUp,
-                        onPointerLeave: maskUp,
-                      },
-                        masks.map((mask, index) => h('div', {
-                          key: `${mask.x}-${mask.y}-${index}`,
-                          className: 'md-mask',
-                          title: format('overlayRemove'),
-                          onPointerDown: event => {
-                            event.stopPropagation()
-                            setMasks(list => list.filter((item, position) => position !== index))
-                          },
-                          style: {
-                            left: `${mask.x * 100}%`,
-                            top: `${mask.y * 100}%`,
-                            width: `${mask.w * 100}%`,
-                            height: `${mask.h * 100}%`,
-                          },
-                        }, dualDoc === null
-                          ? null
-                          : h(TranslatedPageCanvas, {
-                            doc: dualDoc,
-                            pageNumber: reader.page,
-                            scale: 2,
-                            style: {
-                              position: 'absolute',
-                              maxWidth: 'none',
-                              width: `${100 / mask.w}%`,
-                              height: `${100 / mask.h}%`,
-                              left: `${-(mask.x / mask.w) * 100}%`,
-                              top: `${-(mask.y / mask.h) * 100}%`,
-                            },
-                          }))),
-                        maskDraft === null
-                          ? null
-                          : h('div', {
-                            className: 'md-mask md-mask-draft',
-                            style: {
-                              left: `${maskDraft.x * 100}%`,
-                              top: `${maskDraft.y * 100}%`,
-                              width: `${maskDraft.w * 100}%`,
-                              height: `${maskDraft.h * 100}%`,
-                            },
-                          })
-                      )
-                      : null,
-                    h(BlockOverlay, { bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks })
-                  ))
-        )
+              ? h('div', { className: 'md-reader-stage' },
+                h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
+                  h('div', null, reader.error === '' ? format('readerFailed') : reader.error),
+                  h('div', { className: 'md-state-actions' },
+                    h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('readerRetry'))
+                  )
+                ))
+              : h(PdfViewer, {
+                variant: 'stage',
+                mode: reader.mode,
+                doc: props.doc,
+                page: reader.page,
+                count: reader.count,
+                scale: reader.scale,
+                fitScale: props.fitScale,
+                stageRef: props.stageRef,
+                onScale: props.onScale,
+                showBlocks,
+                bookId: reader.bookId,
+                code: reader.code,
+                onVisible: page => {
+                  if (switchingMode.current) return
+                  if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+                  visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
+                },
+                registerSlot,
+                onError: props.onError,
+                children: [
+                  masksLayer,
+                  h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
+                ],
+              })
       )
     }
 
@@ -4237,14 +4377,16 @@ window.__ModuleLoader__.load({
 .md-reader-of { font-size: 12px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
-.md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 20px 24px 32px; }
+.md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
-.md-reader-single { display: flex; justify-content: safe center; margin: 0 auto; }
+.md-reader-single { display: flex; justify-content: safe center; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
-.md-reader-single-page { position: relative; display: inline-block; max-width: 100%; }
+.md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
+.md-overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
 .md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
@@ -4271,7 +4413,7 @@ window.__ModuleLoader__.load({
 .md-reader-modes { display: flex; align-items: center; gap: 4px; }
 .md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--dsw-alias-border-l4); background: var(--dsw-alias-interactive-bg-hover-solid); color: var(--dsw-alias-label-primary); }
 .md-reader-newlabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.md-reader-canvas { flex: none; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); }
+.md-reader-canvas { display: block; flex: none; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-state { margin: 48px auto; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .md-session-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-state-success-primary); }
 .md-session-time { flex: none; margin-left: auto; padding-left: 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
@@ -4357,8 +4499,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const readerRef = useRef(null)
       const readerDoc = useRef(null)
       const readerTask = useRef(null)
-      const readerRender = useRef(null)
-      const readerCanvas = useRef(null)
       const [viewToken, setViewToken] = useState(0)
       useEffect(() => {
         viewerBus.listeners.add(setViewToken)
@@ -4780,65 +4920,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return Math.max(0.3, Math.min(3, Math.round(scale * 100) / 100))
       }, [])
 
-      // Painting one page in single mode. A page or zoom change cancels the
-      // previous render; continuous mode paints each page in its own slot.
-      useEffect(() => {
-        if (reader === null || reader.phase !== 'ready' || reader.mode !== 'single') return undefined
-        void viewToken
-        const doc = readerDoc.current
-        const canvas = readerCanvas.current
-        if (doc === null || canvas === null) return undefined
-        let cancelled = false
-        const paint = async () => {
-          try {
-            const page = await doc.getPage(reader.page)
-            if (cancelled) return
-            const base = page.getViewport({ scale: 1 })
-            const scale = reader.scale ?? fitScale(base.width)
-            if (readerRender.current !== null) {
-              try { readerRender.current.cancel() } catch { /* already finished */ }
-              readerRender.current = null
-            }
-            const task = paintPageCanvas(page, canvas, scale)
-            readerRender.current = task
-            await task.promise
-            if (cancelled) return
-            // A fresh document starts at "fit width", which is only known after
-            // the first page's size is; record it so zoom is relative to it.
-            if (readerRef.current !== null && readerRef.current.scale === null) {
-              setReader(previous => previous === null ? null : { ...previous, scale })
-            }
-          } catch (error) {
-            if (cancelled) return
-            const name = error !== null && error !== undefined ? String(error.name) : ''
-            if (name === 'RenderingCancelledException' || name === 'AbortException') return
-            setReader(previous => previous === null ? null : { ...previous, phase: 'error', error: errorText(error) })
-          }
-        }
-        void paint()
-        return () => {
-          cancelled = true
-          if (readerRender.current !== null) {
-            try { readerRender.current.cancel() } catch { /* already finished */ }
-            readerRender.current = null
-          }
-        }
-      }, [fitScale, viewToken, reader === null ? '' : `${reader.page}|${reader.scale}|${reader.phase}|${reader.mode}`])
-
-      // Continuous mode starts at fit width too: without a single-page paint to
-      // learn the page size from, measure page one here.
-      useEffect(() => {
-        if (reader === null || reader.phase !== 'ready' || reader.mode !== 'continuous' || reader.scale !== null) return undefined
-        const doc = readerDoc.current
-        if (doc === null) return undefined
-        let cancelled = false
-        void doc.getPage(1).then(page => {
-          if (cancelled) return
-          const scale = fitScale(page.getViewport({ scale: 1 }).width)
-          setReader(previous => previous === null || previous.scale !== null ? previous : { ...previous, scale })
-        }).catch(() => {})
-        return () => { cancelled = true }
-      }, [fitScale, reader === null ? '' : `${reader.mode}|${reader.scale}|${reader.phase}`])
+      // The viewer paints pages itself; the workbench only records the scale a
+      // fresh document settled on, so the toolbar shows the fit width as 100%.
+      const readerScale = useCallback(scale => {
+        setReader(previous => previous === null || previous.scale !== null ? previous : { ...previous, scale })
+      }, [])
 
       const readerPage = useCallback(page => {
         setReader(previous => {
@@ -6905,7 +6991,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             busy: creatingKey !== '',
             forceNew: readerForceNew,
             wholeBook: book !== null && book.whole === true,
-            canvasRef: readerCanvas,
+            fitScale,
+            onScale: readerScale,
             stageRef: readerStage,
             paneRef: readerPane,
             onBack: closeReader,
