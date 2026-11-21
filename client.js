@@ -1546,7 +1546,8 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the dialog.
      */
     function SettingsDialog(props) {
-      const ready = props.envTools.python === true && props.envTools.tex === true
+      const envTools = props.envTools ?? { python: false, tex: false }
+      const ready = envTools.python === true && envTools.tex === true
       const openLink = url => {
         try {
           window.open(url, '_blank', 'noopener')
@@ -1567,13 +1568,13 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'md-settings-section' },
             h('h4', { className: 'md-settings-heading' }, format('envTitle')),
-            h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}`),
+            h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
             h('div', { className: 'md-settings-row' },
-              h('span', null, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
+              h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
               h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
             ),
             h('div', { className: 'md-settings-row' },
-              h('span', null, `${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
+              h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
               h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
             )
           ),
@@ -1612,6 +1613,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the page.
      */
     function LibrariesPage(props) {
+      const envTools = props.envTools ?? { python: false, tex: false }
       const [dir, setDir] = useState('')
       const [name, setName] = useState('')
       const [confirmId, setConfirmId] = useState('')
@@ -1795,7 +1797,7 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'md-tool-card', id: 'md-env-card' },
           h('h3', { className: 'md-subheading' }, format('envTitle')),
-          h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${props.envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${props.envTools.tex ? format('envOn') : format('envOff')}`),
+          h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
           h('div', { className: 'md-library-tools' },
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
@@ -5555,6 +5557,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         body = h(LibrariesPage, {
           libraries: libs.items,
           activeId: libs.activeId,
+          envTools,
           canRender: envTools.python && envTools.tex,
           busy: libBusy,
           error: libError,
