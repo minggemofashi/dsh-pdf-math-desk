@@ -43,6 +43,37 @@ for block in data.get("blocks", []):
         "text": content[:400],
     })
 
+
+def center(item):
+    return (item["bbox"][0] + item["bbox"][2] / 2, item["bbox"][1] + item["bbox"][3] / 2)
+
+
+# Superscripts/subscripts often arrive as their own tiny block. Merge them into
+# the nearest real block instead of dropping them, so the paragraph box covers
+# the small glyph too.
+tiny = [item for item in items if item["bbox"][3] < 0.028 and len(item["text"]) <= 8]
+keep = [item for item in items if item not in tiny]
+for small in tiny:
+    sx, sy = center(small)
+    nearest = None
+    best = 0.035
+    for candidate in keep:
+        cx, cy = center(candidate)
+        distance = abs(sy - cy)
+        if distance < best:
+            best = distance
+            nearest = candidate
+    if nearest is None:
+        keep.append(small)
+        continue
+    x0 = min(nearest["bbox"][0], small["bbox"][0])
+    y0 = min(nearest["bbox"][1], small["bbox"][1])
+    x1 = max(nearest["bbox"][0] + nearest["bbox"][2], small["bbox"][0] + small["bbox"][2])
+    y1 = max(nearest["bbox"][1] + nearest["bbox"][3], small["bbox"][1] + small["bbox"][3])
+    nearest["bbox"] = [x0, y0, x1 - x0, y1 - y0]
+    nearest["text"] = f"{nearest['text']} {small['text']}".strip()[:400]
+items = keep
+
 ordered = sorted(item["size"] for item in items)
 median = ordered[len(ordered) // 2] if ordered else 1.0
 for index, item in enumerate(items):
