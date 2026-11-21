@@ -116,6 +116,13 @@ export async function startChapterJob(options) {
       if (typeof options.overlayPath === 'string' && typeof options.toolsDir === 'string') {
         try {
           const sizes = JSON.parse(await capture(join(options.toolsDir, 'pdf_pagesizes.py'), [options.source]))
+          let fontPt = 0
+          try {
+            fontPt = Number(JSON.parse(await capture(join(options.toolsDir, 'pdf_fontsize.py'), [options.source]))) || 0
+          } catch {
+            fontPt = 0
+          }
+          const fontClass = fontPt >= 12.5 ? '12pt' : fontPt >= 11.2 ? '11pt' : fontPt >= 10 ? '10pt' : '9pt'
           const parts = []
           for (let index = 0; index < chunks.length; index += 1) {
             const size = sizes[index] ?? sizes[sizes.length - 1] ?? [595, 842]
@@ -124,6 +131,7 @@ export async function startChapterJob(options) {
             await writeFile(miniMd, chunks[index], 'utf8')
             await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
               MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
+              MATH_DESK_FONTSIZE: fontClass,
             })
             parts.push(miniPdf)
           }

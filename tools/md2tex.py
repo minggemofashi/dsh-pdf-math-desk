@@ -25,6 +25,11 @@ CHAPTERS = [
     ("c90", "附录_教材页码符号表自测", "附录 A　教材页码与定理编号"),
 ]
 
+def font_size():
+    raw = os.environ.get("MATH_DESK_FONTSIZE", "").strip()
+    return raw if raw in ("9pt", "10pt", "11pt", "12pt") else "11pt"
+
+
 def page_options():
     raw = os.environ.get("MATH_DESK_PAPER", "").strip()
     if "," in raw:
@@ -236,7 +241,7 @@ def convert(lines, chapter_title):
 
 def write_tex(path, body):
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(PREAMBLE % page_options())
+        handle.write(PREAMBLE.replace("11pt", font_size(), 1) % page_options())
         handle.write(body)
         handle.write("\\end{document}\n")
 

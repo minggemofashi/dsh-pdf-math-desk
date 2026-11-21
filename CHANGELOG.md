@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.45.2
+
+- 叠加版对齐字号：`tools/pdf_fontsize.py` 取原文正文字号中位数，overlay 渲染选用最接近的 9/10/11/12pt；
+- `md2tex.py` 支持 `MATH_DESK_FONTSIZE`；阅读版仍保持 11pt/A4。
+
 ## v0.45.1
 
 - 修复译文/叠加 PDF 404：书库扫描把 `_overlay.pdf` 当成了章节 PDF（只过滤了 `_translated`），导致章节 file 指向 overlay、变体路径再拼接后不存在；现在两种产物都忽略。
