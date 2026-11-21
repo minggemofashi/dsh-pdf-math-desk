@@ -5322,6 +5322,9 @@ window.__ModuleLoader__.load({
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; }
 .md-side .md-reader-state { margin: 16px; }
 .md-annot-readonly { pointer-events: none; }
+/* The reader's overlay boxes, read-only: below the ink, above the page. */
+.md-masks-readonly { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.md-masks-readonly .md-mask { border-color: color-mix(in srgb, rgb(40, 140, 235) 55%, transparent); }
 .md-root :focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-clearance, 48px) + 4px); }
 @container mathdesk (max-width: 620px) {
@@ -5380,6 +5383,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [docRev, setDocRev] = useState(0)
       const [annotRev, setAnnotRev] = useState(0)
       const [strokes, setStrokes] = useState([])
+      const [masks, setMasks] = useState([])
+      // The overlay/translated page the boxes reveal; loaded only when a box exists.
+      const [maskDoc, setMaskDoc] = useState(null)
+      const maskTask = useRef(null)
+      // Which `book|code|rev` the mask document belongs to, so a page change does
+      // not reload it.
+      const maskReady = useRef('')
       // Publishing starts only after the opening view has been adopted, so the
       // first render cannot push a default page 1 over the reader's page.
       const [started, setStarted] = useState(false)
@@ -5469,6 +5479,76 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setStrokes([])
         }
       }, [bookId, code, page, annotRev])
+
+      // The page's overlay boxes: same storage, same keys as the reader. A box
+      // is only useful with the translated page inside it, so the second
+      // document is loaded on demand (below) and never for a page without boxes.
+      useEffect(() => {
+        if (bookId === '' || code === '') return
+        try {
+          const raw = window.localStorage.getItem(`mathdesk:masks:${bookId}:${code}:${page}`)
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          setMasks(Array.isArray(parsed)
+            ? parsed.filter(mask => Number(mask.w) > 0 && Number(mask.h) > 0)
+            : [])
+        } catch {
+          setMasks([])
+        }
+      }, [bookId, code, page, annotRev])
+
+      // A new file version or another chapter invalidates the translated page.
+      // Declared before the loader below: its setup clears the ready marker the
+      // loader checks, so a re-render in the same commit still reloads.
+      useEffect(() => {
+        maskReady.current = ''
+        setMaskDoc(null)
+        return () => {
+          const task = maskTask.current
+          maskTask.current = null
+          if (task !== null) {
+            try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+          }
+        }
+      }, [bookId, code, docRev])
+
+      // The boxes reveal the overlay (or translated) page, the same documents the
+      // reader uses for the same job. Loaded once per file version, and only when
+      // the current page actually has boxes.
+      const wantsMaskDoc = masks.length > 0 && shownVariant !== 'translated'
+      useEffect(() => {
+        if (!wantsMaskDoc || bookId === '' || code === '') return undefined
+        const key = `${bookId}|${code}|${docRev}`
+        if (maskReady.current === key) return undefined
+        maskReady.current = key
+        let cancelled = false
+        void (async () => {
+          try {
+            const lib = await loadPdfjs()
+            for (const name of ['overlay', 'translated']) {
+              if (cancelled) return
+              const query = new URLSearchParams({ book: bookId, code, variant: name })
+              if (docRev > 0) query.set('rev', String(docRev))
+              const url = new URL(`mathdesk/pdf?${query.toString()}`, document.baseURI).href
+              const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+              try {
+                const loaded = await task.promise
+                if (cancelled) {
+                  try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+                  return
+                }
+                maskTask.current = task
+                setMaskDoc(loaded)
+                return
+              } catch {
+                try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+              }
+            }
+          } catch {
+            // no translation yet: the boxes simply stay empty
+          }
+        })()
+        return () => { cancelled = true }
+      }, [wantsMaskDoc, bookId, code, docRev])
 
       const fitScale = useCallback(baseWidth => {
         const node = stage.current
@@ -5602,6 +5682,34 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
         }, entry.text)))
 
+      // The boxes, read-only: each one clips the translated page to its own
+      // region, exactly as the reader's overlay layer does.
+      const masksLayer = masks.length === 0 || maskDoc === null || shownVariant === 'translated'
+        ? null
+        : h('div', { className: 'md-masks-readonly', 'aria-hidden': true },
+          masks.map((mask, index) => h('div', {
+            key: `${mask.x}-${mask.y}-${index}`,
+            className: 'md-mask',
+            style: {
+              left: `${mask.x * 100}%`,
+              top: `${mask.y * 100}%`,
+              width: `${mask.w * 100}%`,
+              height: `${mask.h * 100}%`,
+            },
+          }, h(OverlayMaskPage, {
+            doc: maskDoc,
+            pageNumber: page,
+            zoom: scale ?? 1,
+            style: {
+              position: 'absolute',
+              left: `${-(mask.x / mask.w) * 100}%`,
+              top: `${-(mask.y / mask.h) * 100}%`,
+              width: `${100 / mask.w}%`,
+              height: `${100 / mask.h}%`,
+              maxWidth: 'none',
+            },
+          }))))
+
       const shown = scale ?? 1
       const body = target === null
         ? h('div', { className: 'md-reader-state', role: 'alert' }, format('sideForeign'))
@@ -5632,7 +5740,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onVisible,
               registerSlot,
               onError,
-              children: annotLayer,
+              children: masksLayer === null ? annotLayer : [masksLayer, annotLayer],
             })
 
       return h('div', { className: 'md-side', 'data-mode': mode },
