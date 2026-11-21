@@ -238,6 +238,7 @@ ctx.contextMenus.register({
 - **自定义 target kind**：`ContextMenuTargetMap` 是 TS 声明合并表，运行时不校验 kind，外部插件自定义 kind 属于预期用法；但若将来 DSH 加了运行时校验，菜单会静默不弹（阅读功能不受影响）。
 - **样式注入**：`document.head` 里多一份样式表；与页面内 `<style>` 内容相同，重复无害。
 - **标注与遮罩画在当前页上（v0.70.0）**：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在当前页的页面盒里渲染，所以连续/双语也能写；跨页连续画仍不支持（图层跟着当前页走），翻页时未保存的草稿会关闭。
+- **双栏页码与两栏对齐（v0.72.4）**：两栏各自滚动，画笔层只画在 `reader.page` 上，所以进入双语时先把两栏滚到当前页（`alignColumn` 用每栏自己的 slot 表算 `scrollTop`，不依赖 `scrollIntoView`），并让**两栏都驱动页码**：滚动哪一栏，另一栏跟到同一页（`dualLastSide` 记住谁在动，程序滚动期间 `dualAligning` 忽略观察器回报，避免自己触发自己）。翻页框/前后页按键（`reader.jump`）则两栏一起跳。
 - **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('mathdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
 - **撤销/重做按页记录两端的编辑**（v0.71.0）：`pageHistory` 是 `book|code|page` 为键的模块级栈（上限 40 步），阅读器和右栏共用，所以哪一栏写的都能被另一栏的 ↶ 撤回；一次撤销同时恢复笔迹与框选。
 - **遮罩的内存代价（v0.68.0 已降）**：整页只栅格化一次，所有框共用同一张位图（阅读器复用已有的整页 JPEG；右侧预览按页缓存最近两张）。以前是每个框一张整页 canvas。

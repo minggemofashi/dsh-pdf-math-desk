@@ -5288,10 +5288,36 @@ window.__ModuleLoader__.load({
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
         visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
       }, [props.onVisible])
-      // The right column never drives the page: keep its callbacks stable too,
-      // so its IntersectionObservers are not recreated on every render.
-      const ignoreVisible = useCallback(() => {}, [])
-      const ignoreSlot = useCallback(() => {}, [])
+      // Bilingual columns scroll independently, so the page being read can drift
+      // away from the page the ink layer sits on. Both columns therefore drive
+      // the page, and the other column is scrolled to the same page: the boxes
+      // and the pen are always on screen.
+      const dualSlots = useRef({ left: new Map(), right: new Map() })
+      const dualLastSide = useRef('left')
+      const dualAligning = useRef(false)
+      const pageNow = useRef(reader.page)
+      pageNow.current = reader.page
+      const registerDualLeft = useCallback((page, node) => { dualSlots.current.left.set(page, node) }, [])
+      const registerDualRight = useCallback((page, node) => { dualSlots.current.right.set(page, node) }, [])
+      const alignColumn = (side, page) => {
+        const column = side === 'left' ? dualLeft.current : dualRight.current
+        const node = dualSlots.current[side].get(page)
+        if (column === null || node === undefined || node === null) return
+        const top = node.getBoundingClientRect().top - column.getBoundingClientRect().top + column.scrollTop
+        if (Math.abs(column.scrollTop - top) <= 4) return
+        // Writing scrollTop fires the column's observer: ignore its reports for a
+        // moment so the sync itself never feeds the page number back.
+        dualAligning.current = true
+        column.scrollTop = Math.max(0, top)
+        setTimeout(() => { dualAligning.current = false }, 650)
+      }
+      const notifyDual = useCallback((page, side) => {
+        if (dualAligning.current) return
+        dualLastSide.current = side
+        notifyVisible(page)
+      }, [notifyVisible])
+      const onVisibleLeft = useCallback(page => notifyDual(page, 'left'), [notifyDual])
+      const onVisibleRight = useCallback(page => notifyDual(page, 'right'), [notifyDual])
 
       // Explicit page changes (buttons, the page box, restore) scroll the
       // continuous column; pages reported by scrolling itself do not, so this
@@ -5340,6 +5366,36 @@ window.__ModuleLoader__.load({
         if (!changed || reader.mode !== 'continuous' || reader.phase !== 'ready') return
         scrollToPage(reader.page)
       }, [reader.mode, reader.scale, reader.phase, scrollToPage])
+      // Entering the bilingual view builds two fresh scroll containers at the top
+      // of the chapter; land them on the page being read so the ink layer (which
+      // only exists for that page) is in view, and let the lazy pages settle.
+      useEffect(() => {
+        if (!dual || dualDoc === null) return undefined
+        const jump = () => {
+          alignColumn('left', pageNow.current)
+          alignColumn('right', pageNow.current)
+        }
+        jump()
+        const timers = [120, 420, 900].map(ms => setTimeout(jump, ms))
+        return () => timers.forEach(timer => clearTimeout(timer))
+        // alignColumn closes over refs only.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [dual, dualDoc])
+      // Scrolling either column updates the page; keep the other column on it, so
+      // both columns always show the page the annotations belong to. The column
+      // that was scrolled is left alone (no snapping under the pointer).
+      useEffect(() => {
+        if (!dual || dualDoc === null) return
+        alignColumn(dualLastSide.current === 'left' ? 'right' : 'left', reader.page)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [reader.page, dual, dualDoc])
+      // Pager, page box and keys jump both columns, not just the one that moved.
+      useEffect(() => {
+        if (!dual || dualDoc === null) return
+        alignColumn('left', reader.page)
+        alignColumn('right', reader.page)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [reader.jump, dual, dualDoc])
       // Scroll mode: derive the page from the slot nearest the stage top, so
       // the page indicator matches what the reader actually sees.
       useEffect(() => {
@@ -5893,8 +5949,8 @@ window.__ModuleLoader__.load({
                   page: reader.page,
                   scale: reader.scale ?? 1,
                   rootRef: dualLeft,
-                  onVisible: notifyVisible,
-                  registerSlot,
+                  onVisible: onVisibleLeft,
+                  registerSlot: registerDualLeft,
                   onError: props.onError,
                   overlay: annotLayer('left'),
                   overlayPage: reader.page,
@@ -5938,8 +5994,8 @@ window.__ModuleLoader__.load({
                   page: reader.page,
                   scale: rightScale ?? reader.scale ?? 1,
                   rootRef: dualRight,
-                  onVisible: ignoreVisible,
-                  registerSlot: ignoreSlot,
+                  onVisible: onVisibleRight,
+                  registerSlot: registerDualRight,
                   onError: props.onError,
                   overlay: annotLayer('right'),
                   overlayPage: reader.page,
