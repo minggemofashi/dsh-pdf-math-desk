@@ -1597,19 +1597,13 @@ window.__ModuleLoader__.load({
           h('p', { className: 'md-shelf-sub' }, format('manualStructure')),
           h('p', { className: 'md-shelf-sub' }, format('manualSplit')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhole')),
-          h('p', { className: 'md-shelf-sub' }, format('manualSession'))
-        ),
-        h('details', { className: 'md-details', style: { order: 4 } },
-          h('summary', { className: 'md-details-summary' }, format('aiPromptTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('manualSession')),
           h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
           h('code', { className: 'md-path' }, format('aiPromptText')),
           h('button', {
             type: 'button', className: 'md-btn md-btn-small',
             onClick: props.onCopyPrompt,
-          }, format('aiPromptCopy'))
-        ),
-        h('details', { className: 'md-details', style: { order: 4 } },
-          h('summary', { className: 'md-details-summary' }, format('libraryPathsTitle')),
+          }, format('aiPromptCopy')),
           h('div', { className: 'md-manual-path' },
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
