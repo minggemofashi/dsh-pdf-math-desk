@@ -2002,7 +2002,7 @@ window.__ModuleLoader__.load({
       const items = state !== undefined && Array.isArray(state.items) ? state.items : []
       const truncated = state !== undefined && state.truncated === true
       // Long chapters get a lot of products; collapse long lists by default.
-      const [collapsed, setCollapsed] = useState(() => items.length > 5)
+      const [collapsed, setCollapsed] = useState(false)
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
       const row = (item, index) => h('li', { key: `${index}:${item.name}` },
         h('button', {
@@ -2090,12 +2090,10 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'md-artifacts-head' },
           h('span', { className: 'md-artifacts-title' }, format('artifactsTitle')),
-          items.length > 5
-            ? h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              onClick: () => setCollapsed(value => !value),
-            }, collapsed ? format('artifactsExpand') : format('artifactsCollapse'))
-            : null,
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+            onClick: () => setCollapsed(value => !value),
+          }, collapsed ? format('artifactsExpand') : format('artifactsCollapse')),
           phase === 'ready' && items.length > 0 && !truncated
             ? h('span', { className: 'md-session-count' }, format('filesCount', { n: items.length }))
             : null,
@@ -2510,6 +2508,7 @@ window.__ModuleLoader__.load({
      */
     function ChapterRow(props) {
       const chapter = props.chapter
+      const [sessionsOpen, setSessionsOpen] = useState(true)
       const open = props.open
       const detailId = `md-detail-${encodeURIComponent(props.bookId)}-${chapter.code}`
       const kindKey = chapter.kind !== undefined && chapter.kind !== 'chapter' ? `kind.${chapter.kind}` : ''
@@ -2548,20 +2547,14 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-detail-actions' },
             h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => props.onOpenPdf(chapter) }, format('openPdf'))
           ),
-          h(ChapterArtifacts, {
-            bookId: props.bookId,
-            bookTitle: props.bookTitle,
-            code: chapter.code,
-            state: props.artifacts,
-            onOpen: item => props.onOpenArtifact(chapter, item),
-            onRetry: props.onRetryArtifacts,
-            onReload: props.onReloadArtifacts,
-            onRender: (item, code) => props.onRenderArtifact(item, code),
-            onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
-            onCopyPath: props.onCopyPath,
-            registerRef: props.registerFileRef,
-          }),
-          h(ChapterSessions, {
+          h('div', { className: 'md-detail-actions' },
+            h('span', { className: 'md-detail-key' }, format('sessionsTitle')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              onClick: () => setSessionsOpen(value => !value),
+            }, sessionsOpen ? format('artifactsCollapse') : format('artifactsExpand'))
+          ),
+          sessionsOpen ? h(ChapterSessions, {
             chapter,
             groups: props.groups,
             creatingMode: props.creatingMode,
@@ -2580,6 +2573,19 @@ window.__ModuleLoader__.load({
             onRenameInput: props.onRenameInput,
             onCommitRename: props.onCommitRename,
             onCancelRename: props.onCancelRename,
+          }) : null,
+          h(ChapterArtifacts, {
+            bookId: props.bookId,
+            bookTitle: props.bookTitle,
+            code: chapter.code,
+            state: props.artifacts,
+            onOpen: item => props.onOpenArtifact(chapter, item),
+            onRetry: props.onRetryArtifacts,
+            onReload: props.onReloadArtifacts,
+            onRender: (item, code) => props.onRenderArtifact(item, code),
+            onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
+            onCopyPath: props.onCopyPath,
+            registerRef: props.registerFileRef,
           })
         ) : null
       )
