@@ -135,7 +135,7 @@ function runTool(script, args) {
         reject(new Error('没有可用的 Python'))
         return
       }
-      execFile(pythons[index], [script, ...args], { timeout: 180000, windowsHide: true }, error => {
+      execFile(pythons[index], [script, ...args], { timeout: 240000, windowsHide: true }, error => {
         if (error === null) resolve()
         else next(index + 1)
       })
@@ -726,6 +726,42 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, pdf: basename(outPath) })
         } catch (error) {
           fail(response, 500, 'rebuild-overlay-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/realign-overlay`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          let pages = []
+          try {
+            pages = (await readdir(cacheDir)).filter(name => /^page-\d+\.md$/.test(name))
+          } catch {
+            pages = []
+          }
+          if (pages.length === 0) {
+            fail(response, 404, 'no-cache', '还没有可复用的逐页译文，请先翻译这一章')
+            return
+          }
+          const outPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
+          // This is an approximation built from cached text, so the overlay it
+          // replaces stays next to it as `.bak` instead of just vanishing.
+          await copyFile(outPath, `${outPath}.bak`).catch(() => {})
+          await runTool(join(config.toolsDir, 'realign_overlay.py'), [source, cacheDir, outPath, config.toolsDir])
+          sendJson(response, 200, { ok: true, pdf: basename(outPath) })
+        } catch (error) {
+          fail(response, 500, 'realign-overlay-failed', String(error && error.message ? error.message : error))
         }
         return
       }

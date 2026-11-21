@@ -245,6 +245,11 @@ window.__ModuleLoader__.load({
       overlayFallback: '叠加层 PDF 不可用：框内是整页译文的对应区域，位置可能对不齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文；重新翻译本章可重建',
       overlayReflow: '这一章的叠加层是整页重排，字号与位置跟原文不同；要逐位置对齐请重新翻译本章（会按块），或改用「双语」对照',
+      overlayRealign: '按段落重建（零 token）',
+      overlayRealignHint: '用缓存的整页译文按段落位置重排叠加层，不调用模型；属于近似对齐，合并过的段落可能偏小',
+      overlayRealignWorking: '正在按段落重建叠加层…',
+      overlayRealignDone: '叠加层已按段落重建：译文按原段落位置放置（近似对齐；要按块精确对齐可重新翻译本章）',
+      overlayRealignFailed: '按段落重建失败',
       overlayLoading: '正在准备叠加层…',
       overlayTwoColumns: '这一页疑似双栏：叠加位置可能不准，逐段对照建议用「双语」',
       translateAction: '翻译本页',
@@ -651,6 +656,11 @@ window.__ModuleLoader__.load({
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page and may not line up',
       overlayEmpty: 'This overlay page has no text, so its boxes stay empty; translate the chapter again to rebuild it',
       overlayReflow: 'This chapter was translated page by page, so the overlay was reflowed and its type size and position differ from the original; re-translate the chapter for block-aligned boxes, or use the bilingual view',
+      overlayRealign: 'Rebuild by paragraph (no tokens)',
+      overlayRealignHint: 'Re-flow the overlay from the cached page text, without calling the model; approximate, and a merged paragraph may come out smaller',
+      overlayRealignWorking: 'Rebuilding the overlay by paragraph…',
+      overlayRealignDone: 'Overlay rebuilt by paragraph: the translation now sits at the original paragraph positions (approximate; translate the chapter again for block-level alignment)',
+      overlayRealignFailed: 'Rebuilding the overlay failed',
       overlayLoading: 'Preparing the overlay layer…',
       overlayTwoColumns: 'This page looks two-column: the overlay boxes may be off; use the bilingual view for a reliable reading',
       translateAction: 'Translate page',
@@ -971,15 +981,18 @@ window.__ModuleLoader__.load({
 
     /**
      * Call one plugin route and unwrap its `{ ok }` envelope. A call that does
-     * not answer within {@link REQUEST_TIMEOUT_MS} rejects with `timeout`.
+     * not answer within the timeout rejects with `timeout`; long jobs (rendering
+     * a whole chapter) pass their own budget.
      * @param {string} method - HTTP method.
      * @param {string} path - route suffix under `/mathdesk/`.
      * @param {unknown} [body] - JSON body for mutations.
+     * @param {number} [timeoutMs] - how long to wait, in milliseconds.
      * @returns {Promise<any>} the response payload.
      */
-    function request(method, path, body) {
+    function request(method, path, body, timeoutMs) {
+      const budget = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS
       const controller = typeof AbortController === 'function' ? new AbortController() : null
-      const timer = controller === null ? null : setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+      const timer = controller === null ? null : setTimeout(() => controller.abort(), budget)
       const init = {
         method,
         credentials: 'same-origin',
@@ -4353,6 +4366,11 @@ window.__ModuleLoader__.load({
       const noteText = useRef('')
       const [translatedImage, setTranslatedImage] = useState('')
       const [overlayNote, setOverlayNote] = useState('')
+      // The overlay PDF can be a whole-page reflow (a chapter translated page by
+      // page). That is what the box reveal cannot line up with, and it is what
+      // "realign from cached text" rebuilds, so the note carries the button.
+      const [overlayReflow, setOverlayReflow] = useState(false)
+      const [realigning, setRealigning] = useState(false)
       const overlaySource = useRef('')
       const overlayLayer = useRef(null)
       const overlayStart = useRef(null)
@@ -4670,6 +4688,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!overlay || dualDoc === null) {
           setTranslatedImage('')
+          setOverlayReflow(false)
           return undefined
         }
         let cancelled = false
@@ -4681,6 +4700,7 @@ window.__ModuleLoader__.load({
           // there. Say it out loud: a blank reveal would just look English.
           if (rendered.url === '') {
             setTranslatedImage('')
+            setOverlayReflow(false)
             if (overlaySource.current === 'overlay') setOverlayNote(format('overlayEmpty'))
             return
           }
@@ -4688,11 +4708,16 @@ window.__ModuleLoader__.load({
           // A positioned overlay is one page per page. More (or fewer) pages
           // mean it was built by reflowing whole pages, so its type size and
           // line positions do not sit on the original's: say that instead of
-          // letting the box reveal look broken.
+          // letting the box reveal look broken. The note then offers a free
+          // rebuild from the cached per-page text.
           if (overlaySource.current === 'overlay') {
+            const reflow = dualDoc.numPages !== reader.count
+            setOverlayReflow(reflow)
             if (!rendered.hasText) setOverlayNote(format('overlayEmpty'))
-            else if (dualDoc.numPages !== reader.count) setOverlayNote(format('overlayReflow'))
+            else if (reflow) setOverlayNote(format('overlayReflow'))
             else setOverlayNote('')
+          } else {
+            setOverlayReflow(false)
           }
         })()
         return () => {
@@ -4765,6 +4790,25 @@ window.__ModuleLoader__.load({
           if (next.length > 0) savePageMasks(next)
         } catch {
           // no cached blocks for this page: leave the current boxes alone
+        }
+      }
+      // Rebuild the overlay from the cached page text, placed on the original's
+      // paragraphs. Zero API calls; the Host keeps the replaced overlay as
+      // `.bak`. It is an approximation (a merged paragraph may come out smaller),
+      // but the boxes then reveal text where the original text sits.
+      const realignOverlay = async () => {
+        if (realigning) return
+        setRealigning(true)
+        updateNote(format('overlayRealignWorking'))
+        try {
+          await request('POST', 'realign-overlay', { book: reader.bookId, code: reader.code }, 180000)
+          updateNote(format('overlayRealignDone'))
+          setDocRev(value => value + 1)
+        } catch (error) {
+          const message = error !== null && error !== undefined && error.message ? error.message : String(error)
+          updateNote(`${format('overlayRealignFailed')}：${message}`)
+        } finally {
+          setRealigning(false)
         }
       }
 
@@ -5679,7 +5723,15 @@ window.__ModuleLoader__.load({
             : null,
         overlay && (overlayNote !== '' || translatedImage === '')
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
-            overlayNote === '' ? format('overlayLoading') : overlayNote)
+            overlayNote === '' ? format('overlayLoading') : overlayNote,
+            overlayReflow
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: realigning,
+                title: format('overlayRealignHint'),
+                onClick: () => { void realignOverlay() },
+              }, realigning ? format('overlayRealignWorking') : format('overlayRealign'))
+              : null)
           : null,
         dual && dualDoc === null
           ? h('div', { className: 'md-reader-stage' },

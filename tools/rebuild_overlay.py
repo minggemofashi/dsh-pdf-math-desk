@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="rebuild-overlay-") as work:
         result = subprocess.run(
             [sys.executable, os.path.join(tools_dir, "md2overlay.py"), blocks_path, page_pdf,
              str(size[0]), str(size[1]), font_class],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
         )
         if os.path.exists(page_pdf):
             merged.insert_pdf(fitz.open(page_pdf))

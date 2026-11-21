@@ -5,11 +5,11 @@ Usage:
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 
-from md2tex import cjk_font, convert
+from md2tex import cjk_font, convert, sanitize_display_math
 
 blocks_path, out_path = sys.argv[1], sys.argv[2]
 page_width = float(sys.argv[3])
@@ -129,16 +129,23 @@ for block in blocks:
     w_pt = max(40.0, min(width * page_width, page_width - x_pt - 4.0))
     # Very narrow boxes ("if dim V = n.") cannot hold one Chinese line at body
     # size and used to collapse to 4pt after wrapping. A slightly smaller face
-    # keeps them on one line and inside the box.
-    body_pt = font_pt * 0.8 if w_pt < 90.0 else font_pt
+    # keeps them on one line and inside the box. The block's own printed size
+    # (pdf_blocks reports it relative to the page's body text) keeps headings
+    # and titles at their larger look instead of shrinking them to body size.
+    block_scale = float(block.get("size") or 1.0)
+    block_scale = max(0.85, min(1.6, block_scale))
+    body_pt = font_pt * block_scale * (0.8 if w_pt < 90.0 else 1.0)
     if room < body_pt * 2.6 and "$$" in md:
         # Too little room for a display equation: keep the math inline, including
         # prose that carries an inline `$$...$$` fragment.
         body = inline_formula(md)
         if body == "":
-            body = convert(md.replace("$$", "$").split("\n"), "")
+            body = convert(md.replace("$$", "$").split("\n"), "", drop_leading_heading=False)
     if body == "":
-        body = convert(md.split("\n"), "")
+        # Same normalization the reading PDF gets: display math rebuilt on its own
+        # lines. Without it, a one-line `$$...$$` swallowed the prose after it and
+        # the paragraph came out as broken math.
+        body = convert(sanitize_display_math(md).split("\n"), "", drop_leading_heading=False)
     if body.strip() == "":
         continue
     # Cap the block at the white space below it: a Chinese paragraph is often
@@ -170,18 +177,24 @@ tex = r"""\documentclass[UTF8,%s]{ctexart}
 \end{document}
 """ % (font_class, page_width / 72.0, page_height / 72.0, cjk_font(), "\n".join(parts))
 
-work = tempfile.mkdtemp(prefix="md2overlay-")
+# Build next to the output instead of a fresh temp directory: some sandboxes
+# allow writes in the destination directory but not in a mkdtemp directory.
+work = os.path.abspath(out_path) + ".work"
+os.makedirs(work, exist_ok=True)
 tex_path = os.path.join(work, "doc.tex")
 pdf_path = os.path.join(work, "doc.pdf")
-with open(tex_path, "w", encoding="utf-8") as handle:
-    handle.write(tex)
+try:
+    with open(tex_path, "w", encoding="utf-8") as handle:
+        handle.write(tex)
 
-result = subprocess.run(
-    ["xelatex", "-interaction=nonstopmode", "doc.tex"],
-    cwd=work, capture_output=True, text=True, timeout=180,
-)
-if not os.path.exists(pdf_path):
-    raise SystemExit("xelatex failed: " + (result.stdout or "")[-800:])
+    result = subprocess.run(
+        ["xelatex", "-interaction=nonstopmode", "doc.tex"],
+        cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    if not os.path.exists(pdf_path):
+        raise SystemExit("xelatex failed: " + (result.stdout or "")[-800:])
 
-os.replace(pdf_path, out_path)
+    os.replace(pdf_path, out_path)
+finally:
+    shutil.rmtree(work, ignore_errors=True)
 print(out_path)

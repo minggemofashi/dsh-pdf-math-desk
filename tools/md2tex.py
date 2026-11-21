@@ -139,12 +139,18 @@ def normalize_math_delimiters(text):
     return text
 
 
-def convert(lines, chapter_title):
+def convert(lines, chapter_title, drop_leading_heading=True):
+    """Markdown lines to LaTeX body.
+
+    `drop_leading_heading` skips a leading `##` line, which is how a whole
+    document avoids printing its own title twice. A single block being placed at
+    its bbox has no such duplicate, so the overlay renderer turns it off.
+    """
     lines = [normalize_math_delimiters(line) for line in lines]
     out = []
     if chapter_title:
         out.append("\\section*{%s}\n" % inline(chapter_title))
-    i = 1 if lines and re.match(r"^##\s", lines[0]) else 0
+    i = 1 if drop_leading_heading and lines and re.match(r"^##\s", lines[0]) else 0
     buffer = []
     list_kind = None
     list_items = []
@@ -250,10 +256,14 @@ def convert(lines, chapter_title):
             flush_list()
             block = [raw.strip()]
             i += 1
-            while i < len(lines) and "$$" not in lines[i]:
+            # A `$$ … $$` that fits one line closes on that line; looking only at
+            # the following lines swallowed the rest of the page into display
+            # math whenever the caller had not normalized the block first.
+            closed = raw.count("$$") >= 2
+            while not closed and i < len(lines) and "$$" not in lines[i]:
                 block.append(lines[i].strip())
                 i += 1
-            if i < len(lines):
+            if not closed and i < len(lines):
                 block.append(lines[i].strip())
                 i += 1
             body = " ".join(block).replace("$$", "").strip()
