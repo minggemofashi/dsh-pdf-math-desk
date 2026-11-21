@@ -4601,7 +4601,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (options !== undefined && options.jump === true) {
             await flushSave()
             openHostSession(sessionId)
-            if (!(options !== undefined && options.skipPdf === true)) void openPdfInSession(sessionId)
           }
           if (draftReference !== null) {
             try { draftReference.release() } catch { /* already released */ }
@@ -4650,7 +4649,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (ratio < limit) {
             await flushSave()
             openHostSession(current.id)
-            void openPdfInSession(current.id)
             showNotice(format('sessionResumed', {
               mode: format(`mode.${mode}`),
               pct: known ? Math.round(ratio * 100) : '?',
