@@ -2552,7 +2552,7 @@ window.__ModuleLoader__.load({
             }, format('renderAction'))
             : null
           ),
-          (item.kind === 'pdf' || props.allowNonPdfDelete === true)
+          (item.kind === 'pdf' || props.allowNonPdfDelete === true || /_export\.annots\.json$/i.test(String(item.name ?? '')))
             ? h('span', {
               className: 'md-file-action', role: 'button', tabIndex: 0,
               title: format('trashFileHint'),
