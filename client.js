@@ -3009,8 +3009,11 @@ window.__ModuleLoader__.load({
 .md-book-meta { display: flex; gap: 10px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--dsw-alias-border-l2); }
 .md-chapter { border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.md-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto auto 18px; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 11px 8px; font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 8px; cursor: pointer; }
+.md-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto auto 18px; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 11px 8px; font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 8px; cursor: pointer; transition: background .15s ease, transform .12s ease; }
 .md-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.md-row:active { transform: scale(.998); }
+.md-detail { animation: md-detail-in .16s ease-out; }
+@keyframes md-detail-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .md-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--dsw-alias-label-secondary); letter-spacing: .02em; }
 .md-ch-title { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-session-count { font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
