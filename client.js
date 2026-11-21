@@ -136,6 +136,7 @@ window.__ModuleLoader__.load({
       blocksToggle: '块',
       blocksHint: '显示/隐藏文本块边框（调试）',
       translateAction: '翻译本页',
+      translateChapterAction: '翻译本章',
       translating: '翻译中…',
       translateDone: '已生成',
       translateFailed: '翻译失败',
@@ -423,6 +424,7 @@ window.__ModuleLoader__.load({
       blocksToggle: 'Blocks',
       blocksHint: 'Show or hide text block boxes (debug)',
       translateAction: 'Translate page',
+      translateChapterAction: 'Translate chapter',
       translating: 'Translating…',
       translateDone: 'Created',
       translateFailed: 'Translation failed',
@@ -2887,41 +2889,79 @@ window.__ModuleLoader__.load({
       const runTranslate = async () => {
         if (translating || props.doc === null || props.doc === undefined) return
         setTranslating(true)
-        setTranslateNote(format('translating'))
+        const total = reader.count > 0 ? reader.count : 1
+        const chunks = []
         try {
-          const page = await props.doc.getPage(reader.page)
-          const base = page.getViewport({ scale: 1 })
-          const scale = Math.min(2, Math.max(1, 1400 / base.width))
-          const viewport = page.getViewport({ scale })
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.floor(viewport.width)
-          canvas.height = Math.floor(viewport.height)
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-          const image = canvas.toDataURL('image/jpeg', 0.86)
-          const controller = typeof AbortController === 'function' ? new AbortController() : null
-          const timer = controller === null ? null : setTimeout(() => controller.abort(), 240000)
-          const response = await fetch(ENDPOINT + 'translate-page', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { accept: 'application/json', 'content-type': 'application/json' },
-            body: JSON.stringify({
-              book: reader.bookId,
-              code: reader.code,
-              name: `${reader.fileName}.pdf`,
-              target: translateTarget,
-              image,
-            }),
-            signal: controller === null ? undefined : controller.signal,
-          })
-          if (timer !== null) clearTimeout(timer)
-          const payload = await response.json().catch(() => null)
-          if (!response.ok || payload === null || payload.ok !== true) {
-            const message = payload !== null && payload.error !== undefined && payload.error.message !== undefined
-              ? payload.error.message
-              : `HTTP ${response.status}`
-            throw new Error(message)
+          for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
+            setTranslateNote(`${format('translating')} ${pageNumber}/${total}`)
+            const page = await props.doc.getPage(pageNumber)
+            const base = page.getViewport({ scale: 1 })
+            const scale = Math.min(2, Math.max(1, 1400 / base.width))
+            const viewport = page.getViewport({ scale })
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.floor(viewport.width)
+            canvas.height = Math.floor(viewport.height)
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+            const image = canvas.toDataURL('image/jpeg', 0.86)
+            const controller = typeof AbortController === 'function' ? new AbortController() : null
+            const timer = controller === null ? null : setTimeout(() => controller.abort(), 240000)
+            let payload = null
+            try {
+              const response = await fetch(ENDPOINT + 'translate-page', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { accept: 'application/json', 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  book: reader.bookId,
+                  code: reader.code,
+                  target: translateTarget,
+                  mdOnly: true,
+                  image,
+                }),
+                signal: controller === null ? undefined : controller.signal,
+              })
+              payload = await response.json().catch(() => null)
+              if (!response.ok || payload === null || payload.ok !== true) {
+                const message = payload !== null && payload.error !== undefined && payload.error.message !== undefined
+                  ? payload.error.message
+                  : `HTTP ${response.status}`
+                throw new Error(message)
+              }
+            } finally {
+              if (timer !== null) clearTimeout(timer)
+            }
+            if (typeof payload.md !== 'string' || payload.md.trim() === '') {
+              throw new Error(`第 ${pageNumber} 页没有返回译文`)
+            }
+            chunks.push(payload.md)
           }
-          setTranslateNote(`${format('translateDone')}：${payload.pdf}`)
+          setTranslateNote(`${format('translating')} ${total}/${total}`)
+          const controller = typeof AbortController === 'function' ? new AbortController() : null
+          const timer = controller === null ? null : setTimeout(() => controller.abort(), 300000)
+          let done = null
+          try {
+            const response = await fetch(ENDPOINT + 'translate-render', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { accept: 'application/json', 'content-type': 'application/json' },
+              body: JSON.stringify({
+                book: reader.bookId,
+                code: reader.code,
+                md: chunks.join('\n\n'),
+              }),
+              signal: controller === null ? undefined : controller.signal,
+            })
+            done = await response.json().catch(() => null)
+            if (!response.ok || done === null || done.ok !== true) {
+              const message = done !== null && done.error !== undefined && done.error.message !== undefined
+                ? done.error.message
+                : `HTTP ${response.status}`
+              throw new Error(message)
+            }
+          } finally {
+            if (timer !== null) clearTimeout(timer)
+          }
+          setTranslateNote(`${format('translateDone')}：${done.pdf}`)
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           setTranslateNote(`${format('translateFailed')}：${message}`)
@@ -3040,7 +3080,7 @@ window.__ModuleLoader__.load({
               disabled: translating || reader.phase !== 'ready',
               title: format('translateHint'),
               onClick: () => { void runTranslate() },
-            }, translating ? format('translating') : format('translateAction'))
+            }, translating ? format('translating') : format('translateChapterAction'))
           ),
           false
             ? null
@@ -3110,7 +3150,7 @@ window.__ModuleLoader__.load({
           return undefined
         }
         let cancelled = false
-        request('GET', `translated-info?book=${encodeURIComponent(props.bookId)}&name=${encodeURIComponent(`${chapter.file}.pdf`)}`)
+        request('GET', `translated-info?book=${encodeURIComponent(props.bookId)}&code=${encodeURIComponent(chapter.code)}&name=${encodeURIComponent(`${chapter.file}.pdf`)}`)
           .then(payload => {
             if (!cancelled && payload !== null && payload.exists === true) setTranslatedPdf(String(payload.pdf))
           })
@@ -3172,7 +3212,7 @@ window.__ModuleLoader__.load({
                 if (typeof window !== 'undefined' && typeof window.confirm === 'function'
                   && !window.confirm(format('translatedDeleteConfirm'))) return
                 try {
-                  await request('POST', 'trash-translated', { book: props.bookId, name: `${chapter.file}.pdf` })
+                  await request('POST', 'trash-translated', { book: props.bookId, code: chapter.code, name: `${chapter.file}.pdf` })
                   setTranslatedPdf('')
                 } catch (error) {
                   window.alert(error !== null && error !== undefined && error.message ? error.message : String(error))

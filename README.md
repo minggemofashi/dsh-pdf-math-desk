@@ -137,12 +137,12 @@ DSH → Plugins → Add plugin → 选择本目录。
 
 ## 翻译（实验，M2）
 
-阅读器工具条有语言选择与「翻译本页」：
+阅读器工具条有语言选择与「翻译本章」：
 
 - 把**当前页**渲染成图片，交给 DeepSeek 视觉模型（`deepseek-flash`）转成 Markdown；
 - 公式要求原样保留为 `$...$` / `$$...$$`，再用本机 `md2tex.py` 渲染；
 - 产物为 `<原 PDF 名>_translated.pdf`，出现在该章「产物」里；中间 md 不保留、不展示；
-- 目前只支持**单页**，整章翻译在 M6；
+- 按**整章**翻译：逐页渲染、逐页调用，最后合成一份 `<原文件名>_translated.pdf`；
 - 需要配置 DeepSeek API Key（二选一）：
   - 环境变量 `DEEPSEEK_API_KEY`（启动 DSH 前设置）；
   - 插件配置项 `deepseekApiKey`。

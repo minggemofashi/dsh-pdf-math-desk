@@ -124,10 +124,9 @@ export function createHandler(config, options = {}) {
  */
 async function chapterPdf(library, bookId, code) {
   const current = await catalog()
-  const book = Array.isArray(current.books) ? current.books.find(item => item.id === bookId) : undefined
-  const chapter = resolveChapter(current, bookId, code)
-  if (book === undefined || chapter === null) return null
-  const source = chapterPdfPath(library, book, chapter)
+  const match = resolveChapter(current, bookId, code)
+  if (match.ok !== true) return null
+  const source = chapterPdfPath(library, match.book, match.chapter)
   return source.ok ? source.path : null
 }
 
@@ -330,17 +329,6 @@ async function activeLibrary() {
             return
           }
           const target = body.target === 'zh' ? 'zh' : 'en'
-          const catalog = await loadCatalog(config)
-          const chapter = resolveChapter(catalog, body.book, body.code)
-          if (chapter === null) {
-            fail(response, 404, 'no-chapter', '找不到这一章')
-            return
-          }
-          const name = basename(String(body.name ?? ''))
-          if (!/\.pdf$/i.test(name)) {
-            fail(response, 400, 'bad-name', '只支持 PDF 章节')
-            return
-          }
           const library = await activeLibrary()
           const source = await chapterPdf(library, body.book, body.code)
           if (source === null) {
@@ -348,7 +336,12 @@ async function activeLibrary() {
             return
           }
           const dir = dirname(source)
+          const name = basename(source)
           const markdown = await translatePage({ apiKey: config.deepseekApiKey, image, target })
+          if (body.mdOnly === true) {
+            sendJson(response, 200, { ok: true, md: markdown })
+            return
+          }
           const mdPath = join(dir, `.translate-${Date.now()}.md`)
           await writeFile(mdPath, markdown, 'utf8')
           const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
@@ -360,6 +353,41 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, pdf: basename(out) })
         } catch (error) {
           fail(response, 502, 'translate-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/translate-render`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request, 32 * 1024 * 1024)
+          const markdown = typeof body.md === 'string' ? body.md : ''
+          if (markdown.trim() === '') {
+            fail(response, 400, 'bad-markdown', '译文内容为空')
+            return
+          }
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const dir = dirname(source)
+          const name = basename(source)
+          const mdPath = join(dir, `.translate-${Date.now()}.md`)
+          await writeFile(mdPath, markdown, 'utf8')
+          const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
+          try {
+            await renderMarkdown(options.md2texScript, mdPath, out)
+          } finally {
+            await unlink(mdPath).catch(() => {})
+          }
+          sendJson(response, 200, { ok: true, pdf: basename(out) })
+        } catch (error) {
+          fail(response, 502, 'translate-render-failed', String(error && error.message ? error.message : error))
         }
         return
       }

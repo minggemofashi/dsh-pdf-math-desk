@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.40.0
+
+- M2 调整为**整章翻译**：逐页渲染 → 逐页调用 DeepSeek → 汇总 Markdown → 一次性渲染为原 PDF 同目录的 `<原名>_translated.pdf`；按钮改为「翻译本章」，进度显示 `翻译中 n/N`。
+- 修复章节定位：`resolveChapter` 返回的是匹配对象，之前当成章节对象传给 `chapterPdfPath`，导致一直 `missing-file`；现在改用当前书库 catalog 的匹配结果。
+- 新增 `POST /translate-render`；`/translate-page` 支持 `mdOnly` 只取译文。
+
 ## v0.39.4
 
 - 修复翻译仍报「找不到这一章的 PDF」：章节定位改用**当前书库**的 catalog（`catalog()`），此前误用了插件默认目录的 catalog，活动书库不在默认路径时必然找不到。
