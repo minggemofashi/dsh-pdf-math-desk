@@ -3608,20 +3608,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (selected.size === 0) return
         if (!window.confirm(format('trashSelectedConfirm', { n: selected.size }))) return
         const ids = new Set(selected)
+        const trashed = new Set()
         for (const id of selected) {
           try {
             await request('POST', 'trash-book', { book: id })
+            trashed.add(id)
           } catch {
-            // keep going: the notice below reports what still exists
+            // failed ones stay hidden instead of popping back into the library
           }
         }
+        if (trashed.size === 0) {
+          showNotice(format('trashFailed'))
+          return
+        }
         saveShelfGroups({
-          hidden: shelfGroups.hidden.filter(id => !ids.has(id)),
-          shelves: shelfGroups.shelves.map(shelf => ({ ...shelf, books: shelf.books.filter(id => !ids.has(id)) })),
+          hidden: shelfGroups.hidden.filter(id => !trashed.has(id)),
+          shelves: shelfGroups.shelves.map(shelf => ({ ...shelf, books: shelf.books.filter(id => !trashed.has(id)) })),
         })
         showNotice(format('trashDone'))
         setSelected(new Set())
         setGroup('hidden')
+        setWork(previous => previous === null ? previous : { ...previous, view: 'shelf', bookId: null, activeChapter: null })
         setReloadKey(key => key + 1)
       }, [selected, shelfGroups, showNotice])
 
