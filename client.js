@@ -203,6 +203,7 @@ window.__ModuleLoader__.load({
       hideLocalPath: '隐藏本机路径',
       tipsLeftClick: '左键：单击书卡＝选中/取消选中，双击＝打开书本；单击章节名＝展开/收起。',
       tipsRightClick: '右键：书卡与章节没有右键操作；产物（转 PDF / 删除）与会话（归档）支持右键。',
+      tipsTitle: '使用提示',
       diagnosticsTitle: '目录来源与路径',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub 的 releases 接口，不会自动联网',
@@ -458,6 +459,7 @@ window.__ModuleLoader__.load({
       hideLocalPath: 'Hide local path',
       tipsLeftClick: 'Left click: a book cover selects/deselects, double click opens the book; a chapter row expands/collapses.',
       tipsRightClick: 'Right click: books and chapters have no menu; artifacts (To PDF / Delete) and sessions (Archive) do.',
+      tipsTitle: 'Interaction tips',
       diagnosticsTitle: 'Catalog source and paths',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases when you click; never polls',
@@ -3040,7 +3042,9 @@ window.__ModuleLoader__.load({
 .md-chevron::before { content: ""; position: absolute; top: 50%; left: 40%; width: 6px; height: 6px; border-right: 1.5px solid var(--dsw-alias-label-secondary); border-bottom: 1.5px solid var(--dsw-alias-label-secondary); transform: translate(0, -50%) rotate(-45deg); transition: transform .16s ease; }
 .md-chapter[data-open="true"] .md-chevron::before { transform: translate(0, -50%) rotate(45deg); }
 .md-detail { display: flex; flex-direction: column; gap: 8px; padding: 2px 8px 16px 70px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
-.md-tips { display: flex; flex-direction: column; gap: 4px; margin-top: 22px; padding: 12px 4px 0; border-top: 1px dashed var(--dsw-alias-border-l2); font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.md-tips { display: flex; flex-direction: column; gap: 6px; margin-top: 22px; padding: 14px 4px 0; border-top: 1px dashed var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
+.md-tips-summary { cursor: pointer; font-size: 13px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-tips[open] .md-tips-summary { margin-bottom: 4px; }
 .md-detail-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .md-detail-open { margin-left: auto; }
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
@@ -5635,7 +5639,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-content' },
             h('div', { className: 'md-body', ref: bodyRef, inert: covered ? '' : undefined },
               body,
-              work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('div', { className: 'md-tips' },
+              work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('details', { className: 'md-tips' },
+                h('summary', { className: 'md-tips-summary' }, format('tipsTitle')),
                 h('div', { className: 'md-tips-line' }, format('tipsLeftClick')),
                 h('div', { className: 'md-tips-line' }, format('tipsRightClick'))
               ),
