@@ -83,6 +83,8 @@ export async function startChapterJob(options) {
     target: options.target,
     total: 0,
     done: 0,
+    failed: 0,
+    failedPages: [],
     pdf: '',
     error: '',
     startedAt: Date.now(),
@@ -136,7 +138,17 @@ export async function startChapterJob(options) {
             }
           }
           if (pageMarkdown.trim() === '') {
-            pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target })
+            try {
+              pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target })
+            } catch {
+              // One page failing must not throw away the pages that worked: keep
+              // the page empty, remember it, and let the chapter finish.
+              pageMarkdown = ''
+            }
+          }
+          if (pageMarkdown.trim() === '') {
+            state.failed = (state.failed ?? 0) + 1
+            state.failedPages = Array.from(new Set([...(state.failedPages ?? []), index + 1]))
           }
           chunks[index] = pageMarkdown
           state.done += 1
@@ -144,9 +156,15 @@ export async function startChapterJob(options) {
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
+      if (chunks.every(chunk => chunk.trim() === '')) {
+        throw new Error('所有页面都没有返回译文，请检查 API Key 与网络')
+      }
       if (typeof options.cacheDir === 'string' && options.cacheDir !== '') {
         await mkdir(options.cacheDir, { recursive: true })
         for (let index = 0; index < chunks.length; index += 1) {
+          // A failed page keeps whatever it had before instead of being
+          // overwritten with an empty file.
+          if (chunks[index].trim() === '') continue
           const name = `page-${String(index + 1).padStart(3, '0')}.md`
           await writeFile(join(options.cacheDir, name), chunks[index], 'utf8').catch(() => {})
         }

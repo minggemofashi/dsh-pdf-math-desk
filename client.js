@@ -189,6 +189,7 @@ window.__ModuleLoader__.load({
       translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
       translating: '翻译中…',
       translateDone: '已生成',
+      translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页）；可以重译本章补上',
       translateFailed: '翻译失败',
       translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
       translateFor: '翻译为：',
@@ -500,6 +501,7 @@ window.__ModuleLoader__.load({
       translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
       translating: 'Translating…',
       translateDone: 'Created',
+      translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); translate the chapter again to fill them',
       translateFailed: 'Translation failed',
       translateHint: 'Translate the current page; needs a DeepSeek API key',
       translateFor: 'Translate to:',
@@ -3201,6 +3203,13 @@ window.__ModuleLoader__.load({
           // storage unavailable
         }
       }
+      // A finished chapter can still have empty pages; say which ones instead
+      // of reporting a clean success the reader cannot trust.
+      const doneNote = state => {
+        const missing = Array.isArray(state.failedPages) ? state.failedPages : []
+        if (missing.length === 0) return `${format('translateDone')}：${state.pdf}`
+        return format('translateDonePartial', { n: missing.length, pages: missing.join('、') })
+      }
       useEffect(() => {
         try {
           const raw = window.localStorage.getItem(noteKey)
@@ -3455,7 +3464,7 @@ window.__ModuleLoader__.load({
               deskStatus.job = ''
               setDeskStatus('done')
               setTimeout(() => setDeskStatus('idle'), 8000)
-              updateNote(`${format('translateDone')}：${state.pdf}`)
+              updateNote(doneNote(state))
               window.localStorage.removeItem(key)
               return
             }
@@ -3627,7 +3636,7 @@ window.__ModuleLoader__.load({
               }
             }
             if (state.status === 'done') {
-              updateNote(`${format('translateDone')}：${state.pdf}`)
+              updateNote(doneNote(state))
               break
             }
             if (state.status === 'error') throw new Error(state.error === '' ? '翻译失败' : state.error)
