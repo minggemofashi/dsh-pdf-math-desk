@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.41.0
+
+- 整章翻译改为 Host 后台任务：Host 用 PyMuPDF 栅格化 PDF、并发 3 页调用模型，关闭阅读器/切换会话不再中断；客户端轮询 `translate-status` 显示进度。
+- 新增 `src/host/translate-job.js`、`tools/pdf_raster.py`、`POST /translate-chapter`、`GET /translate-status`；临时图片与中间 md 自动清理。
+- 块框增加 3pt 余量，避免边缘字被裁；切换单页/连续时短暂忽略可见页回调，减少跳页。
+
 ## v0.40.3
 
 - 块坐标改用 pdf.js 的 viewport 转换，旋转页/缩放页的框不再歪（调试框不影响翻译与渲染）；

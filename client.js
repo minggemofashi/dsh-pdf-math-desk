@@ -2821,10 +2821,10 @@ window.__ModuleLoader__.load({
         page: page.pageNumber,
         kind: block.h > median * 1.25 ? 'heading' : 'paragraph',
         bbox: [
-          block.left / width,
-          block.top / height,
-          (block.right - block.left) / width,
-          (block.bottom - block.top) / height,
+          Math.max(0, block.left / width - 3 / width),
+          Math.max(0, block.top / height - 3 / height),
+          (block.right - block.left) / width + 6 / width,
+          (block.bottom - block.top) / height + 6 / height,
         ],
         text: block.lines.map(line => line.text).join(' ').slice(0, 400),
       }))
@@ -2889,6 +2889,7 @@ window.__ModuleLoader__.load({
       const [translating, setTranslating] = useState(false)
       const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
+      const switchingMode = useRef(false)
       useEffect(() => setPageText(String(reader.page)), [reader.page])
 
       const registerSlot = useCallback((page, node) => {
@@ -2917,6 +2918,14 @@ window.__ModuleLoader__.load({
       // Entering continuous mode keeps the page you were reading instead of
       // starting at the top of the chapter.
       useEffect(() => {
+        switchingMode.current = true
+        const timer = setTimeout(() => { switchingMode.current = false }, 600)
+        return () => {
+          switchingMode.current = false
+          clearTimeout(timer)
+        }
+      }, [reader.mode])
+      useEffect(() => {
         if (reader.mode !== 'continuous') return
         const node = slotRefs.current.get(reader.page)
         if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
@@ -2933,81 +2942,27 @@ window.__ModuleLoader__.load({
         props.onPage(value)
       }
       const runTranslate = async () => {
-        if (translating || props.doc === null || props.doc === undefined) return
+        if (translating || reader.phase !== 'ready') return
         setTranslating(true)
-        const total = reader.count > 0 ? reader.count : 1
-        const chunks = []
+        setTranslateNote(format('translating'))
         try {
-          for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
-            setTranslateNote(`${format('translating')} ${pageNumber}/${total}`)
-            const page = await props.doc.getPage(pageNumber)
-            const base = page.getViewport({ scale: 1 })
-            const scale = Math.min(2, Math.max(1, 1400 / base.width))
-            const viewport = page.getViewport({ scale })
-            const canvas = document.createElement('canvas')
-            canvas.width = Math.floor(viewport.width)
-            canvas.height = Math.floor(viewport.height)
-            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-            const image = canvas.toDataURL('image/jpeg', 0.86)
-            const controller = typeof AbortController === 'function' ? new AbortController() : null
-            const timer = controller === null ? null : setTimeout(() => controller.abort(), 240000)
-            let payload = null
-            try {
-              const response = await fetch(ENDPOINT + 'translate-page', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { accept: 'application/json', 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  book: reader.bookId,
-                  code: reader.code,
-                  target: translateTarget,
-                  mdOnly: true,
-                  image,
-                }),
-                signal: controller === null ? undefined : controller.signal,
-              })
-              payload = await response.json().catch(() => null)
-              if (!response.ok || payload === null || payload.ok !== true) {
-                const message = payload !== null && payload.error !== undefined && payload.error.message !== undefined
-                  ? payload.error.message
-                  : `HTTP ${response.status}`
-                throw new Error(message)
-              }
-            } finally {
-              if (timer !== null) clearTimeout(timer)
+          const started = await request('POST', 'translate-chapter', {
+            book: reader.bookId,
+            code: reader.code,
+            target: translateTarget,
+          })
+          if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
+          const jobId = started.jobId
+          for (;;) {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
+            if (state.status === 'done') {
+              setTranslateNote(`${format('translateDone')}：${state.pdf}`)
+              break
             }
-            if (typeof payload.md !== 'string' || payload.md.trim() === '') {
-              throw new Error(`第 ${pageNumber} 页没有返回译文`)
-            }
-            chunks.push(payload.md)
+            if (state.status === 'error') throw new Error(state.error === '' ? '翻译失败' : state.error)
+            setTranslateNote(`${format('translating')} ${state.done}/${state.total}`)
           }
-          setTranslateNote(`${format('translating')} ${total}/${total}`)
-          const controller = typeof AbortController === 'function' ? new AbortController() : null
-          const timer = controller === null ? null : setTimeout(() => controller.abort(), 300000)
-          let done = null
-          try {
-            const response = await fetch(ENDPOINT + 'translate-render', {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: { accept: 'application/json', 'content-type': 'application/json' },
-              body: JSON.stringify({
-                book: reader.bookId,
-                code: reader.code,
-                md: chunks.join('\n\n'),
-              }),
-              signal: controller === null ? undefined : controller.signal,
-            })
-            done = await response.json().catch(() => null)
-            if (!response.ok || done === null || done.ok !== true) {
-              const message = done !== null && done.error !== undefined && done.error.message !== undefined
-                ? done.error.message
-                : `HTTP ${response.status}`
-              throw new Error(message)
-            }
-          } finally {
-            if (timer !== null) clearTimeout(timer)
-          }
-          setTranslateNote(`${format('translateDone')}：${done.pdf}`)
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           setTranslateNote(`${format('translateFailed')}：${message}`)
@@ -3168,7 +3123,10 @@ window.__ModuleLoader__.load({
                   count: reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: props.stageRef,
-                  onVisible: props.onVisible,
+                  onVisible: page => {
+                    if (switchingMode.current) return
+                    props.onVisible(page)
+                  },
                   registerSlot,
                   onError: props.onError,
                 })

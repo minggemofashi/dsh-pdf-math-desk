@@ -29,6 +29,7 @@ import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
 import { translatePage } from './translate.js'
+import { startChapterJob } from './translate-job.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
 import { checkForUpdate } from './update.js'
 import { detectEnvironment } from './environment.js'
@@ -348,6 +349,55 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, configured: key !== '' })
         } catch (error) {
           fail(response, 500, 'key-save-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/translate-chapter`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const target = body.target === 'zh' ? 'zh' : 'en'
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const outPath = join(dirname(source), `${basename(source, '.pdf')}_translated.pdf`)
+          const jobId = await startChapterJob({
+            jobDir: join(config.dataDir, 'translate-jobs'),
+            rasterScript: join(config.toolsDir, 'pdf_raster.py'),
+            md2texScript: options.md2texScript,
+            apiKey: await deepseekKey(),
+            source,
+            outPath,
+            target,
+            book: body.book,
+            code: body.code,
+          })
+          sendJson(response, 200, { ok: true, jobId })
+        } catch (error) {
+          fail(response, 502, 'translate-start-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/translate-status`) {
+        try {
+          const jobId = url.searchParams.get('job') ?? ''
+          if (!/^tr-[a-z0-9]+$/.test(jobId)) {
+            fail(response, 400, 'bad-job', '任务编号不合法')
+            return
+          }
+          const raw = await readFile(join(config.dataDir, 'translate-jobs', `${jobId}.json`), 'utf8')
+          const state = JSON.parse(raw)
+          sendJson(response, 200, { ...state, ok: true })
+        } catch (error) {
+          fail(response, 404, 'job-missing', String(error && error.message ? error.message : error))
         }
         return
       }
