@@ -21,7 +21,7 @@
  *
  * @module dsh-pdf-math-desk/routes
  */
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
@@ -275,6 +275,60 @@ export function createHandler(config, options = {}) {
         } catch (error) {
           fail(response, 503, 'render-failed', String(error && error.message ? error.message : error))
         }
+        return
+      }
+
+      if (path === `${PREFIX}/trash-book`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await readJson(request)
+        const book = typeof body.book === 'string' ? body.book : ''
+        if (book === '' || /[\\/:*?"<>|]/.test(book)) {
+          fail(response, 400, 'bad-book', '书名不合法')
+          return
+        }
+        const library = await activeLibrary()
+        const source = join(library.libraryDir, '分片', book)
+        try {
+          await stat(source)
+        } catch {
+          fail(response, 404, 'missing', '这本书的分片目录不存在')
+          return
+        }
+        const trash = join(library.libraryDir, '回收站')
+        await mkdir(trash, { recursive: true })
+        const target = join(trash, `${Date.now()}-${book}`)
+        await rename(source, target)
+        sendJson(response, 200, { ok: true, path: target })
+        return
+      }
+
+      if (path === `${PREFIX}/trash-artifact`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await readJson(request)
+        const name = basename(String(body.name ?? ''))
+        if (!/\.pdf$/i.test(name)) {
+          fail(response, 400, 'bad-name', '只删除 PDF 产物')
+          return
+        }
+        const library = await activeLibrary()
+        const source = join(chapterArtifactDir(config, body.book, body.code), name)
+        try {
+          await stat(source)
+        } catch {
+          fail(response, 404, 'missing', '文件不存在（可能已被删除）')
+          return
+        }
+        const trash = join(library.libraryDir, '回收站')
+        await mkdir(trash, { recursive: true })
+        const target = join(trash, `${Date.now()}-${name}`)
+        await rename(source, target)
+        sendJson(response, 200, { ok: true, path: target })
         return
       }
 

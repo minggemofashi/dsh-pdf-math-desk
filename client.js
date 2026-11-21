@@ -261,6 +261,10 @@ window.__ModuleLoader__.load({
       renderWorking: '正在渲染 PDF…（首次可能较慢）',
       renderDone: '已生成 {name}',
       renderFailed: '渲染失败：需要 Python 与 TeX Live（xelatex），详见 README',
+      trashBookConfirm: '删除《{id}》？该书的章节 PDF 会移到 回收站\\，可手动恢复。',
+      trashFileConfirm: '删除 {name}？会移到 回收站\\，md 保留。',
+      trashDone: '已移入 库根\\回收站\\',
+      trashFailed: '删除失败',
       artifactsReloadAria: '重新读取本章产物',
       artifactsFailed: '读不到这一章的产物',
       artifactsRetry: '重试',
@@ -483,6 +487,10 @@ window.__ModuleLoader__.load({
       renderWorking: 'Rendering PDF… (the first run can be slow)',
       renderDone: 'Created {name}',
       renderFailed: 'Render failed: needs Python and TeX Live (xelatex), see README',
+      trashBookConfirm: 'Delete "{id}"? Its chapter PDFs move to 回收站\\ and can be restored by hand.',
+      trashFileConfirm: 'Delete {name}? It moves to 回收站\\; the markdown stays.',
+      trashDone: 'Moved to the library\'s 回收站\\ folder',
+      trashFailed: 'Delete failed',
       artifactsReloadAria: 'Reload this chapter’s produced files',
       artifactsFailed: 'Could not read this chapter’s produced files',
       artifactsRetry: 'Retry',
@@ -1358,6 +1366,10 @@ window.__ModuleLoader__.load({
         className: props.selected ? 'md-card md-card-selected' : 'md-card',
         onClick: () => props.onSelect(book.id),
         onDoubleClick: () => props.onOpen(book.id),
+        onContextMenu: props.onContextMenu === undefined ? undefined : event => {
+          event.preventDefault()
+          props.onContextMenu()
+        },
         title: sub === '' ? book.title : `${book.title} · ${sub}`,
         ref: node => props.registerRef(book.id, node),
       },        h(CoverView, { book, hasCover: props.hasCover }),
@@ -1640,6 +1652,7 @@ window.__ModuleLoader__.load({
               hasCover: props.covers.has(book.id),
               onSelect: props.onToggle,
               onOpen: props.onOpen,
+              onContextMenu: props.group === 'hidden' ? () => props.onTrashBook(book.id) : undefined,
               registerRef: props.registerRef,
             }))
           ),
@@ -1979,9 +1992,15 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'md-file',
           onContextMenu: event => {
-            if (!/\.md$/i.test(item.name)) return
-            event.preventDefault()
-            props.onRender(item, props.code)
+            if (/\.md$/i.test(item.name)) {
+              event.preventDefault()
+              props.onRender(item, props.code)
+              return
+            }
+            if (item.kind === 'pdf') {
+              event.preventDefault()
+              props.onTrashArtifact(item, props.code)
+            }
           },
           'data-kind': item.kind,
           title: [
@@ -2535,6 +2554,7 @@ window.__ModuleLoader__.load({
             onRetry: props.onRetryArtifacts,
             onReload: props.onReloadArtifacts,
             onRender: (item, code) => props.onRenderArtifact(item, code),
+            onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
             onCopyPath: props.onCopyPath,
             registerRef: props.registerFileRef,
           })
@@ -2616,6 +2636,7 @@ window.__ModuleLoader__.load({
                 onDigest: props.onDigest,
                 onOpenArtifact: props.onOpenArtifact,
                 onRenderArtifact: props.onRenderArtifact,
+                onTrashArtifact: props.onTrashArtifact,
                 onRetryArtifacts: props.onRetryArtifacts,
                 onReloadArtifacts: props.onReloadArtifacts,
                 onCopyPath: props.onCopyPath,
@@ -3542,6 +3563,36 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             : format('renderFailed'))
         }
       }, [reloadArtifacts, showNotice, work])
+
+      /** Right-click a PDF artifact: move it to the library recycle bin. */
+      const trashArtifact = useCallback(async (item, code) => {
+        if (work === null || work.bookId === null) return
+        if (!window.confirm(format('trashFileConfirm', { name: item.name }))) return
+        try {
+          await request('POST', 'trash-artifact', { book: work.bookId, code, name: item.name })
+          showNotice(format('trashDone'))
+          await reloadArtifacts(code)
+        } catch (error) {
+          showNotice(error !== undefined && error !== null && typeof error.message === 'string' ? error.message.slice(0, 200) : format('trashFailed'))
+        }
+      }, [reloadArtifacts, showNotice, work])
+
+      /** Right-click a hidden book: move its chapter PDFs to the recycle bin. */
+      const trashBook = useCallback(async bookId => {
+        if (!window.confirm(format('trashBookConfirm', { id: bookId }))) return
+        try {
+          await request('POST', 'trash-book', { book: bookId })
+          saveShelfGroups({
+            hidden: shelfGroups.hidden.filter(id => id !== bookId),
+            shelves: shelfGroups.shelves.map(shelf => ({ ...shelf, books: shelf.books.filter(id => id !== bookId) })),
+          })
+          showNotice(format('trashDone'))
+          setGroup(null)
+          setReloadKey(key => key + 1)
+        } catch (error) {
+          showNotice(error !== undefined && error !== null && typeof error.message === 'string' ? error.message.slice(0, 200) : format('trashFailed'))
+        }
+      }, [saveShelfGroups, shelfGroups, showNotice])
 
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
@@ -4991,6 +5042,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
           onRenderArtifact: renderArtifact,
+          onTrashArtifact: trashArtifact,
           onRetryArtifacts: retryArtifacts,
           onReloadArtifacts: reloadArtifacts,
           onCopyPath: copyPath,
@@ -5041,6 +5093,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           registerRef,
           onOpenGroup: openGroup,
           onDeleteGroup: deleteShelf,
+          onTrashBook: trashBook,
           onCreateShelf: () => setShelfName(''),
           onHide: hideSelected,
           onUnhide: unhideSelected,
