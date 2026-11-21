@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.48.5
+
+- 第一性原理定位「叠加框内空白」：md2overlay 用 TikZ `current page` 定位，实测节点被放到页面之上（坐标整体偏移一页高），文字存在但不可见；
+- 改用 `textpos` 绝对定位（模块=1pt、页内左上原点），实测渲染可见且位置正确；
+- 新增 `tools/rebuild_overlay.py` 与 `POST /rebuild-overlay`：从缓存的块译文重建 overlay，不重复调用 API；开启叠加时先重建再加载，旧空白 overlay 不会残留。
+
 ## v0.48.4
 
 - 修复切换双语/叠加后页面空白：单页 canvas 在切回时重新挂载，但绘制 effect 的依赖没有变化；新增 viewer 重绘信号，切换后强制重画。

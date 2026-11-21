@@ -15,6 +15,7 @@ blocks_path, out_path = sys.argv[1], sys.argv[2]
 page_width = float(sys.argv[3])
 page_height = float(sys.argv[4])
 font_class = sys.argv[5] if len(sys.argv) > 5 else "10pt"
+font_pt = float(font_class.replace("pt", ""))
 
 with open(blocks_path, encoding="utf-8") as handle:
     blocks = json.load(handle)
@@ -29,22 +30,25 @@ for block in blocks:
     body = convert(md.split("\n"), "")
     if body.strip() == "":
         continue
+    x_pt = max(0.0, x * page_width)
+    y_pt = max(0.0, y * page_height)
+    w_pt = max(40.0, width * page_width)
     parts.append(
-        "\\node[anchor=north west,inner sep=0pt] at "
-        "([xshift=%.2fpt,yshift=-%.2fpt]current page.north west) "
-        "{\\begin{minipage}[t]{%.2fpt}\\raggedright\\fontsize{%.1f}{%.1f}\\selectfont\n%s\n\\end{minipage}};"
-        % (x * page_width, y * page_height, max(40.0, width * page_width), float(font_class.replace("pt", "")), float(font_class.replace("pt", "")) * 1.25, body)
+        "\\begin{textblock}{%.2f}(%.2f,%.2f)\n"
+        "\\begin{minipage}[t]{%.2fpt}\\raggedright\\fontsize{%.1f}{%.1f}\\selectfont\n%s\n\\end{minipage}\n"
+        "\\end{textblock}\n"
+        % (w_pt, x_pt, y_pt, w_pt, font_pt, font_pt * 1.25, body)
     )
 
 tex = r"""\documentclass[UTF8,%s]{ctexart}
 \usepackage[paperwidth=%.4fin,paperheight=%.4fin,margin=0pt]{geometry}
 \usepackage{amsmath,amssymb}
-\usepackage{tikz}
+\usepackage[absolute,overlay]{textpos}
+\setlength{\TPHorizModule}{1pt}
+\setlength{\TPVertModule}{1pt}
 \pagestyle{empty}
 \begin{document}
-\begin{tikzpicture}[remember picture,overlay]
 %s
-\end{tikzpicture}
 \end{document}
 """ % (font_class, page_width / 72.0, page_height / 72.0, "\n".join(parts))
 

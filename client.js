@@ -3112,6 +3112,13 @@ window.__ModuleLoader__.load({
             }
             let doc = null
             if (overlay && reader.variant !== 'translated') {
+              // Rebuild from the cached per-page blocks so an old overlay PDF
+              // rendered by an earlier release cannot hide the fix.
+              try {
+                await request('POST', 'rebuild-overlay', { book: reader.bookId, code: reader.code })
+              } catch {
+                // keep the existing overlay if the rebuild fails
+              }
               try {
                 doc = await make('overlay').promise
               } catch {

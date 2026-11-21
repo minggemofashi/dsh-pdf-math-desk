@@ -21,6 +21,7 @@
  *
  * @module dsh-pdf-math-desk/routes
  */
+import { execFile } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
 
@@ -124,6 +125,23 @@ export function createHandler(config, options = {}) {
  * @param {string} code - chapter code.
  * @returns {Promise<string|null>} absolute path, or null when missing.
  */
+function runTool(script, args) {
+  const pythons = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
+  return new Promise((resolve, reject) => {
+    const next = index => {
+      if (index >= pythons.length) {
+        reject(new Error('没有可用的 Python'))
+        return
+      }
+      execFile(pythons[index], [script, ...args], { timeout: 180000, windowsHide: true }, error => {
+        if (error === null) resolve()
+        else next(index + 1)
+      })
+    }
+    next(0)
+  })
+}
+
 async function chapterPdf(library, bookId, code) {
   const current = await catalog()
   const match = resolveChapter(current, bookId, code)
@@ -450,6 +468,29 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true })
         } catch (error) {
           fail(response, 500, 'cancel-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/rebuild-overlay`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, body.book, body.code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          const outPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
+          await runTool(join(config.toolsDir, 'rebuild_overlay.py'), [source, cacheDir, outPath, config.toolsDir])
+          sendJson(response, 200, { ok: true, pdf: basename(outPath) })
+        } catch (error) {
+          fail(response, 500, 'rebuild-overlay-failed', String(error && error.message ? error.message : error))
         }
         return
       }
