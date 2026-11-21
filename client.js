@@ -2047,6 +2047,7 @@ window.__ModuleLoader__.load({
       const truncated = state !== undefined && state.truncated === true
       // Long chapters get a lot of products; collapse long lists by default.
       const [collapsed, setCollapsed] = useState(false)
+      const [openArtifacts, setOpenArtifacts] = useState(() => new Set())
       const rowKey = item => `${props.bookId}|${props.code}|${item.name}`
       const artifactStem = item => String(item.name).replace(/\.(md|pdf)$/i, '')
       const row = (item, index) => {
@@ -2113,17 +2114,38 @@ window.__ModuleLoader__.load({
           ),
           groups === undefined
             ? null
-            : h('ul', { className: 'md-session-list md-artifact-sessions' },
-              MODES.flatMap(mode => (Array.isArray(groups[mode]) ? groups[mode] : []).map(entry => h('li', {
-                key: entry.id, className: 'md-session-row',
-              },
-                h('button', {
-                  type: 'button', className: 'md-session',
-                  onClick: () => props.onOpenSession(entry),
-                }, h('span', { className: 'md-session-name' }, entry.title === '' ? entry.displayTitle : entry.title))
-              ))))
+            : h(React.Fragment, null,
+              h('button', {
+                type: 'button', className: 'md-artifact-session-toggle',
+                onClick: event => {
+                  event.stopPropagation()
+                  setOpenArtifacts(previous => {
+                    const next = new Set(previous)
+                    if (next.has(item.name)) next.delete(item.name)
+                    else next.add(item.name)
+                    return next
+                  })
+                },
+              }, `${format('sessionsTitle')} ${MODES.reduce((sum, mode) => sum + (Array.isArray(groups[mode]) ? groups[mode].length : 0), 0)} · ${openArtifacts.has(item.name) ? format('artifactsCollapse') : format('artifactsExpand')}`),
+              openArtifacts.has(item.name)
+                ? h('ul', { className: 'md-session-list md-artifact-sessions' },
+                  MODES.flatMap(mode => (Array.isArray(groups[mode]) ? groups[mode] : []).map(entry => h('li', {
+                    key: entry.id, className: 'md-session-row',
+                  },
+                    h('button', {
+                      type: 'button', className: 'md-session',
+                      onClick: () => props.onOpenSession(entry),
+                    }, h('span', { className: 'md-session-name' }, entry.title === '' ? entry.displayTitle : entry.title))
+                  ))))
+                : null
+            )
         )
       }
+      const ordered = [...items].sort((left, right) => {
+        const rank = entry => (/\.md$/i.test(entry.name) ? 0 : /\.pdf$/i.test(entry.name) ? 1 : 2)
+        const delta = rank(left) - rank(right)
+        return delta !== 0 ? delta : left.name.localeCompare(right.name)
+      })
       let body
       if (phase === 'error') {
         body = h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
@@ -2153,7 +2175,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'md-artifacts-hint' }, format('artifactsScope'))
         )
       } else {
-        body = h('ul', { className: 'md-file-list', 'aria-label': `${format('artifactsTitle')} · ${props.code}` }, items.map(row))
+        body = h('ul', { className: 'md-file-list', 'aria-label': `${format('artifactsTitle')} · ${props.code}` }, ordered.map(row))
       }
       return h('section', {
         className: 'md-artifacts',
@@ -2830,6 +2852,8 @@ window.__ModuleLoader__.load({
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-artifact-modes { display: flex; gap: 6px; padding: 2px 0 4px 52px; }
 .md-artifact-sessions { padding-left: 52px; }
+.md-artifact-session-toggle { display: block; margin: 0 0 2px 52px; padding: 0; font: inherit; font-size: 11.5px; color: var(--dsw-alias-label-secondary); background: none; border: 0; cursor: pointer; }
+.md-artifact-session-toggle:hover { color: var(--dsw-alias-label-primary); }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-file-action { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); cursor: pointer; }
 .md-file-action:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l4); }
