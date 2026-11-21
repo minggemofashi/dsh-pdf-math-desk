@@ -1524,7 +1524,6 @@ window.__ModuleLoader__.load({
      */
     function setDeskStatus(next) {
       deskStatus.value = next
-      deskStatus.listeners.forEach(listener => listener(next))
     }
 
     /**
@@ -1549,45 +1548,7 @@ window.__ModuleLoader__.load({
      */
     function DeskIcon(props) {
       const size = typeof props.size === 'number' && props.size > 0 ? props.size : 18
-      const status = useDeskStatus()
-      useEffect(() => {
-        if (status !== 'busy' || deskStatus.job === '') return undefined
-        let stopped = false
-        const tick = async () => {
-          if (stopped) return
-          if (deskStatus.job === '') {
-            setTimeout(() => { void tick() }, 500)
-            return
-          }
-          try {
-            const state = await request('GET', `translate-status?job=${encodeURIComponent(deskStatus.job)}`)
-            if (stopped) return
-            if (state.status === 'done') {
-              setDeskStatus('done')
-              setTimeout(() => setDeskStatus('idle'), 8000)
-              return
-            }
-            if (state.status === 'error') {
-              setDeskStatus('error')
-              setTimeout(() => setDeskStatus('idle'), 8000)
-              return
-            }
-            setTimeout(() => { void tick() }, 2500)
-          } catch {
-            // job file may be gone
-          }
-        }
-        void tick()
-        return () => {
-          stopped = true
-        }
-      }, [status])
-      const mark = status === 'idle' ? null : h('span', {
-        className: status === 'busy' ? 'md-desk-mark md-desk-spin' : status === 'error' ? 'md-desk-mark md-desk-error' : 'md-desk-mark md-desk-done',
-        'aria-hidden': true,
-      })
-      return h('span', { style: { position: 'relative', display: 'inline-block', flex: 'none', width: size, height: size } },
-        h('svg', {
+      return h('svg', {
         width: size,
         height: size,
         viewBox: '0 0 24 24',
@@ -1599,8 +1560,6 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M9.8 3.8h4v16.6h-4z', fill: 'currentColor' }),
         h('path', { d: 'M16.8 8.6h4v11.8h-4z', fill: 'currentColor', opacity: 0.86 }),
         h('path', { d: 'M2.2 21.4h19.6', stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', fill: 'none' })
-        ),
-        mark
       )
     }
 
@@ -3035,6 +2994,35 @@ window.__ModuleLoader__.load({
     }
 
 
+    function TranslatedPageCanvas(props) {
+      const canvas = useRef(null)
+      useEffect(() => {
+        if (props.doc === null || props.doc === undefined) return undefined
+        let cancelled = false
+        const paint = async () => {
+          try {
+            const pageNumber = Math.min(props.pageNumber, props.doc.numPages || 1)
+            const page = await props.doc.getPage(pageNumber)
+            const viewport = page.getViewport({ scale: props.scale ?? 2 })
+            const node = canvas.current
+            if (node === null || cancelled) return
+            node.width = Math.floor(viewport.width)
+            node.height = Math.floor(viewport.height)
+            node.style.width = '100%'
+            node.style.height = '100%'
+            await page.render({ canvasContext: node.getContext('2d'), viewport }).promise
+          } catch {
+            // the mask stays empty when the page cannot be rendered
+          }
+        }
+        void paint()
+        return () => {
+          cancelled = true
+        }
+      }, [props.doc, props.pageNumber, props.scale])
+      return h('canvas', { ref: canvas, className: 'md-mask-page', style: props.style })
+    }
+
     /**
      * The full-page PDF reader: one page or a continuous column, page
      * navigation, zoom, reading-mode switch, and the chapter's three New
@@ -3729,12 +3717,12 @@ window.__ModuleLoader__.load({
                             width: `${mask.w * 100}%`,
                             height: `${mask.h * 100}%`,
                           },
-                        }, translatedImage === ''
+                        }, dualDoc === null
                           ? null
-                          : h('img', {
-                            src: translatedImage,
-                            alt: '',
-                            draggable: false,
+                          : h(TranslatedPageCanvas, {
+                            doc: dualDoc,
+                            pageNumber: reader.page,
+                            scale: 2,
                             style: {
                               position: 'absolute',
                               maxWidth: 'none',
