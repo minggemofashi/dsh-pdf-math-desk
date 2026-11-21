@@ -603,6 +603,23 @@ window.__ModuleLoader__.load({
 
     /* --------------------------------------------------------------- covers -- */
 
+    /** pdf.js optional assets (CMaps for CJK fonts, wasm for JBIG2/JPEG2000). */
+    let pdfAssets = null
+
+    /**
+     * Absolute URLs of the reader's PDF asset folders, built once per page.
+     * @returns {{ cMapUrl: string, wasmUrl: string }} trailing-slash URLs.
+     */
+    function pdfAssetUrls() {
+      if (pdfAssets === null) {
+        pdfAssets = {
+          cMapUrl: new URL('mathdesk/vendor/cmaps/', document.baseURI).href,
+          wasmUrl: new URL('mathdesk/vendor/wasm/', document.baseURI).href,
+        }
+      }
+      return pdfAssets
+    }
+
     /** Rendered cover data URLs by book id; a null entry is "this book has none". */
     const coverCache = new Map()
 
@@ -665,7 +682,7 @@ window.__ModuleLoader__.load({
       const first = chapters.find(chapter => chapter.code === 'c00') ?? chapters[0]
       const lib = await loadPdfjs()
       const url = new URL(`mathdesk/pdf?book=${encodeURIComponent(book.id)}&code=${encodeURIComponent(first.code)}`, document.baseURI).href
-      const task = lib.getDocument({ url, isEvalSupported: false })
+      const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
       try {
         const doc = await task.promise
         const page = await doc.getPage(1)
@@ -3003,7 +3020,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
             if (reader.name !== '') params.set('name', reader.name)
             const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
-            const task = lib.getDocument({ url, isEvalSupported: false })
+            const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             readerTask.current = task
             const doc = await task.promise
             if (cancelled) {

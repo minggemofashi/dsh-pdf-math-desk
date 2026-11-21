@@ -2,6 +2,14 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.15.1
+
+- 修复阅读器**整本扫描书空白**：pdf.js 缺 JBIG2/JPEG2000 解码器与 CJK CMaps，现内置 `vendor/wasm`
+  与 `vendor/cmaps`，并在 `getDocument` 时传 `wasmUrl` / `cMapUrl`（扫描版、中文 PDF 都能显示）；
+- 修复**示例书空白**：之前的示例 PDF 用未嵌入的 `china-s` 字体，pdf.js 无法显示；改用嵌入 SimHei
+  子集重新渲染（10 章，共约 605 KB，带文字层）；
+- README 更新限制说明。
+
 ## v0.15.0
 
 - **内置示例书库**：附带一本自己渲染的《中国剩余定理》小册子（10 章，共 168 KB，`samples/`）；

@@ -34,8 +34,14 @@ import { readState, writeState } from './state.js'
 /** Route prefix owned by this plugin. */
 export const PREFIX = '/mathdesk'
 
-/** The reader's pdf.js build, served by name so a path can never escape. */
-const VENDOR_FILES = new Set(['pdf.min.mjs', 'pdf.worker.min.mjs'])
+/** The reader's pdf.js build, by relative name so a path can never escape. */
+function vendorContentType(name) {
+  if (name === 'pdf.min.mjs' || name === 'pdf.worker.min.mjs') return 'text/javascript; charset=utf-8'
+  if (/^wasm\/[A-Za-z0-9._-]+\.wasm$/.test(name)) return 'application/wasm'
+  if (/^wasm\/[A-Za-z0-9._-]+_nowasm_fallback\.js$/.test(name)) return 'text/javascript; charset=utf-8'
+  if (/^cmaps\/[A-Za-z0-9._-]+\.bcmap$/.test(name)) return 'application/octet-stream'
+  return null
+}
 
 /** Cover image extensions the shelf accepts, in preference order. */
 const COVER_TYPES = {
@@ -263,18 +269,13 @@ export function createHandler(config, options = {}) {
         for (const entry of names) {
           const name = typeof entry === 'string' ? entry : String(entry?.name ?? '')
           if (!/^[^\\/:*?"<>|]{1,200}\.pdf$/i.test(name)) continue
-          try {
-            await stat(join(target, name))
-            skipped += 1
-            continue
-          } catch {
-            // Not there yet: copy it in.
-          }
+          // Always refresh: the bundled sample is ours, and an older copy in the
+          // library (e.g. the pre-embedded-font render) must be replaced.
           try {
             await copyFile(join(source, name), join(target, name))
             copied += 1
           } catch {
-            // A missing sample file is skipped; the manifest is the source of truth.
+            skipped += 1
           }
         }
         sendJson(response, 200, { ok: true, book: bookId, dir: target, copied, skipped })
@@ -483,13 +484,14 @@ export function createHandler(config, options = {}) {
           return
         }
         const name = path.slice(`${PREFIX}/vendor/`.length)
-        if (!VENDOR_FILES.has(name)) {
+        const contentType = vendorContentType(name)
+        if (contentType === null) {
           fail(response, 404, 'not-found', '没有这个阅读器文件')
           return
         }
         try {
-          const body = await readFile(join(config.vendorDir, name))
-          sendBytes(response, 200, body, 'text/javascript; charset=utf-8')
+          const body = await readFile(join(config.vendorDir, ...name.split('/')))
+          sendBytes(response, 200, body, contentType)
         } catch {
           fail(response, 404, 'missing-vendor', '阅读器文件缺失，请重新安装插件')
         }
