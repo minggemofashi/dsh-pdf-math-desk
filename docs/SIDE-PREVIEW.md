@@ -242,6 +242,7 @@ ctx.contextMenus.register({
 - **译文栏笔记不导出**：`localChapterPages` 只把纯数字页码的键当作页面数据（`/^\d+$/`），`…:right` 的键不会并进导出/镜像；这是有意为之——译文栏是独立的一份笔记。
 - **双语两栏自动适应（v0.72.9）**：只按**宽度**适应——`dualFit.left/right` 用栏宽和第一页 `scale:1` 宽度算出比例，页面填满栏宽，高度超出就上下滚；打开双语自动使用，`ResizeObserver` 在栏宽变化时重算。两栏各自的缩放是本地状态（`dualLeftScale`/`rightScale`，null = 自动），不再借用共享的 `reader.scale`/`onFit`；表头「适应屏幕」把它们清回 null（恢复自动），单页模式仍用原来的 `fitScale`。
 - **表头悬停显示（v0.72.10）**：`.md-reader-colhead > :not(.md-reader-coltitle)` 默认 `opacity:0`、`pointer-events:none`，`transform: translateY(-3px)`；表头 `:hover`/`:focus-within` 时恢复，过渡 0.18s。标题始终可见，隐藏时不会误触按钮。
+- **翻译状态行悬停显示（v0.72.11）**：`translateNote` 外面包一层 `.md-reader-note-reveal`，默认 `opacity:0`、`pointer-events:none`，保留高度避免页面跳动；`.md-reader-bar:hover ~`、`.md-reader-subbar:hover ~` 或该行自身 hover 时淡入。
 - **文本框可连续放多个（v0.72.6）**：在任意一栏的文本框编辑中点击页面另一处，先保存当前草稿再在新位置开一个；空的新草稿不落盘（`index < 0` 且无文字），已有草稿清空保存等于删除。
 - **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('mathdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
 - **撤销/重做按页记录两端的编辑**（v0.71.0）：`pageHistory` 是 `book|code|page` 为键的模块级栈（上限 40 步），阅读器和右栏共用，所以哪一栏写的都能被另一栏的 ↶ 撤回；一次撤销同时恢复笔迹与框选。

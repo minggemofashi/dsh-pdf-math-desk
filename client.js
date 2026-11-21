@@ -6239,7 +6239,8 @@ window.__ModuleLoader__.load({
               }, `＋ ${format(`mode.${mode}`)}`))
             )
         ),
-        translateNote === '' ? null : h('div', { className: 'md-reader-note', role: 'status' },
+        translateNote === '' ? null : h('div', { className: 'md-reader-note-reveal' },
+          h('div', { className: 'md-reader-note', role: 'status' },
           h('span', null, translateNote),
           translating ? h('button', {
             type: 'button', className: 'md-btn md-btn-small',
@@ -6268,7 +6269,7 @@ window.__ModuleLoader__.load({
               },
             }, format('retryAction'))
             : null
-        ),
+        )),
         // While a tool is picked in the bilingual view, say where the ink goes:
         // both columns write the same page, so a note stays with that page.
         dual && annotTool !== '' && noteEdit === null
@@ -6936,6 +6937,13 @@ window.__ModuleLoader__.load({
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 .md-reader-single { display: flex; justify-content: safe center; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+/* The "已生成 …pdf（共 N tokens）" line is reference noise: keep its space so the
+   page never jumps, but hide it until the reader bar/subbar or the line itself is
+   hovered, the same way the bilingual header controls behave. */
+.md-reader-note-reveal { opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+.md-reader-bar:hover ~ .md-reader-note-reveal,
+.md-reader-subbar:hover ~ .md-reader-note-reveal,
+.md-reader-note-reveal:hover { opacity: 1; pointer-events: auto; }
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
