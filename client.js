@@ -3354,9 +3354,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-detail-value' }, translatedPdf),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-detail-open',
-              onClick: () => {
-                window.open(`mathdesk/pdf?book=${encodeURIComponent(props.bookId)}&code=${encodeURIComponent(chapter.code)}&variant=translated`, '_blank', 'noopener')
-              },
+              onClick: () => props.onOpenPdf(chapter, 'translated'),
             }, format('openPdf')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
@@ -4209,6 +4207,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => {
           const same = previous !== null && previous.bookId === target.bookId
             && previous.code === target.code && previous.name === name
+            && previous.variant === (target.variant ?? '')
           if (same && force !== true && previous.phase !== 'error') {
             return { ...previous, title: target.title, bookTitle: target.bookTitle ?? previous.bookTitle }
           }
@@ -4219,6 +4218,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             bookTitle: target.bookTitle ?? '',
             fileName: target.fileName ?? '',
             name,
+            variant: target.variant ?? '',
             page: readReaderPage(target.bookId, target.code),
             count: 0,
             scale: null,
@@ -4241,6 +4241,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (cancelled) return
             const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
             if (reader.name !== '') params.set('name', reader.name)
+            if (reader.variant === 'translated') params.set('variant', 'translated')
             const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
             const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             readerTask.current = task
@@ -4899,7 +4900,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [commit, loadArtifacts, work])
 
-      const openPdf = useCallback(chapter => {
+      const openPdf = useCallback((chapter, variant) => {
         if (work === null || work.bookId === null) return
         const current = Array.isArray(work.expandedByBook[work.bookId]) ? work.expandedByBook[work.bookId] : []
         if (!current.includes(chapter.code)) {
@@ -4915,6 +4916,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           code: chapter.code,
           title: chapter.title,
           fileName: chapter.file,
+          variant: variant === 'translated' ? 'translated' : '',
           bookTitle: book === null ? '' : book.title,
         })
       }, [book, commit, openReader, work])

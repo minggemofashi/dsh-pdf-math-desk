@@ -85,7 +85,8 @@ export async function startChapterJob(options) {
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
       const markdown = chunks.join('\n\n')
       savedMarkdown = markdown
-      const markdownPath = join(tmpdir(), `${jobId}.md`)
+      const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
+      const markdownPath = join(tmpdir(), `${title}.md`)
       await writeFile(markdownPath, markdown, 'utf8')
       try {
         await renderMarkdown(options.md2texScript, markdownPath, options.outPath)
