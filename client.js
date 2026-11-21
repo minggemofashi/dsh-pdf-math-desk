@@ -5633,6 +5633,13 @@ window.__ModuleLoader__.load({
           if (observer !== null) observer.disconnect()
         }
       }, [dual, dualDoc, reader.variant, props.doc])
+      // Entering the bilingual view starts at the per-column fit, not at the
+      // single-stage scale the single view applied when it opened.
+      useEffect(() => {
+        if (dual) props.onFit()
+        // props.onFit is stable; running on every render would fight the zoom.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [dual])
       useEffect(() => {
         setDualRightPage(reader.page)
         // The right column starts on the reader's page but then keeps its own; it
@@ -6296,7 +6303,7 @@ window.__ModuleLoader__.load({
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => {
-                      if (dual) props.onScale(Math.max(0.2, (reader.scale ?? dualFit.left ?? 1) / 1.2))
+                      if (dual) props.onZoomTo(Math.max(0.2, (reader.scale ?? dualFit.left ?? 1) / 1.2))
                       else props.onZoomOut()
                     },
                   }, '−'),
@@ -6304,13 +6311,13 @@ window.__ModuleLoader__.load({
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => {
-                      if (dual) props.onScale(Math.min(3, (reader.scale ?? dualFit.left ?? 1) * 1.2))
+                      if (dual) props.onZoomTo(Math.min(3, (reader.scale ?? dualFit.left ?? 1) * 1.2))
                       else props.onZoomIn()
                     },
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => { if (dual) props.onScale(null); else props.onFit() },
+                    onClick: props.onFit,
                   }, format(dual ? 'readerFitScreen' : 'readerFit'))
                 ),
                 h(ContinuousView, {
@@ -8981,6 +8988,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => previous === null ? null : { ...previous, scale: null })
       }, [])
 
+      // Explicit zoom for the bilingual columns: `readerScale` only applies while
+      // the scale is still automatic, so pressing + twice would otherwise do
+      // nothing after the first step.
+      const readerZoomTo = useCallback(scale => {
+        setReader(previous => {
+          if (previous === null) return null
+          return { ...previous, scale: Math.max(0.2, Math.min(4, Math.round(scale * 100) / 100)) }
+        })
+      }, [])
+
       const closeReader = useCallback(() => setReader(null), [])
 
       // Keep the right column's chapter preview on this page and reading mode.
@@ -11154,6 +11171,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onPage: readerPage,
             onZoomIn: () => readerZoom(1.2),
             onZoomOut: () => readerZoom(1 / 1.2),
+            onZoomTo: readerZoomTo,
             onFit: readerFit,
             onMode: readerMode,
             onNewSession: mode => readerNewSession(mode, readerForceNew),
