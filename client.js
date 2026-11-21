@@ -5587,6 +5587,17 @@ window.__ModuleLoader__.load({
       // "auto" must fit both the width and the height of that column, not the
       // whole stage (which made 100% pages overflow sideways).
       const [dualFit, setDualFit] = useState({ left: null, right: null })
+      // Page size at scale 1, kept next to the fit so the button can recompute a
+      // fit at click time even if the automatic value is stale.
+      const dualBase = useRef({ left: null, right: null })
+      const fitColumn = side => {
+        const column = side === 'left' ? dualLeft.current : dualRight.current
+        const base = dualBase.current[side]
+        if (column === null || base === null || base === undefined) return null
+        const width = (column.clientWidth - 24) / base.width
+        const height = (column.clientHeight - 52) / base.height
+        return Math.max(0.15, Math.min(3, Math.min(width, height)))
+      }
       useEffect(() => {
         if (!dual || dualDoc === null) return undefined
         const leftDoc = reader.variant === 'translated' ? dualDoc : props.doc
@@ -5618,6 +5629,7 @@ window.__ModuleLoader__.load({
             if (cancelled) return
             leftBase = leftPage.getViewport({ scale: 1 })
             rightBase = rightPage.getViewport({ scale: 1 })
+            dualBase.current = { left: leftBase, right: rightBase }
             measure()
             if (typeof ResizeObserver === 'function') {
               observer = new ResizeObserver(measure)
@@ -6317,7 +6329,28 @@ window.__ModuleLoader__.load({
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: props.onFit,
+                    onClick: () => {
+                      // Compute the fit at click time from this column's own box:
+                      // the cached auto value may be stale, and `onFit` alone left
+                      // the original column at its previous scale.
+                      const column = dualLeft.current
+                      const doc = reader.variant === 'translated' ? dualDoc : props.doc
+                      if (column === null || doc === null || doc === undefined) {
+                        props.onFit()
+                        return
+                      }
+                      void (async () => {
+                        try {
+                          const page = await doc.getPage(1)
+                          const base = page.getViewport({ scale: 1 })
+                          const width = (column.clientWidth - 24) / base.width
+                          const height = (column.clientHeight - 52) / base.height
+                          props.onZoomTo(Math.max(0.15, Math.min(3, Math.min(width, height))))
+                        } catch {
+                          props.onFit()
+                        }
+                      })()
+                    },
                   }, format(dual ? 'readerFitScreen' : 'readerFit'))
                 ),
                 h(ContinuousView, {
@@ -6351,7 +6384,7 @@ window.__ModuleLoader__.load({
                   }, '+'),
                   h('button', {
                     type: 'button', className: 'md-btn md-btn-small',
-                    onClick: () => setRightScale(null),
+                    onClick: () => setRightScale(fitColumn('right')),
                   }, format('readerFitScreen'))
                 ),
                 h(ContinuousView, {

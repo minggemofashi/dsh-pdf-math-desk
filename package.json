@@ -1,6 +1,6 @@
 {
   "name": "dsh-pdf-math-desk",
-  "version": "0.72.7",
+  "version": "0.72.8",
   "private": false,
   "type": "module",
   "description": "A full-page math workbench organized by book and chapter.",
