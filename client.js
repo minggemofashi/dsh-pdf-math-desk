@@ -3000,30 +3000,6 @@ window.__ModuleLoader__.load({
         }
       }, [dual, reader.bookId, reader.code])
 
-      // Keep the two columns scrolled to the same relative position.
-      useEffect(() => {
-        if (!dual || dualDoc === null) return undefined
-        const left = dualLeft.current
-        const right = dualRight.current
-        if (left === null || right === null) return undefined
-        let locked = false
-        const sync = (from, to) => {
-          if (locked) return
-          locked = true
-          const span = Math.max(1, from.scrollHeight - from.clientHeight)
-          const ratio = from.scrollTop / span
-          to.scrollTop = ratio * Math.max(0, to.scrollHeight - to.clientHeight)
-          locked = false
-        }
-        const onLeft = () => sync(left, right)
-        const onRight = () => sync(right, left)
-        left.addEventListener('scroll', onLeft, { passive: true })
-        right.addEventListener('scroll', onRight, { passive: true })
-        return () => {
-          left.removeEventListener('scroll', onLeft)
-          right.removeEventListener('scroll', onRight)
-        }
-      }, [dual, dualDoc])
 
       useEffect(() => {
         let cancelled = false
