@@ -205,7 +205,11 @@ window.__ModuleLoader__.load({
       redoHint: '重做刚撤销的一步',
       maskBoxHint: '拖动移动 · 拖角改大小 · 右键删除',
       overlayBlocks: '框住本页块',
-      overlayBlocksHint: '按文本块自动画框，避免把译文截断（需先翻译）',
+      overlayBlocksHint: '按文本块自动画框；再点一次取消（需先翻译）',
+      overlayBlocksCancel: '取消框住',
+      overlayBlocksCancelHint: '去掉「框住本页块」画出的框',
+      overlayBlocksEmpty: '这一页没有可框的文本块',
+      overlayBlocksFailed: '框住本页块失败',
       annotPen: '笔',
       annotErase: '擦',
       annotClear: '清空标注',
@@ -244,11 +248,11 @@ window.__ModuleLoader__.load({
       overlayMissing: '叠加层还没准备好：先翻译本章，再打开叠加',
       overlayFallback: '叠加层 PDF 不可用：框内是整页译文的对应区域，位置可能对不齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文；重新翻译本章可重建',
-      overlayReflow: '这一章的叠加层是整页重排，字号与位置跟原文不同；要逐位置对齐请重新翻译本章（会按块），或改用「双语」对照',
-      overlayRealign: '按段落重建（零 token）',
-      overlayRealignHint: '用缓存的整页译文按段落位置重排叠加层，不调用模型；属于近似对齐，合并过的段落可能偏小',
+      overlayReflow: '叠加层是整页重排，字号和位置对不上原文；可以按段落重建，或重新翻译本章按块对齐',
+      overlayRealign: '按段落重建',
+      overlayRealignHint: '用缓存的整页译文按段落重排，不调用模型；近似对齐，个别段落会偏小',
       overlayRealignWorking: '正在按段落重建叠加层…',
-      overlayRealignDone: '叠加层已按段落重建：译文按原段落位置放置（近似对齐；要按块精确对齐可重新翻译本章）',
+      overlayRealignDone: '叠加层已按段落重建（近似对齐；要按块精确对齐需重新翻译本章）',
       overlayRealignFailed: '按段落重建失败',
       overlayLoading: '正在准备叠加层…',
       overlayTwoColumns: '这一页疑似双栏：叠加位置可能不准，逐段对照建议用「双语」',
@@ -264,7 +268,7 @@ window.__ModuleLoader__.load({
       translating: '翻译中…',
       translateDone: '已生成',
       translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页），已用 {tokens} tokens；可以点「补译缺失页」只补这几页',
-      translateBlocksFallback: '第 {pages} 页没按块翻译，叠加层只能整页重排、对不齐；要精确对齐请重新翻译本章',
+      translateBlocksFallback: '第 {pages} 页没按块翻译，叠加层只能整页重排、对不齐；可以在叠加里按段落重建，或重新翻译本章按块对齐',
       translateTokens: '共 {n} tokens',
       translateFailed: '翻译失败',
       translateHint: '把本章翻成另一种语言（需要 DeepSeek API Key）',
@@ -616,7 +620,11 @@ window.__ModuleLoader__.load({
       redoHint: 'Redo the step just undone',
       maskBoxHint: 'Drag to move · drag a handle to resize · right-click to delete',
       overlayBlocks: 'Box the page blocks',
-      overlayBlocksHint: 'Box each text block automatically, so a hand-drawn box cannot clip the translation (translate first)',
+      overlayBlocksHint: 'Box each text block automatically; press again to clear them (translate first)',
+      overlayBlocksCancel: 'Clear block boxes',
+      overlayBlocksCancelHint: 'Remove the boxes made by "Box the page blocks"',
+      overlayBlocksEmpty: 'This page has no text blocks to box',
+      overlayBlocksFailed: 'Boxing the page blocks failed',
       annotPen: 'Pen',
       annotErase: 'Erase',
       annotClear: 'Clear',
@@ -655,11 +663,11 @@ window.__ModuleLoader__.load({
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page and may not line up',
       overlayEmpty: 'This overlay page has no text, so its boxes stay empty; translate the chapter again to rebuild it',
-      overlayReflow: 'This chapter was translated page by page, so the overlay was reflowed and its type size and position differ from the original; re-translate the chapter for block-aligned boxes, or use the bilingual view',
-      overlayRealign: 'Rebuild by paragraph (no tokens)',
-      overlayRealignHint: 'Re-flow the overlay from the cached page text, without calling the model; approximate, and a merged paragraph may come out smaller',
+      overlayReflow: 'The overlay is a whole-page reflow, so its type size and position do not match the original; rebuild it by paragraph, or translate the chapter again for block alignment',
+      overlayRealign: 'Rebuild by paragraph',
+      overlayRealignHint: 'Re-flow the cached page text by paragraph, without calling the model; approximate, a few paragraphs may come out smaller',
       overlayRealignWorking: 'Rebuilding the overlay by paragraph…',
-      overlayRealignDone: 'Overlay rebuilt by paragraph: the translation now sits at the original paragraph positions (approximate; translate the chapter again for block-level alignment)',
+      overlayRealignDone: 'Overlay rebuilt by paragraph (approximate; re-translate the chapter for block-level alignment)',
       overlayRealignFailed: 'Rebuilding the overlay failed',
       overlayLoading: 'Preparing the overlay layer…',
       overlayTwoColumns: 'This page looks two-column: the overlay boxes may be off; use the bilingual view for a reliable reading',
@@ -675,7 +683,7 @@ window.__ModuleLoader__.load({
       translating: 'Translating…',
       translateDone: 'Created',
       translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
-      translateBlocksFallback: 'Page(s) {pages} were translated whole-page, so the overlay can only reflow and will not line up; re-translate the chapter for block-aligned boxes',
+      translateBlocksFallback: 'Page(s) {pages} were translated whole-page, so the overlay can only reflow and will not line up; rebuild it by paragraph in the overlay, or re-translate the chapter for block alignment',
       translateTokens: '{n} tokens',
       translateFailed: 'Translation failed',
       translateHint: 'Translate this chapter into another language (needs a DeepSeek API key)',
@@ -3696,6 +3704,26 @@ window.__ModuleLoader__.load({
       return true
     }
 
+    /**
+     * Two box lists with the same geometry, within a hair. "框住本页块" uses it to
+     * recognise its own boxes: a second press then takes them away instead of
+     * stacking a duplicate set on top.
+     * @param {object[]} first - boxes on the page.
+     * @param {object[]} second - boxes the block pass produced.
+     * @returns {boolean} true when every box matches in order.
+     */
+    function sameMasks(first, second) {
+      if (!Array.isArray(first) || !Array.isArray(second) || first.length !== second.length) return false
+      for (let index = 0; index < first.length; index += 1) {
+        const a = first[index]
+        const b = second[index]
+        if (a === null || a === undefined || b === null || b === undefined) return false
+        if (Math.abs(a.x - b.x) > 0.002 || Math.abs(a.y - b.y) > 0.002
+          || Math.abs(a.w - b.w) > 0.002 || Math.abs(a.h - b.h) > 0.002) return false
+      }
+      return true
+    }
+
     function historyBucket(key) {
       let bucket = pageHistory.get(key)
       if (bucket === undefined) {
@@ -4348,6 +4376,9 @@ window.__ModuleLoader__.load({
       const [overlay, setOverlay] = useState(false)
       const [masks, setMasks] = useState([])
       const [maskDraft, setMaskDraft] = useState(null)
+      // The boxes "框住本页块" made on this page: a second press removes them, and
+      // the button stays pressed while the page still holds exactly these boxes.
+      const [autoBoxes, setAutoBoxes] = useState(null)
       // Freehand annotations, one array of strokes per page, normalized so they
       // follow the page box through any zoom.
       const [annotTool, setAnnotTool] = useState('')
@@ -4787,9 +4818,22 @@ window.__ModuleLoader__.load({
             const bottom = Math.min(1, y + h + 0.022)
             next.push({ x: left, y: top, w: right - left, h: bottom - top })
           }
-          if (next.length > 0) savePageMasks(next)
-        } catch {
-          // no cached blocks for this page: leave the current boxes alone
+          if (next.length === 0) {
+            setOverlayNote(format('overlayBlocksEmpty'))
+            return
+          }
+          // Pressing the button on its own boxes is the cancel gesture: no
+          // duplicate set, no "nothing happened" click.
+          if (autoBoxes !== null && sameMasks(masksRef.current, autoBoxes)) {
+            setAutoBoxes(null)
+            savePageMasks([])
+            return
+          }
+          setAutoBoxes(next)
+          savePageMasks(next)
+        } catch (error) {
+          const message = error !== null && error !== undefined && error.message ? error.message : String(error)
+          setOverlayNote(`${format('overlayBlocksFailed')}：${message}`)
         }
       }
       // Rebuild the overlay from the cached page text, placed on the original's
@@ -4799,6 +4843,7 @@ window.__ModuleLoader__.load({
       const realignOverlay = async () => {
         if (realigning) return
         setRealigning(true)
+        setOverlayNote(format('overlayRealignWorking'))
         updateNote(format('overlayRealignWorking'))
         try {
           await request('POST', 'realign-overlay', { book: reader.bookId, code: reader.code }, 180000)
@@ -4806,6 +4851,7 @@ window.__ModuleLoader__.load({
           setDocRev(value => value + 1)
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? error.message : String(error)
+          setOverlayNote(`${format('overlayRealignFailed')}：${message}`)
           updateNote(`${format('overlayRealignFailed')}：${message}`)
         } finally {
           setRealigning(false)
@@ -4831,6 +4877,9 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         setNoteEdit(null)
         setDraftStroke(null)
+        // The block pass belongs to one page: keep its signature only while the
+        // boxes on screen are still that page's.
+        setAutoBoxes(null)
       }, [annotKey, remoteAnnotRev])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
@@ -5302,6 +5351,9 @@ window.__ModuleLoader__.load({
       const ready = reader.phase === 'ready'
       const sub = [reader.bookTitle, `${reader.code} ${reader.title}`].filter(item => typeof item === 'string' && item !== '').join(' · ')
       const modeOf = mode => reader.mode === mode
+      // The block button is a toggle: pressed while the page still holds exactly
+      // the boxes it made, plain when the user has moved or added their own.
+      const autoBoxed = autoBoxes !== null && sameMasks(masks, autoBoxes)
       // Each mask paints the translated page into its own canvas, sized as a
       // whole page and shifted by -mask origin. The canvas has no width/height
       // style of its own, so the browser scales the bitmap to exactly the page
@@ -5556,10 +5608,11 @@ window.__ModuleLoader__.load({
             }, format('overlayToggle')),
             overlay
               ? h('button', {
-                type: 'button', className: 'md-btn md-btn-small',
-                title: format('overlayBlocksHint'),
+                type: 'button', className: 'md-btn md-btn-small md-blocks-toggle',
+                'aria-pressed': autoBoxed ? 'true' : 'false',
+                title: format(autoBoxed ? 'overlayBlocksCancelHint' : 'overlayBlocksHint'),
                 onClick: () => { void maskAllBlocks() },
-              }, format('overlayBlocks'))
+              }, autoBoxed ? format('overlayBlocksCancel') : format('overlayBlocks'))
               : null,
             h('select', {
               className: 'md-reader-lang md-reader-export',
@@ -5724,13 +5777,14 @@ window.__ModuleLoader__.load({
         overlay && (overlayNote !== '' || translatedImage === '')
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
             overlayNote === '' ? format('overlayLoading') : overlayNote,
-            overlayReflow
+            // The button disappears while the rebuild runs; the note itself
+            // carries the progress, so there is no button label to explain.
+            overlayReflow && !realigning
               ? h('button', {
                 type: 'button', className: 'md-btn md-btn-small',
-                disabled: realigning,
                 title: format('overlayRealignHint'),
                 onClick: () => { void realignOverlay() },
-              }, realigning ? format('overlayRealignWorking') : format('overlayRealign'))
+              }, format('overlayRealign'))
               : null)
           : null,
         dual && dualDoc === null
@@ -6449,6 +6503,9 @@ window.__ModuleLoader__.load({
 .md-reader-subbar .md-btn { white-space: nowrap; flex: 0 0 auto; }
 .md-reader-export { min-width: 92px; font-size: 12px; }
 .md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--dsw-alias-border-l4); background: var(--dsw-alias-interactive-bg-hover-solid); color: var(--dsw-alias-label-primary); }
+/* The block-box button stays pressed while its own boxes are on the page; the
+   next press is the cancel. */
+.md-btn[aria-pressed="true"].md-blocks-toggle { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); }
 .md-reader-newlabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-canvas { display: block; flex: none; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-state { margin: 48px auto; font-size: 13px; color: var(--dsw-alias-label-secondary); }
