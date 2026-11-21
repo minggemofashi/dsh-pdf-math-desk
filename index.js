@@ -14,7 +14,8 @@
  *
  * @module dsh-pdf-math-desk
  */
-import { basename } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveConfig } from './src/host/config.js'
 import { collectTranscript, saveDigest, summarize } from './src/host/digest.js'
 import { LibrariesStore } from './src/host/libraries.js'
@@ -114,6 +115,7 @@ export function apply(ctx, rawConfig) {
   }
 
   const handler = createHandler(config, {
+    md2texScript: join(dirname(fileURLToPath(import.meta.url)), 'tools', 'md2tex.py'),
     pending,
     links,
     libraries,

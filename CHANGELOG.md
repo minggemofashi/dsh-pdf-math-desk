@@ -2,6 +2,12 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.22.0
+
+- 产物列表里右键 .md → 「渲染为 PDF」：Host 调 	ools/md2tex.py（Python + xelatex），
+  PDF 落在 md 同目录；缺依赖时返回可读错误；完成后自动刷新列表；
+- 新增 src/host/render.js 与 POST /mathdesk/render（仅回环）。
+
 ## v0.21.0
 
 - 书库页新增「导入文件」：选本机 md/txt/pdf/图片，复制到当前书库的 `导入\` 目录

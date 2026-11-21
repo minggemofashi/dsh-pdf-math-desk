@@ -24,12 +24,13 @@
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
 
-import { countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
+import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
 import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
 import { checkForUpdate } from './update.js'
+import { renderMarkdown } from './render.js'
 import { readState, writeState } from './state.js'
 
 /** Route prefix owned by this plugin. */
@@ -239,6 +240,36 @@ export function createHandler(config, options = {}) {
         }
         const result = await checkForUpdate(config.updateProxy)
         sendJson(response, 200, result)
+        return
+      }
+
+      if (path === `${PREFIX}/render`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const catalog = await loadCatalog(config)
+          const chapter = resolveChapter(catalog, body.book, body.code)
+          if (chapter === null) {
+            fail(response, 404, 'no-chapter', '找不到这一章')
+            return
+          }
+          const name = basename(String(body.name ?? ''))
+          if (!/\.md$/i.test(name)) {
+            fail(response, 400, 'bad-name', '只支持渲染 .md 文件')
+            return
+          }
+          const dir = chapterArtifactDir(config, body.book, body.code)
+          const source = join(dir, name)
+          await stat(source)
+          const out = `${source.slice(0, source.length - 3)}.pdf`
+          await renderMarkdown(options.md2texScript, source, out)
+          sendJson(response, 200, { ok: true, path: out })
+        } catch (error) {
+          fail(response, 503, 'render-failed', String(error && error.message ? error.message : error))
+        }
         return
       }
 

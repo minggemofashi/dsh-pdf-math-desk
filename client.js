@@ -255,6 +255,10 @@ window.__ModuleLoader__.load({
       artifactsScope: '只列这一层的文件；子文件夹不会显示。',
       artifactsBookId: '路径里的「{id}」是书 id，不是书名。',
       artifactsReload: '重新读取',
+      renderConfirm: '把 {name} 渲染为 PDF？会生成同名 PDF 放在 md 旁边。',
+      renderWorking: '正在渲染 PDF…（首次可能较慢）',
+      renderDone: '已生成 {name}',
+      renderFailed: '渲染失败：需要 Python 与 TeX Live（xelatex），详见 README',
       artifactsReloadAria: '重新读取本章产物',
       artifactsFailed: '读不到这一章的产物',
       artifactsRetry: '重试',
@@ -471,6 +475,10 @@ window.__ModuleLoader__.load({
       artifactsScope: 'Only files directly in this directory are listed; subfolders are not shown.',
       artifactsBookId: 'The “{id}” in the path is the book id, not the book title.',
       artifactsReload: 'Reload',
+      renderConfirm: 'Render {name} to PDF next to the markdown file?',
+      renderWorking: 'Rendering PDF… (the first run can be slow)',
+      renderDone: 'Created {name}',
+      renderFailed: 'Render failed: needs Python and TeX Live (xelatex), see README',
       artifactsReloadAria: 'Reload this chapter’s produced files',
       artifactsFailed: 'Could not read this chapter’s produced files',
       artifactsRetry: 'Retry',
@@ -1966,6 +1974,11 @@ window.__ModuleLoader__.load({
         h('button', {
           type: 'button',
           className: 'md-file',
+          onContextMenu: event => {
+            if (!/\.md$/i.test(item.name)) return
+            event.preventDefault()
+            props.onRender(item, props.code)
+          },
           'data-kind': item.kind,
           title: [
             item.name,
@@ -2501,6 +2514,7 @@ window.__ModuleLoader__.load({
             onOpen: item => props.onOpenArtifact(chapter, item),
             onRetry: props.onRetryArtifacts,
             onReload: props.onReloadArtifacts,
+            onRender: (item, code) => props.onRenderArtifact(item, code),
             onCopyPath: props.onCopyPath,
             registerRef: props.registerFileRef,
           })
@@ -3490,6 +3504,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * @param {object} item - `{ name, kind, size, mtime }`.
        * @returns {void}
        */
+      /** Right-click a .md artifact: render it to PDF next to the md. */
+      const renderArtifact = useCallback(async (item, code) => {
+        if (work === null || work.bookId === null) return
+        if (!window.confirm(format('renderConfirm', { name: item.name }))) return
+        showNotice(format('renderWorking'))
+        try {
+          await request('POST', 'render', { book: work.bookId, code, name: item.name })
+          showNotice(format('renderDone', { name: item.name.replace(/\.md$/i, '.pdf') }))
+          await reloadArtifacts(code)
+        } catch {
+          showNotice(format('renderFailed'))
+        }
+      }, [reloadArtifacts, showNotice, work])
+
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
         if (item.kind === 'pdf') {
@@ -4937,6 +4965,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onRetryRename: retryRename,
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
+          onRenderArtifact: renderArtifact,
           onRetryArtifacts: retryArtifacts,
           onReloadArtifacts: reloadArtifacts,
           onCopyPath: copyPath,
