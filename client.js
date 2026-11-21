@@ -3791,7 +3791,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useEffect(() => {
         if (!settingsOpen) return undefined
         const onDown = event => {
-          if (event.target instanceof Element && event.target.closest('.md-settings') !== null) return
+          if (event.target instanceof Element && event.target.closest('.md-settings, .md-settings-page, .md-picker') !== null) return
           setSettingsOpen(false)
         }
         const onKey = event => {
