@@ -5360,11 +5360,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useT()
       const info = props.useTabInfo()
       const target = sideTarget(info.tab.contentId)
-      const params = info.tab.navigation.params
+      // A restored tab record may carry no navigation yet.
+      const navigation = info.tab.navigation ?? {}
+      const params = navigation.params
       const variant = params !== null && typeof params === 'object' && params.variant === 'translated' ? 'translated' : ''
       const bookId = target === null ? '' : target.bookId
       const code = target === null ? '' : target.code
-      const revision = info.tab.navigation.revision
+      const revision = navigation.revision ?? 0
       const [doc, setDoc] = useState(null)
       const [count, setCount] = useState(0)
       const [page, setPage] = useState(1)
