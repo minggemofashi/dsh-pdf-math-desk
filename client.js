@@ -198,8 +198,12 @@ window.__ModuleLoader__.load({
       dualTranslated: '译文',
       toolsToggle: '收起/展开工具条',
       overlayToggle: '叠加',
-      overlayHint: '拖框露出框内译文；点框可删除（需先翻译）',
-      overlayRemove: '点击删除这个框',
+      overlayHint: '拖框露出译文；框可拖动、拖角改大小，右键删除（需先翻译）',
+      undo: '撤销',
+      redo: '重做',
+      undoHint: '撤销上一步标注或框选',
+      redoHint: '重做刚撤销的一步',
+      maskBoxHint: '拖动移动 · 拖角改大小 · 右键删除',
       overlayBlocks: '框住本页块',
       overlayBlocksHint: '按文本块自动画框，避免把译文截断（需先翻译）',
       annotPen: '笔',
@@ -600,8 +604,12 @@ window.__ModuleLoader__.load({
       dualTranslated: 'Translation',
       toolsToggle: 'Collapse or expand the tool row',
       overlayToggle: 'Overlay',
-      overlayHint: 'Drag a box to reveal the translation inside; click a box to remove it (translate first)',
-      overlayRemove: 'Click to remove this box',
+      overlayHint: 'Drag a box to reveal its translation; drag to move, drag a handle to resize, right-click to delete (translate first)',
+      undo: 'Undo',
+      redo: 'Redo',
+      undoHint: 'Undo the last stroke or box',
+      redoHint: 'Redo the step just undone',
+      maskBoxHint: 'Drag to move · drag a handle to resize · right-click to delete',
       overlayBlocks: 'Box the page blocks',
       overlayBlocksHint: 'Box each text block automatically, so a hand-drawn box cannot clip the translation (translate first)',
       annotPen: 'Pen',
@@ -3640,6 +3648,246 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /* ------------------------------------------------------------ history -- */
+    // Undo/redo per page, shared by the reader and the right column: the state
+    // before every ink/box edit is pushed on a stack, so one undo takes back the
+    // last action whichever pane made it.
+    const HISTORY_LIMIT = 40
+    const pageHistory = new Map()
+
+    /**
+     * The two lists that make up one page's marks.
+     * @param {object[]} annots - strokes and notes.
+     * @param {object[]} masks - translation boxes.
+     * @returns {{annots: object[], masks: object[]}} a shallow copy safe to keep.
+     */
+    function snapshotOf(annots, masks) {
+      return {
+        annots: Array.isArray(annots) ? [...annots] : [],
+        masks: Array.isArray(masks) ? [...masks] : [],
+      }
+    }
+
+    /**
+     * Same references in the same order: nothing to store, nothing to undo.
+     * @param {object[]} first - current list.
+     * @param {object[]} second - next list.
+     * @returns {boolean} true when the edit changed nothing.
+     */
+    function sameList(first, second) {
+      if (first === second) return true
+      if (!Array.isArray(first) || !Array.isArray(second) || first.length !== second.length) return false
+      for (let index = 0; index < first.length; index += 1) {
+        if (first[index] !== second[index]) return false
+      }
+      return true
+    }
+
+    function historyBucket(key) {
+      let bucket = pageHistory.get(key)
+      if (bucket === undefined) {
+        bucket = { undo: [], redo: [] }
+        pageHistory.set(key, bucket)
+        // A long read visits many pages; keep the map from growing forever.
+        while (pageHistory.size > 60) {
+          const oldest = pageHistory.keys().next().value
+          if (oldest === key) break
+          pageHistory.delete(oldest)
+        }
+      }
+      return bucket
+    }
+
+    /**
+     * Remember a page as it was before an edit, and drop the redo branch.
+     * @param {string} key - book|code|page key.
+     * @param {{annots: object[], masks: object[]}} snapshot - state before the edit.
+     * @returns {void}
+     */
+    function recordHistory(key, snapshot) {
+      const bucket = historyBucket(key)
+      bucket.undo.push(snapshot)
+      if (bucket.undo.length > HISTORY_LIMIT) bucket.undo.shift()
+      bucket.redo.length = 0
+    }
+
+    /**
+     * @param {string} key - book|code|page key.
+     * @param {{annots: object[], masks: object[]}} current - state now.
+     * @returns {{annots: object[], masks: object[]} | null} the previous state.
+     */
+    function undoHistory(key, current) {
+      const bucket = historyBucket(key)
+      const previous = bucket.undo.pop()
+      if (previous === undefined) return null
+      bucket.redo.push(snapshotOf(current.annots, current.masks))
+      if (bucket.redo.length > HISTORY_LIMIT) bucket.redo.shift()
+      return previous
+    }
+
+    /**
+     * @param {string} key - book|code|page key.
+     * @param {{annots: object[], masks: object[]}} current - state now.
+     * @returns {{annots: object[], masks: object[]} | null} the state to restore.
+     */
+    function redoHistory(key, current) {
+      const bucket = historyBucket(key)
+      const next = bucket.redo.pop()
+      if (next === undefined) return null
+      bucket.undo.push(snapshotOf(current.annots, current.masks))
+      if (bucket.undo.length > HISTORY_LIMIT) bucket.undo.shift()
+      return next
+    }
+
+    /**
+     * @param {string} key - book|code|page key.
+     * @returns {{undo: number, redo: number}} how many steps each way.
+     */
+    function historyDepth(key) {
+      const bucket = pageHistory.get(key)
+      return bucket === undefined ? { undo: 0, redo: 0 } : { undo: bucket.undo.length, redo: bucket.redo.length }
+    }
+
+    const MASK_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+
+    /**
+     * Editable translation boxes: drag a box to move it, drag one of its eight
+     * handles to resize, right-click to delete (undo puts it back). The frame is
+     * a clipping wrapper so the page image is cut to the box while the handles
+     * may sit on the border. All boxes paint one shared page bitmap.
+     * @param {{ masks: object[], image: string, onChange: Function, onDelete: Function }} props - boxes, page image and callbacks.
+     * @returns {import('react').ReactElement} the boxes.
+     */
+    function MaskBoxes(props) {
+      const root = useRef(null)
+      const drag = useRef(null)
+      const [preview, setPreview] = useState(null)
+      const MIN_SIZE = 0.02
+
+      const pointOf = event => {
+        const node = root.current
+        if (node === null) return null
+        const rect = node.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return null
+        return [
+          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        ]
+      }
+      const clamp = mask => {
+        const w = Math.max(MIN_SIZE, Math.min(1, mask.w))
+        const h = Math.max(MIN_SIZE, Math.min(1, mask.h))
+        return { x: Math.min(1 - w, Math.max(0, mask.x)), y: Math.min(1 - h, Math.max(0, mask.y)), w, h }
+      }
+      const start = (event, index, handle) => {
+        const mask = props.masks[index]
+        const point = pointOf(event)
+        if (mask === undefined || point === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        const node = event.currentTarget
+        if (typeof node.setPointerCapture === 'function') {
+          try { node.setPointerCapture(event.pointerId) } catch { /* not supported */ }
+        }
+        drag.current = { index, handle, startMask: { ...mask }, start: point, latest: { ...mask } }
+        setPreview({ index, mask: { ...mask } })
+      }
+      const move = event => {
+        const state = drag.current
+        if (state === null) return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        const dx = point[0] - state.start[0]
+        const dy = point[1] - state.start[1]
+        const base = state.startMask
+        let next
+        if (state.handle === 'move') {
+          next = { x: base.x + dx, y: base.y + dy, w: base.w, h: base.h }
+        } else {
+          let left = base.x
+          let top = base.y
+          let right = base.x + base.w
+          let bottom = base.y + base.h
+          if (state.handle.includes('w')) left = Math.min(right - MIN_SIZE, base.x + dx)
+          if (state.handle.includes('e')) right = Math.max(left + MIN_SIZE, base.x + base.w + dx)
+          if (state.handle.includes('n')) top = Math.min(bottom - MIN_SIZE, base.y + dy)
+          if (state.handle.includes('s')) bottom = Math.max(top + MIN_SIZE, base.y + base.h + dy)
+          next = { x: left, y: top, w: right - left, h: bottom - top }
+        }
+        state.latest = clamp(next)
+        setPreview({ index: state.index, mask: state.latest })
+      }
+      const end = event => {
+        const state = drag.current
+        if (state === null) return
+        drag.current = null
+        const node = event.currentTarget
+        if (typeof node.releasePointerCapture === 'function') {
+          try { node.releasePointerCapture(event.pointerId) } catch { /* already gone */ }
+        }
+        const latest = state.latest
+        const base = state.startMask
+        setPreview(null)
+        if (Math.abs(latest.x - base.x) < 0.002 && Math.abs(latest.y - base.y) < 0.002
+          && Math.abs(latest.w - base.w) < 0.002 && Math.abs(latest.h - base.h) < 0.002) return
+        props.onChange(state.index, latest)
+      }
+
+      return h('div', { className: 'md-mask-boxes', ref: root },
+        props.masks.map((mask, index) => {
+          const shown = preview !== null && preview.index === index ? preview.mask : mask
+          const active = drag.current !== null && drag.current.index === index
+          return h('div', {
+            key: index,
+            className: `md-mask${active ? ' md-mask-active' : ''}`,
+            style: {
+              left: `${shown.x * 100}%`,
+              top: `${shown.y * 100}%`,
+              width: `${shown.w * 100}%`,
+              height: `${shown.h * 100}%`,
+            },
+            title: format('maskBoxHint'),
+            onPointerDown: event => start(event, index, 'move'),
+            onPointerMove: move,
+            onPointerUp: end,
+            onPointerCancel: end,
+            onContextMenu: event => {
+              event.preventDefault()
+              event.stopPropagation()
+              props.onDelete(index)
+            },
+          },
+            h('div', { className: 'md-mask-clip' },
+              props.image === '' || shown.w <= 0 || shown.h <= 0
+                ? null
+                : h('div', {
+                  className: 'md-mask-page-image',
+                  style: {
+                    position: 'absolute',
+                    left: `${-(shown.x / shown.w) * 100}%`,
+                    top: `${-(shown.y / shown.h) * 100}%`,
+                    width: `${100 / shown.w}%`,
+                    height: `${100 / shown.h}%`,
+                    maxWidth: 'none',
+                    backgroundImage: `url("${props.image}")`,
+                    backgroundSize: '100% 100%',
+                    backgroundRepeat: 'no-repeat',
+                  },
+                })),
+            MASK_HANDLES.map(position => h('span', {
+              key: position,
+              className: `md-mask-handle md-mask-handle-${position}`,
+              onPointerDown: event => start(event, index, position),
+              onPointerMove: move,
+              onPointerUp: end,
+              onPointerCancel: end,
+            }))
+          )
+        })
+      )
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -4169,8 +4417,15 @@ window.__ModuleLoader__.load({
         })
       }, [reader.bookId, reader.code])
       // Every edit goes through these: state, storage and the announcement stay in
-      // step, and a page's own load never writes anything back.
+      // step, and a page's own load never writes anything back. Each one first
+      // files the page as it was, so the toolbar's undo has something to go back
+      // to; an edit that changes nothing is not filed and not written.
+      const historyKeyOf = pageNumber => `mathdesk:history:${reader.bookId}:${reader.code}:${pageNumber}`
+      const [, bumpHistory] = useState(0)
       const savePageAnnots = next => {
+        if (sameList(next, strokesRef.current)) return
+        recordHistory(historyKeyOf(reader.page), snapshotOf(strokesRef.current, masksRef.current))
+        bumpHistory(value => value + 1)
         strokesRef.current = next
         setStrokes(next)
         try {
@@ -4182,6 +4437,9 @@ window.__ModuleLoader__.load({
         seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }
       const savePageMasks = next => {
+        if (sameList(next, masksRef.current)) return
+        recordHistory(historyKeyOf(reader.page), snapshotOf(strokesRef.current, masksRef.current))
+        bumpHistory(value => value + 1)
         masksRef.current = next
         setMasks(next)
         try {
@@ -4192,6 +4450,36 @@ window.__ModuleLoader__.load({
         mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
         seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
       }
+      // Undo/redo restore both lists at once: one step is one action, even when
+      // it touched ink and boxes together.
+      const restorePage = snapshot => {
+        strokesRef.current = snapshot.annots
+        masksRef.current = snapshot.masks
+        setStrokes(snapshot.annots)
+        setMasks(snapshot.masks)
+        try {
+          window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(snapshot.annots))
+          window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(snapshot.masks))
+        } catch {
+          // storage unavailable: the restored page lasts this session only
+        }
+        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
+        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+      }
+      const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
+      const undoPage = () => {
+        const previous = undoHistory(historyKeyOf(reader.page), currentSnapshot())
+        if (previous === null) return
+        restorePage(previous)
+        bumpHistory(value => value + 1)
+      }
+      const redoPage = () => {
+        const next = redoHistory(historyKeyOf(reader.page), currentSnapshot())
+        if (next === null) return
+        restorePage(next)
+        bumpHistory(value => value + 1)
+      }
+      const historyCounts = historyDepth(historyKeyOf(reader.page))
       // Reconcile with the library mirror on open: a cleared browser gets its
       // pages back, a browser that predates the mirror hands them over.
       useEffect(() => {
@@ -5064,39 +5352,12 @@ window.__ModuleLoader__.load({
           onPointerUp: maskUp,
           onPointerLeave: maskUp,
         },
-          masks.map((mask, index) => h('div', {
-            key: `${mask.x}-${mask.y}-${index}`,
-            className: 'md-mask',
-            title: format('overlayRemove'),
-            onPointerDown: event => {
-              event.stopPropagation()
-              savePageMasks(masksRef.current.filter((item, position) => position !== index))
-            },
-            style: {
-              left: `${mask.x * 100}%`,
-              top: `${mask.y * 100}%`,
-              width: `${mask.w * 100}%`,
-              height: `${mask.h * 100}%`,
-            },
-          },
-            dualDoc === null || mask.w <= 0 || mask.h <= 0 || translatedImage === ''
-              ? null
-              // One decoded page image serves every box: the boxes share the
-              // same data URL, so a page with ten boxes costs one bitmap, not ten.
-              : h('div', {
-                className: 'md-mask-page-image',
-                style: {
-                  position: 'absolute',
-                  left: `${-(mask.x / mask.w) * 100}%`,
-                  top: `${-(mask.y / mask.h) * 100}%`,
-                  width: `${100 / mask.w}%`,
-                  height: `${100 / mask.h}%`,
-                  maxWidth: 'none',
-                  backgroundImage: `url("${translatedImage}")`,
-                  backgroundSize: '100% 100%',
-                  backgroundRepeat: 'no-repeat',
-                },
-              }))),
+          h(MaskBoxes, {
+            masks,
+            image: translatedImage,
+            onChange: (index, mask) => savePageMasks(masksRef.current.map((item, position) => (position === index ? mask : item))),
+            onDelete: index => savePageMasks(masksRef.current.filter((item, position) => position !== index)),
+          }),
           maskDraft === null
             ? null
             : h('div', {
@@ -5322,6 +5583,19 @@ window.__ModuleLoader__.load({
               title: format('annotClearHint'), 'aria-label': format('annotClear'),
               onClick: () => savePageAnnots([]),
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
+            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+              disabled: historyCounts.undo === 0,
+              title: format('undoHint'), 'aria-label': format('undo'),
+              onClick: undoPage,
+            }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+              disabled: historyCounts.redo === 0,
+              title: format('redoHint'), 'aria-label': format('redo'),
+              onClick: redoPage,
+            }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('select', {
               className: 'md-reader-lang',
@@ -6079,8 +6353,24 @@ window.__ModuleLoader__.load({
 .md-annot-width input[type="range"] { width: 68px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
 .md-annot-width-value { min-width: 28px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary)); }
-.md-mask { position: absolute; box-sizing: border-box; overflow: hidden; border: 1px dashed rgba(40, 140, 235, .9); }
+.md-mask { position: absolute; box-sizing: border-box; overflow: visible; border: 1px dashed rgba(40, 140, 235, .9); }
+/* The image is clipped by the inner wrapper, so the handles on the border are
+   not cut off. */
+.md-mask-clip { position: absolute; inset: 0; overflow: hidden; }
 .md-mask img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
+.md-mask-boxes { position: absolute; inset: 0; pointer-events: none; }
+.md-mask-boxes .md-mask { pointer-events: auto; cursor: move; }
+.md-mask-boxes .md-mask-active { border-style: solid; }
+.md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--dsw-alias-bg-base); border: 1px solid rgba(40, 140, 235, .95); box-shadow: 0 1px 2px rgba(0, 0, 0, .18); pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
+.md-mask:hover .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; }
+.md-mask-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
+.md-mask-handle-n { left: 50%; top: 0; cursor: ns-resize; }
+.md-mask-handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.md-mask-handle-e { left: 100%; top: 50%; cursor: ew-resize; }
+.md-mask-handle-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.md-mask-handle-s { left: 50%; top: 100%; cursor: ns-resize; }
+.md-mask-handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.md-mask-handle-w { left: 0; top: 50%; cursor: ew-resize; }
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
@@ -6477,16 +6767,54 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         mirrorPageAnnotations(bookId, code, pageNumber)
         seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
       }
+      const historyKeyOf = pageNumber => `mathdesk:history:${bookId}:${code}:${pageNumber}`
+      const [, bumpHistory] = useState(0)
       const commitStrokes = next => {
+        if (sameList(next, strokesRef.current)) return
+        recordHistory(historyKeyOf(pageRef.current), snapshotOf(strokesRef.current, masksRef.current))
+        bumpHistory(value => value + 1)
         strokesRef.current = next
         setStrokes(next)
         commitPage('annots', next, pageRef.current)
       }
       const commitMasks = next => {
+        if (sameList(next, masksRef.current)) return
+        recordHistory(historyKeyOf(pageRef.current), snapshotOf(strokesRef.current, masksRef.current))
+        bumpHistory(value => value + 1)
         masksRef.current = next
         setMasks(next)
         commitPage('masks', next, pageRef.current)
       }
+      // Undo/redo restore ink and boxes together, then announce once.
+      const restorePage = snapshot => {
+        const pageNumber = pageRef.current
+        strokesRef.current = snapshot.annots
+        masksRef.current = snapshot.masks
+        setStrokes(snapshot.annots)
+        setMasks(snapshot.masks)
+        try {
+          window.localStorage.setItem(`mathdesk:annots:${bookId}:${code}:${pageNumber}`, JSON.stringify(snapshot.annots))
+          window.localStorage.setItem(`mathdesk:masks:${bookId}:${code}:${pageNumber}`, JSON.stringify(snapshot.masks))
+        } catch {
+          // storage unavailable: the restored page lasts this session only
+        }
+        mirrorPageAnnotations(bookId, code, pageNumber)
+        seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
+      }
+      const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
+      const undoPage = () => {
+        const previous = undoHistory(historyKeyOf(pageRef.current), currentSnapshot())
+        if (previous === null) return
+        restorePage(previous)
+        bumpHistory(value => value + 1)
+      }
+      const redoPage = () => {
+        const next = redoHistory(historyKeyOf(pageRef.current), currentSnapshot())
+        if (next === null) return
+        restorePage(next)
+        bumpHistory(value => value + 1)
+      }
+      const historyCounts = historyDepth(historyKeyOf(page))
 
       // A draft belongs to the page it was started on: a page change (or the
       // reader's edit) would otherwise save it into the new page's list. An
@@ -6631,14 +6959,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           maskDraftRef.current = null
           setMaskDraft(null)
           if (draft === null || start === null) return
-          if (draft.w > 0.02 && draft.h > 0.02) {
-            commitMasks([...masksRef.current, draft])
-            return
-          }
-          // A click without a drag removes the box under the pointer.
-          const next = masksRef.current.filter(mask => !(start[0] >= mask.x && start[0] <= mask.x + mask.w
-            && start[1] >= mask.y && start[1] <= mask.y + mask.h))
-          if (next.length !== masksRef.current.length) commitMasks(next)
+          // A drag small enough to be a click draws nothing; boxes are deleted
+          // with a right-click now, not by tapping them.
+          if (draft.w > 0.02 && draft.h > 0.02) commitMasks([...masksRef.current, draft])
           return
         }
         const draft = draftRef.current
@@ -6938,8 +7261,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // The boxes: each one clips the translated page to its own region, exactly
       // as the reader's overlay layer does. The frame shows as soon as a box
-      // exists, even while the translated page is still loading.
-      const masksLayer = masks.length === 0 || shownVariant === 'translated'
+      // exists, even while the translated page is still loading. With the box
+      // tool picked the editable copy in the edit layer takes over instead.
+      const masksLayer = masks.length === 0 || shownVariant === 'translated' || tool === 'mask'
         ? null
         : h('div', { className: 'md-masks-readonly', 'aria-hidden': true },
           masks.map((mask, index) => h('div', {
@@ -6951,20 +7275,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               width: `${mask.w * 100}%`,
               height: `${mask.h * 100}%`,
             },
-          }, maskImage === '' ? null : h('div', {
-            className: 'md-mask-page-image',
-            style: {
-              position: 'absolute',
-              left: `${-(mask.x / mask.w) * 100}%`,
-              top: `${-(mask.y / mask.h) * 100}%`,
-              width: `${100 / mask.w}%`,
-              height: `${100 / mask.h}%`,
-              maxWidth: 'none',
-              backgroundImage: `url("${maskImage}")`,
-              backgroundSize: '100% 100%',
-              backgroundRepeat: 'no-repeat',
-            },
-          }))))
+          },
+            h('div', { className: 'md-mask-clip' },
+              maskImage === '' ? null : h('div', {
+                className: 'md-mask-page-image',
+                style: {
+                  position: 'absolute',
+                  left: `${-(mask.x / mask.w) * 100}%`,
+                  top: `${-(mask.y / mask.h) * 100}%`,
+                  width: `${100 / mask.w}%`,
+                  height: `${100 / mask.h}%`,
+                  maxWidth: 'none',
+                  backgroundImage: `url("${maskImage}")`,
+                  backgroundSize: '100% 100%',
+                  backgroundRepeat: 'no-repeat',
+                },
+              })))))
 
       // The editing surface: an invisible page-sized layer that only takes pointer
       // events while a tool is picked, so scrolling stays untouched otherwise.
@@ -7007,6 +7333,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 height: `${maskDraft.h * 100}%`,
               },
             }),
+          // With the box tool picked the boxes move and resize in place, and a
+          // right-click deletes one (undo brings it back).
+          tool === 'mask'
+            ? h(MaskBoxes, {
+              masks,
+              image: maskImage,
+              onChange: (index, mask) => commitMasks(masksRef.current.map((item, position) => (position === index ? mask : item))),
+              onDelete: index => commitMasks(masksRef.current.filter((item, position) => position !== index)),
+            })
+            : null,
           noteEdit === null
             ? null
             : h(NoteEditor, {
@@ -7030,8 +7366,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       menuState.current = {
         page, count, mode, autoFit, follow, phase, bookId, code, target, tool, toolsHidden,
         strokes: strokes.length, masks: masks.length,
+        undo: historyCounts.undo, redo: historyCounts.redo,
         tabActions: info.tab.actions,
       }
+      // The menu resolves once per target kind; reading the actions from a ref
+      // keeps it from capturing a stale page's undo stack.
+      const historyActions = useRef({ undo: undoPage, redo: redoPage })
+      historyActions.current = { undo: undoPage, redo: redoPage }
       const menuActions = useCallback(() => {
         const state = menuState.current
         if (state === null) return []
@@ -7069,6 +7410,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, run: () => toggleTool('erase') },
               { id: 'text', label: `${check(state.tool === 'text')}${format('annotText')}`, run: () => toggleTool('text') },
               { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, run: () => toggleTool('mask') },
+              {
+                id: 'undo',
+                label: format('undo'),
+                disabled: state.undo === 0,
+                separatorBefore: true,
+                run: () => historyActions.current.undo(),
+              },
+              {
+                id: 'redo',
+                label: format('redo'),
+                disabled: state.redo === 0,
+                run: () => historyActions.current.redo(),
+              },
               {
                 id: 'clear-annots',
                 label: format('sideMenuClearAnnots'),
@@ -7321,6 +7675,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('overlayToggle'),
             onClick: () => toggleTool('mask'),
           }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
+          h('span', { className: 'md-side-gap' }),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            disabled: historyCounts.undo === 0,
+            title: format('undoHint'),
+            'aria-label': format('undo'),
+            onClick: () => undoPage(),
+          }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            disabled: historyCounts.redo === 0,
+            title: format('redoHint'),
+            'aria-label': format('redo'),
+            onClick: () => redoPage(),
+          }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
           h('span', { className: 'md-side-gap' }),
           h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
             `${Math.round(shown * 100)}%`),
