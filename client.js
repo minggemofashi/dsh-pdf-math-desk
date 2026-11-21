@@ -6937,13 +6937,30 @@ window.__ModuleLoader__.load({
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 .md-reader-single { display: flex; justify-content: safe center; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-/* The "已生成 …pdf（共 N tokens）" line is reference noise: keep its space so the
-   page never jumps, but hide it until the reader bar/subbar or the line itself is
-   hovered, the same way the bilingual header controls behave. */
-.md-reader-note-reveal { opacity: 0; pointer-events: none; transition: opacity .18s ease; }
-.md-reader-bar:hover ~ .md-reader-note-reveal,
-.md-reader-subbar:hover ~ .md-reader-note-reveal,
-.md-reader-note-reveal:hover { opacity: 1; pointer-events: auto; }
+/* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
+   row from the page. It now takes no layout height at all: the note floats as an
+   overlay above the top of the stage and only fades in while the reader bar, the
+   tool row, or the note itself is hovered. Reading area stays maximal. */
+.md-reader-note-reveal { position: relative; height: 0; z-index: 3; }
+.md-reader-note-reveal > .md-reader-note {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.md-reader-bar:hover ~ .md-reader-note-reveal > .md-reader-note,
+.md-reader-subbar:hover ~ .md-reader-note-reveal > .md-reader-note,
+.md-reader-note-reveal:hover > .md-reader-note {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
