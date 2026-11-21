@@ -323,8 +323,11 @@ export function createHandler(config, options = {}) {
           for (const sub of ['整本', '']) {
             try {
               const entries = await readdir(join(library.libraryDir, sub), { withFileTypes: true })
-              const match = entries.find(entry => entry.isFile() && /\.pdf$/i.test(entry.name)
-                && entry.name.replace(/\.pdf$/i, '') === book)
+              const match = entries.find(entry => {
+                if (!entry.isFile() || !/\.pdf$/i.test(entry.name)) return false
+                const stem = entry.name.replace(/\.pdf$/i, '')
+                return stem === book || stem.startsWith(book) || book.startsWith(stem)
+              })
               if (match !== undefined) source = join(library.libraryDir, sub, match.name)
             } catch {
               // that folder does not exist
