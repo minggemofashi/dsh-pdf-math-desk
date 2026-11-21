@@ -2615,6 +2615,7 @@ window.__ModuleLoader__.load({
                 onRetryRename: props.onRetryRename,
                 onDigest: props.onDigest,
                 onOpenArtifact: props.onOpenArtifact,
+                onRenderArtifact: props.onRenderArtifact,
                 onRetryArtifacts: props.onRetryArtifacts,
                 onReloadArtifacts: props.onReloadArtifacts,
                 onCopyPath: props.onCopyPath,
