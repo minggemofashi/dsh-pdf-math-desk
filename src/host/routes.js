@@ -22,7 +22,7 @@
  * @module dsh-pdf-math-desk/routes
  */
 import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, extname, isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { PLUGIN_VERSION } from './config.js'
@@ -115,7 +115,30 @@ export function createHandler(config, options = {}) {
    * The library every read route works on.
    * @returns {Promise<object>} the active library, or the profile's fallback.
    */
-  async function activeLibrary() {
+  /**
+ * Locate a chapter's own PDF: the split folder first, then the whole-book folder.
+ * @param {object} library - active library entry.
+ * @param {string} book - book id.
+ * @param {string} name - PDF file name.
+ * @returns {Promise<string|null>} absolute path, or null when missing.
+ */
+async function locateChapterPdf(library, book, name) {
+  const candidates = [
+    join(library.libraryDir, '分片', book, name),
+    join(library.libraryDir, '整本', name),
+  ]
+  for (const candidate of candidates) {
+    try {
+      await stat(candidate)
+      return candidate
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null
+}
+
+async function activeLibrary() {
     if (libraries !== undefined && typeof libraries.active === 'function') {
       const active = await libraries.active()
       if (active !== null && active !== undefined) return active
@@ -303,7 +326,7 @@ export function createHandler(config, options = {}) {
           return
         }
         try {
-          const body = await readJson(request)
+          const body = await readJson(request, 16 * 1024 * 1024)
           const image = typeof body.image === 'string' ? body.image : ''
           if (!image.startsWith('data:image/')) {
             fail(response, 400, 'bad-image', '缺少页面图片')
@@ -326,8 +349,12 @@ export function createHandler(config, options = {}) {
             return
           }
           const library = await activeLibrary()
-          const dir = join(library.libraryDir, '产物', body.book, body.code)
-          await mkdir(dir, { recursive: true })
+          const source = await locateChapterPdf(library, body.book, name)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const dir = dirname(source)
           const markdown = await translatePage({ apiKey: config.deepseekApiKey, image, target })
           const mdPath = join(dir, `.translate-${Date.now()}.md`)
           await writeFile(mdPath, markdown, 'utf8')
@@ -340,6 +367,70 @@ export function createHandler(config, options = {}) {
           sendJson(response, 200, { ok: true, pdf: basename(out) })
         } catch (error) {
           fail(response, 502, 'translate-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/translated-info`) {
+        try {
+          const book = url.searchParams.get('book') ?? ''
+          const name = basename(url.searchParams.get('name') ?? '')
+          if (!/\.pdf$/i.test(name)) {
+            sendJson(response, 200, { ok: true, exists: false })
+            return
+          }
+          const library = await activeLibrary()
+          const source = await locateChapterPdf(library, book, name)
+          if (source === null) {
+            sendJson(response, 200, { ok: true, exists: false })
+            return
+          }
+          const out = join(dirname(source), `${name.slice(0, name.length - 4)}_translated.pdf`)
+          let exists = false
+          try {
+            await stat(out)
+            exists = true
+          } catch {
+            exists = false
+          }
+          sendJson(response, 200, { ok: true, exists, pdf: basename(out) })
+        } catch (error) {
+          fail(response, 500, 'translated-info-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/trash-translated`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const name = basename(String(body.name ?? ''))
+          if (!/\.pdf$/i.test(name)) {
+            fail(response, 400, 'bad-name', '只支持 PDF 章节')
+            return
+          }
+          const library = await activeLibrary()
+          const source = await locateChapterPdf(library, body.book, name)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const out = join(dirname(source), `${name.slice(0, name.length - 4)}_translated.pdf`)
+          try {
+            await stat(out)
+          } catch {
+            fail(response, 404, 'missing-file', '译文文件不存在')
+            return
+          }
+          const trashDir = join(library.libraryDir, '回收站', '译文')
+          await mkdir(trashDir, { recursive: true })
+          await rename(out, join(trashDir, `${Date.now()}_${basename(out)}`))
+          sendJson(response, 200, { ok: true })
+        } catch (error) {
+          fail(response, 500, 'trash-translated-failed', String(error && error.message ? error.message : error))
         }
         return
       }
@@ -757,6 +848,21 @@ export function createHandler(config, options = {}) {
           : artifactPdfPath(await activeLibrary(), match.book, match.chapter, name)
         if (!source.ok) {
           fail(response, 400, source.reason, '这个文件不能作为 PDF 打开')
+          return
+        }
+        if (url.searchParams.get('variant') === 'translated') {
+          const translated = join(dirname(source.path), `${basename(source.path, '.pdf')}_translated.pdf`)
+          let translatedBytes = null
+          try {
+            translatedBytes = await readPdf(translated)
+          } catch {
+            translatedBytes = null
+          }
+          if (translatedBytes === null || !translatedBytes.ok) {
+            fail(response, 404, 'missing-file', '还没有这一页/章的译文')
+            return
+          }
+          sendBytes(response, 200, translatedBytes.bytes, 'application/pdf')
           return
         }
         const file = await readPdf(source.path)

@@ -142,6 +142,9 @@ window.__ModuleLoader__.load({
       translateHint: '把当前页翻译成另一种语言；需要 DeepSeek API Key',
       translateToEn: '译为英文',
       translateToZh: '译为中文',
+      translatedLabel: '译文',
+      translatedDelete: '删除译文',
+      translatedDeleteConfirm: '删除这份译文？原 PDF 不会被改动，译文会移动到 回收站\\译文\\，可恢复。',
       readerNewLabel: '从这一章开始：',
       readerNewHint: '接着本章该分组的会话并跳过去；快满时自动另起续会话；本章 PDF 会自动开在会话右侧',
       readerInSessionFailed: '会话已建好，但右侧 PDF 没打开（可能不在库工作区）。',
@@ -423,6 +426,9 @@ window.__ModuleLoader__.load({
       translateHint: 'Translate the current page; needs a DeepSeek API key',
       translateToEn: 'to English',
       translateToZh: 'to Chinese',
+      translatedLabel: 'Translation',
+      translatedDelete: 'Delete translation',
+      translatedDeleteConfirm: 'Delete this translation? The original PDF is untouched; the translation moves to 回收站\\译文\\ and can be restored.',
       readerNewLabel: 'Start from this chapter:',
       readerNewHint: 'Continues this chapter’s conversation in this group and goes there; starts a continuation when it fills up. The chapter PDF opens on the session’s right.',
       readerInSessionFailed: 'The session was created, but the PDF could not open on its right side.',
@@ -3065,7 +3071,7 @@ window.__ModuleLoader__.load({
               : reader.mode === 'continuous'
                 ? h(ContinuousView, {
                   doc: props.doc,
-                  showBlocks: props.showBlocks,
+                  showBlocks,
                   count: reader.count,
                   scale: reader.scale ?? 1,
                   rootRef: props.stageRef,
@@ -3090,6 +3096,22 @@ window.__ModuleLoader__.load({
     function ChapterRow(props) {
       const chapter = props.chapter
       const [sessionsOpen, setSessionsOpen] = useState(false)
+      const [translatedPdf, setTranslatedPdf] = useState('')
+      useEffect(() => {
+        if (!props.open || chapter.file === '') {
+          setTranslatedPdf('')
+          return undefined
+        }
+        let cancelled = false
+        request('GET', `translated-info?book=${encodeURIComponent(props.bookId)}&name=${encodeURIComponent(`${chapter.file}.pdf`)}`)
+          .then(payload => {
+            if (!cancelled && payload !== null && payload.exists === true) setTranslatedPdf(String(payload.pdf))
+          })
+          .catch(() => {})
+        return () => {
+          cancelled = true
+        }
+      }, [props.open, chapter.file, props.bookId])
       const open = props.open
       const detailId = `md-detail-${encodeURIComponent(props.bookId)}-${chapter.code}`
       const kindKey = chapter.kind !== undefined && chapter.kind !== 'chapter' ? `kind.${chapter.kind}` : ''
@@ -3127,6 +3149,29 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small md-detail-open',
               onClick: () => props.onOpenPdf(chapter),
             }, format('openPdf'))
+          ),
+          translatedPdf === '' ? null : h('div', { className: 'md-detail-line' },
+            h('span', { className: 'md-detail-key' }, format('translatedLabel')),
+            h('span', { className: 'md-detail-value' }, translatedPdf),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-detail-open',
+              onClick: () => {
+                window.open(`mathdesk/pdf?book=${encodeURIComponent(props.bookId)}&code=${encodeURIComponent(chapter.code)}&variant=translated`, '_blank', 'noopener')
+              },
+            }, format('openPdf')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: async () => {
+                if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                  && !window.confirm(format('translatedDeleteConfirm'))) return
+                try {
+                  await request('POST', 'trash-translated', { book: props.bookId, name: `${chapter.file}.pdf` })
+                  setTranslatedPdf('')
+                } catch (error) {
+                  window.alert(error !== null && error !== undefined && error.message ? error.message : String(error))
+                }
+              },
+            }, format('translatedDelete'))
           ),
           h('div', {
             className: 'md-sessions-wrap',

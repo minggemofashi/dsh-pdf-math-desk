@@ -99,13 +99,13 @@ export function fail(response, status, code, message) {
  * @param {import('node:http').IncomingMessage} request - the inbound request.
  * @returns {Promise<unknown>} the parsed body.
  */
-export function readJson(request) {
+export function readJson(request, limit = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let size = 0
     request.on('data', chunk => {
       size += chunk.length
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         reject(new Error('请求体过大'))
         request.destroy()
         return
