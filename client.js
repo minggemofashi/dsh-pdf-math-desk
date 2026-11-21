@@ -4231,7 +4231,7 @@ window.__ModuleLoader__.load({
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
 .md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
-.md-reader-single { display: flex; justify-content: center; margin: 0 auto; }
+.md-reader-single { display: flex; justify-content: safe center; margin: 0 auto; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang-label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-reader-lang { font: inherit; font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
@@ -4256,8 +4256,8 @@ window.__ModuleLoader__.load({
 .md-blockbox { position: absolute; box-sizing: border-box; border: 1px dashed rgba(235, 70, 70, .85); background: transparent; }
 .md-blockbox[data-kind="heading"] { border-color: rgba(60, 130, 235, .95); background: transparent; }
 .md-blockbox[data-kind="formula"] { border-color: rgba(40, 160, 90, .95); background: transparent; }
-.md-reader-continuous { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
-.md-reader-slot { display: flex; flex-direction: column; align-items: center; min-height: 240px; position: relative; }
+.md-reader-continuous { display: flex; flex-direction: column; align-items: safe center; gap: 18px; width: 100%; }
+.md-reader-slot { display: flex; flex-direction: column; align-items: safe center; min-height: 240px; position: relative; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-modes { display: flex; align-items: center; gap: 4px; }
