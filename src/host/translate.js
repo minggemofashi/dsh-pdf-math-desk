@@ -22,6 +22,22 @@ function promptFor(target) {
 }
 
 /**
+ * Normalize the model output so XeLaTeX can compile it: balanced display
+ * math, LaTeX bracket forms converted, and an unclosed `$$` closed.
+ * @param {string} markdown - raw model output.
+ * @returns {string} compile-friendly Markdown.
+ */
+function balanceMath(markdown) {
+  let text = markdown
+    .replace(/\\\[/g, '$$')
+    .replace(/\\\]/g, '$$')
+    .replace(/\\\(/g, '$')
+    .replace(/\\\)/g, '$')
+  if ((text.match(/\$\$/g) ?? []).length % 2 === 1) text = `${text}\n\n$$`
+  return text
+}
+
+/**
  * @param {{ apiKey: string, image: string, target: 'zh'|'en', signal?: AbortSignal }} options - key, JPEG data URL, target language.
  * @returns {Promise<string>} Markdown produced by the model.
  */
@@ -59,5 +75,5 @@ export async function translatePage(options) {
   if (typeof content !== 'string' || content.trim() === '') {
     throw new Error('DeepSeek API 返回了空内容')
   }
-  return content.trim()
+  return balanceMath(content.trim())
 }

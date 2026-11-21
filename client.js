@@ -2829,7 +2829,8 @@ window.__ModuleLoader__.load({
         if (line.text === '') continue
         if (current !== null) {
           const gap = line.top - current.bottom
-          if (gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
+          const indented = line.left > current.left + Math.max(4, line.h * 1.1)
+          if (!indented && gap <= Math.max(current.h * 1.2, line.h * 1.6) && line.left <= current.right + line.h * 1.5) {
             current.lines.push(line)
             current.bottom = Math.max(current.bottom, line.baseline)
             current.right = Math.max(current.right, line.right)
@@ -2930,6 +2931,43 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         saveReaderPage(reader.bookId, reader.code, reader.page)
       }, [reader.bookId, reader.code, reader.page])
+      // A chapter translation runs on the Host; reopening the reader resumes
+      // watching it instead of losing the progress.
+      useEffect(() => {
+        let cancelled = false
+        const key = `mathdesk:job:${reader.bookId}:${reader.code}`
+        let jobId = ''
+        try {
+          jobId = window.localStorage.getItem(key) ?? ''
+        } catch {
+          jobId = ''
+        }
+        if (jobId === '') return undefined
+        const tick = async () => {
+          try {
+            const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
+            if (cancelled) return
+            if (state.status === 'done') {
+              setTranslateNote(`${format('translateDone')}：${state.pdf}`)
+              window.localStorage.removeItem(key)
+              return
+            }
+            if (state.status === 'error') {
+              setTranslateNote(`${format('translateFailed')}：${state.error}`)
+              window.localStorage.removeItem(key)
+              return
+            }
+            setTranslateNote(`${format('translating')} ${state.done}/${state.total}`)
+            setTimeout(() => { void tick() }, 2000)
+          } catch {
+            // job file may be gone; stop watching
+          }
+        }
+        void tick()
+        return () => {
+          cancelled = true
+        }
+      }, [reader.bookId, reader.code])
 
       const registerSlot = useCallback((page, node) => {
         if (node === null) slotRefs.current.delete(page)
@@ -2992,9 +3030,21 @@ window.__ModuleLoader__.load({
           })
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
           const jobId = started.jobId
+          try {
+            window.localStorage.setItem(`mathdesk:job:${reader.bookId}:${reader.code}`, jobId)
+          } catch {
+            // storage unavailable
+          }
           for (;;) {
             await new Promise(resolve => setTimeout(resolve, 2000))
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
+            if (state.status === 'done' || state.status === 'error') {
+              try {
+                window.localStorage.removeItem(`mathdesk:job:${reader.bookId}:${reader.code}`)
+              } catch {
+                // storage unavailable
+              }
+            }
             if (state.status === 'done') {
               setTranslateNote(`${format('translateDone')}：${state.pdf}`)
               break
