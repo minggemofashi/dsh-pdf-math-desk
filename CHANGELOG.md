@@ -2,6 +2,10 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v0.49.1
+
+- 阅读器重写第 1 步：抽出 `paintPageCanvas(page, canvas, scale)`，单页与连续两种模式共用同一套 DPR/画布尺寸/渲染逻辑，去掉两份重复实现。
+
 ## v0.49.0
 
 - 阅读器重写启动：新增 `src/client/viewer.js` 基础模块（统一绘制 `paintPage`、遮罩几何 `maskPageStyle`、viewer 样式），作为后续 PdfViewer 的落地骨架；

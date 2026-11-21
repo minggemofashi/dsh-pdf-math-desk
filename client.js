@@ -2719,6 +2719,29 @@ window.__ModuleLoader__.load({
      * @param {{ doc: object, pageNumber: number, scale: number, rootRef: object, onVisible: Function, registerSlot: Function, onError: Function }} props - the document, page, zoom and callbacks.
      * @returns {import('react').ReactElement} the page slot.
      */
+    /**
+     * Paint one page into a canvas; shared by single and continuous mode so the
+     * DPR/canvas-size rules live in one place during the viewer rewrite.
+     * @param {object} page - pdf.js page.
+     * @param {HTMLCanvasElement} node - target canvas.
+     * @param {number} scale - zoom.
+     * @returns {object} the pdf.js render task.
+     */
+    function paintPageCanvas(page, node, scale) {
+      const viewport = page.getViewport({ scale })
+      let dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+      if (viewport.width * dpr > 8000 || viewport.height * dpr > 8000) dpr = 1
+      node.width = Math.max(1, Math.floor(viewport.width * dpr))
+      node.height = Math.max(1, Math.floor(viewport.height * dpr))
+      node.style.width = `${Math.floor(viewport.width)}px`
+      node.style.height = `${Math.floor(viewport.height)}px`
+      return page.render({
+        canvasContext: node.getContext('2d'),
+        viewport,
+        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
+      })
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -2759,24 +2782,9 @@ window.__ModuleLoader__.load({
           try {
             const page = await props.doc.getPage(props.pageNumber)
             if (cancelled) return
-            const viewport = page.getViewport({ scale: props.scale })
             const node = canvas.current
             if (node === null) return
-            let dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
-            if (viewport.width * dpr > 8000 || viewport.height * dpr > 8000) dpr = 1
-            node.width = Math.max(1, Math.floor(viewport.width * dpr))
-            node.height = Math.max(1, Math.floor(viewport.height * dpr))
-            node.style.width = `${Math.floor(viewport.width)}px`
-            node.style.height = `${Math.floor(viewport.height)}px`
-            if (task.current !== null) {
-              try { task.current.cancel() } catch { /* already finished */ }
-              task.current = null
-            }
-            const render = page.render({
-              canvasContext: node.getContext('2d'),
-              viewport,
-              transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
-            })
+            const render = paintPageCanvas(page, node, props.scale)
             task.current = render
             await render.promise
             if (!cancelled) setRendered(true)
@@ -4787,23 +4795,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (cancelled) return
             const base = page.getViewport({ scale: 1 })
             const scale = reader.scale ?? fitScale(base.width)
-            const viewport = page.getViewport({ scale })
-            let dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
-            // An oversized canvas paints nothing; trade sharpness for a visible page.
-            if (viewport.width * dpr > 8000 || viewport.height * dpr > 8000) dpr = 1
-            canvas.width = Math.max(1, Math.floor(viewport.width * dpr))
-            canvas.height = Math.max(1, Math.floor(viewport.height * dpr))
-            canvas.style.width = `${Math.floor(viewport.width)}px`
-            canvas.style.height = `${Math.floor(viewport.height)}px`
             if (readerRender.current !== null) {
               try { readerRender.current.cancel() } catch { /* already finished */ }
               readerRender.current = null
             }
-            const task = page.render({
-              canvasContext: canvas.getContext('2d'),
-              viewport,
-              transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
-            })
+            const task = paintPageCanvas(page, canvas, scale)
             readerRender.current = task
             await task.promise
             if (cancelled) return
