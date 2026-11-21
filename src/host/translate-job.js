@@ -138,6 +138,7 @@ export async function startChapterJob(options) {
           }
           const image = `data:image/png;base64,${(await readFile(join(temporary, files[index]))).toString('base64')}`
           let pageMarkdown = ''
+          let blockError = ''
           if (typeof options.cacheDir === 'string' && typeof options.toolsDir === 'string') {
             try {
               const raw = await capture(join(options.toolsDir, 'pdf_blocks.py'), [options.source, String(index + 1)])
@@ -156,10 +157,20 @@ export async function startChapterJob(options) {
                   await writeFile(join(options.cacheDir, name), JSON.stringify(translated), 'utf8').catch(() => {})
                 } else {
                   await rm(join(options.cacheDir, name), { force: true }).catch(() => {})
+                  blockError = '模型没有返回任何块的译文'
                 }
+              } else {
+                blockError = '这一页没有解析出文本块'
               }
-            } catch {
+            } catch (error) {
+              // Falling back to whole-page translation is not silent any more:
+              // the chapter still translates, but the overlay can only be a
+              // reflow, so the job says which page lost block alignment.
+              blockError = String(error !== null && error !== undefined && error.message ? error.message : error)
               pageMarkdown = ''
+            }
+            if (blockError !== '') {
+              state.blockErrors = Array.from(new Set([...(state.blockErrors ?? []), `第 ${index + 1} 页：${blockError}`]))
             }
           }
           if (pageMarkdown.trim() === '') {
@@ -207,6 +218,7 @@ export async function startChapterJob(options) {
           }
           const fontClass = fontPt >= 12.5 ? '12pt' : fontPt >= 11.2 ? '11pt' : fontPt >= 10 ? '10pt' : '9pt'
           const parts = []
+          const reflowPages = []
           for (let index = 0; index < chunks.length; index += 1) {
             const size = sizes[index] ?? sizes[sizes.length - 1] ?? [595, 842]
             const miniMd = join(tmpdir(), `md-${jobId}-${index}.md`)
@@ -228,6 +240,7 @@ export async function startChapterJob(options) {
               }
             }
             if (!positioned) {
+              reflowPages.push(index + 1)
               await writeFile(miniMd, chunks[index], 'utf8')
               await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
                 MATH_DESK_NO_TITLE: '1',
@@ -239,6 +252,9 @@ export async function startChapterJob(options) {
           }
           await capture(join(options.toolsDir, 'pdf_merge.py'), [options.overlayPath, ...parts])
           state.overlay = basename(options.overlayPath)
+          // The overlay is only positionally aligned when every page came from
+          // its block boxes. Say so instead of letting the boxes look broken.
+          if (reflowPages.length > 0) state.overlayReflowPages = reflowPages
         } catch {
           // The overlay PDF is optional; the natural reading PDF still exists.
         }

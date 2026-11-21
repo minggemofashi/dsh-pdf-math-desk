@@ -215,8 +215,7 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter 保存 · Shift+Enter 换行 · Esc 取消',
       annotTextEditHint: '双击编辑；清空内容再保存即删除',
       annotTextActiveHint: '文本框：点页面任意位置写字，Enter 保存，Esc 取消',
-      annotSingleOnly: '标注画在单页上：已切回单页，读完可以再切回双语',
-      annotSingleOnlyHint: '标注只在单页模式可用，先从菜单切到单页',
+      annotDualHint: '两栏都能写：笔记属于这一页，单页和译文里也看得到',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       exportPage: '导出本页',
@@ -241,6 +240,7 @@ window.__ModuleLoader__.load({
       overlayMissing: '叠加层还没准备好：先翻译本章，再打开叠加',
       overlayFallback: '叠加层 PDF 不可用：框内是整页译文的对应区域，位置可能对不齐',
       overlayEmpty: '这一页的叠加层没有文字，框内无译文；重新翻译本章可重建',
+      overlayReflow: '这一章的叠加层是整页重排，字号与位置跟原文不同；要逐位置对齐请重新翻译本章（会按块），或改用「双语」对照',
       overlayLoading: '正在准备叠加层…',
       overlayTwoColumns: '这一页疑似双栏：叠加位置可能不准，逐段对照建议用「双语」',
       translateAction: '翻译本页',
@@ -255,6 +255,7 @@ window.__ModuleLoader__.load({
       translating: '翻译中…',
       translateDone: '已生成',
       translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页），已用 {tokens} tokens；可以点「补译缺失页」只补这几页',
+      translateBlocksFallback: '第 {pages} 页没按块翻译，叠加层只能整页重排、对不齐；要精确对齐请重新翻译本章',
       translateTokens: '共 {n} tokens',
       translateFailed: '翻译失败',
       translateHint: '把本章翻成另一种语言（需要 DeepSeek API Key）',
@@ -616,8 +617,7 @@ window.__ModuleLoader__.load({
       annotTextEditorHint: 'Enter saves · Shift+Enter newline · Esc cancels',
       annotTextEditHint: 'Double-click to edit; save it empty to delete',
       annotTextActiveHint: 'Text box: click anywhere on the page and type; Enter saves, Esc cancels',
-      annotSingleOnly: 'Notes are drawn on the single page, so the view switched back to it; bilingual is one click away',
-      annotSingleOnlyHint: 'Notes only work in single-page view; switch to it from the menu',
+      annotDualHint: 'Both columns are writable: the notes belong to the page and show in the single-page and translated views too',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       exportPage: 'Export page',
@@ -642,6 +642,7 @@ window.__ModuleLoader__.load({
       overlayMissing: 'The overlay layer is not ready: translate this chapter first, then use the overlay',
       overlayFallback: 'The overlay PDF is unavailable: the boxes show the matching area of the whole translated page and may not line up',
       overlayEmpty: 'This overlay page has no text, so its boxes stay empty; translate the chapter again to rebuild it',
+      overlayReflow: 'This chapter was translated page by page, so the overlay was reflowed and its type size and position differ from the original; re-translate the chapter for block-aligned boxes, or use the bilingual view',
       overlayLoading: 'Preparing the overlay layer…',
       overlayTwoColumns: 'This page looks two-column: the overlay boxes may be off; use the bilingual view for a reliable reading',
       translateAction: 'Translate page',
@@ -656,6 +657,7 @@ window.__ModuleLoader__.load({
       translating: 'Translating…',
       translateDone: 'Created',
       translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
+      translateBlocksFallback: 'Page(s) {pages} were translated whole-page, so the overlay can only reflow and will not line up; re-translate the chapter for block-aligned boxes',
       translateTokens: '{n} tokens',
       translateFailed: 'Translation failed',
       translateHint: 'Translate this chapter into another language (needs a DeepSeek API key)',
@@ -3732,6 +3734,11 @@ window.__ModuleLoader__.load({
           style: baseHeight > 0 ? { minHeight: `${Math.round(baseHeight * props.scale)}px` } : undefined,
         },
           h('canvas', { className: 'md-reader-canvas', ref: canvas }),
+          // Pages painted from the outside (annotation and mask layers) belong to
+          // one page, so continuous mode draws them on the current page only.
+          props.overlayPage === props.pageNumber && props.overlay !== undefined && props.overlay !== null
+            ? props.overlay
+            : null,
           h(BlockOverlay, { bookId: props.bookId, code: props.code, pageNumber: props.pageNumber, show: props.showBlocks === true })
         )
       )
@@ -3769,6 +3776,8 @@ window.__ModuleLoader__.load({
           bookId: props.bookId,
           code: props.code,
           onError: props.onError,
+          overlay: props.overlay,
+          overlayPage: props.overlayPage,
         }))
       }
       return h('div', { className: 'md-reader-continuous' }, pages)
@@ -4049,6 +4058,10 @@ window.__ModuleLoader__.load({
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
           onError: props.onError,
+          // Continuous mode paints many pages; a layer passed from outside can
+          // only belong to the page being read, so it lands there.
+          overlay: props.overlay,
+          overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
         })
 
       if (props.variant === 'column') return content
@@ -4104,18 +4117,6 @@ window.__ModuleLoader__.load({
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
       const jobRef = useRef('')
-      // A one-off hint about the tool just picked, shown for a few seconds: it
-      // explains a view switch, so it does not need to stay.
-      const [annotNote, setAnnotNote] = useState('')
-      const annotNoteTimer = useRef(null)
-      const flashAnnot = text => {
-        setAnnotNote(text)
-        if (annotNoteTimer.current !== null) clearTimeout(annotNoteTimer.current)
-        annotNoteTimer.current = setTimeout(() => { setAnnotNote('') }, 6000)
-      }
-      useEffect(() => () => {
-        if (annotNoteTimer.current !== null) clearTimeout(annotNoteTimer.current)
-      }, [])
       const noteKey = `mathdesk:translate-note:${reader.bookId}:${reader.code}`
       const updateNote = value => {
         setTranslateNote(value)
@@ -4131,8 +4132,14 @@ window.__ModuleLoader__.load({
         const missing = Array.isArray(state.failedPages) ? state.failedPages : []
         const tokens = state.tokens !== null && typeof state.tokens === 'object' ? Number(state.tokens.total) || 0 : 0
         const suffix = tokens > 0 ? `（${format('translateTokens', { n: tokens.toLocaleString() })}）` : ''
-        if (missing.length === 0) return `${format('translateDone')}：${state.pdf}${suffix}`
-        return format('translateDonePartial', { n: missing.length, pages: missing.join('、'), tokens: tokens.toLocaleString() })
+        const base = missing.length === 0
+          ? `${format('translateDone')}：${state.pdf}${suffix}`
+          : format('translateDonePartial', { n: missing.length, pages: missing.join('、'), tokens: tokens.toLocaleString() })
+        // The overlay can only sit on the original's text when every page came
+        // from its block boxes; a page translated whole-page is a reflow.
+        const reflow = Array.isArray(state.overlayReflowPages) ? state.overlayReflowPages : []
+        if (reflow.length === 0) return base
+        return `${base}；${format('translateBlocksFallback', { n: reflow.length, pages: reflow.join('、') })}`
       }
       const partialKey = `mathdesk:partial:${reader.bookId}:${reader.code}`
       const [partialPages, setPartialPages] = useState([])
@@ -4390,7 +4397,15 @@ window.__ModuleLoader__.load({
             return
           }
           setTranslatedImage(rendered.url)
-          if (overlaySource.current === 'overlay') setOverlayNote(rendered.hasText ? '' : format('overlayEmpty'))
+          // A positioned overlay is one page per page. More (or fewer) pages
+          // mean it was built by reflowing whole pages, so its type size and
+          // line positions do not sit on the original's: say that instead of
+          // letting the box reveal look broken.
+          if (overlaySource.current === 'overlay') {
+            if (!rendered.hasText) setOverlayNote(format('overlayEmpty'))
+            else if (dualDoc.numPages !== reader.count) setOverlayNote(format('overlayReflow'))
+            else setOverlayNote('')
+          }
         })()
         return () => {
           cancelled = true
@@ -4480,8 +4495,10 @@ window.__ModuleLoader__.load({
       }, [annotKey, remoteAnnotRev])
       // Turning the page (or taking the other end's edit) moves the ink under
       // the editor: a draft left open would save itself onto the wrong page.
+      // An in-flight stroke is dropped for the same reason.
       useEffect(() => {
         setNoteEdit(null)
+        setDraftStroke(null)
       }, [annotKey, remoteAnnotRev])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
@@ -4527,18 +4544,20 @@ window.__ModuleLoader__.load({
       }
       // Notes are edited where they sit. Text that already exists under the
       // pointer is opened for editing instead of stacking a second note on top.
-      const openNote = point => {
+      // `side` says which layer opened the draft, so the editor renders in that
+      // column and never in the other one.
+      const openNote = (point, side) => {
         const list = strokesRef.current
         const found = list.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
         noteSeq.current += 1
         if (found >= 0) {
           const entry = list[found]
           noteText.current = String(entry.text ?? '')
-          setNoteEdit({ id: noteSeq.current, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? annotColor })
+          setNoteEdit({ id: noteSeq.current, side, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? annotColor })
           return
         }
         noteText.current = ''
-        setNoteEdit({ id: noteSeq.current, index: -1, x: point[0], y: point[1], text: '', color: annotColor })
+        setNoteEdit({ id: noteSeq.current, side, index: -1, x: point[0], y: point[1], text: '', color: annotColor })
       }
       const changeNote = text => {
         noteText.current = text
@@ -4552,27 +4571,8 @@ window.__ModuleLoader__.load({
         if (draft.index < 0 && noteText.current.trim() === '') return
         savePageAnnots(applyNote(strokesRef.current, draft, noteText.current))
       }
-      // A tool draws on the single-page box: continuous and bilingual views have
-      // no page-sized layer. Picking one leaves those views, exactly as "叠加"
-      // already does, and says so — a click that only flips an invisible mode
-      // reads as a broken button.
-      const ensureAnnotatable = () => {
-        if (reader.mode === 'single' && !dual) return false
-        if (reader.mode !== 'single') props.onMode('single')
-        if (dual) {
-          setDual(false)
-          setDualDoc(null)
-        }
-        setTimeout(bumpViewer, 80)
-        return true
-      }
-      const pickTool = name => {
-        const next = annotTool === name ? '' : name
-        setAnnotTool(next)
-        if (next !== '' && ensureAnnotatable()) flashAnnot(format('annotSingleOnly'))
-      }
       const erasing = useRef(false)
-      const annotDown = event => {
+      const annotDown = (event, side) => {
         if (annotTool === '') return
         const point = annotPoint(event)
         if (point === null) return
@@ -4586,7 +4586,7 @@ window.__ModuleLoader__.load({
           // A click outside the open editor only finishes it: making a new note
           // where the user merely clicked to dismiss would surprise them.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          else openNote(point)
+          else openNote(point, side)
           return
         }
         setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
@@ -4976,10 +4976,14 @@ window.__ModuleLoader__.load({
       // box: no aspect guess, no SVG clip path, no stretched text.
       // Freehand layer: SVG in page coordinates, above the masks. It only takes
       // pointer events while a tool is picked, so masks and the page stay usable.
-      const annotLayer = h('div', {
+      // One layer per view: the single page uses "main", the bilingual columns
+      // use one each. Both columns write to the same page, so a note made beside
+      // the original is there beside the translation too; the draft remembers
+      // which column opened it and only that column shows the editor.
+      const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
-        onPointerDown: annotDown,
+        onPointerDown: event => annotDown(event, side),
         onPointerMove: annotMove,
         onPointerUp: annotUp,
         onPointerLeave: annotUp,
@@ -5029,6 +5033,7 @@ window.__ModuleLoader__.load({
                 noteText.current = String(entry.text ?? '')
                 setNoteEdit({
                   id: noteSeq.current,
+                  side,
                   index,
                   x: entry.x,
                   y: entry.y,
@@ -5039,7 +5044,7 @@ window.__ModuleLoader__.load({
               : undefined,
           }, entry.text)
           : null)),
-        noteEdit === null
+        noteEdit === null || noteEdit.side !== side
           ? null
           : h(NoteEditor, {
             key: `note-${noteEdit.id}`,
@@ -5274,19 +5279,19 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'pen' ? 'true' : 'false',
               title: format('annotHint'), 'aria-label': format('annotPen'),
-              onClick: () => pickTool('pen'),
+              onClick: () => setAnnotTool(value => (value === 'pen' ? '' : 'pen')),
             }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
               title: format('annotEraseHint'), 'aria-label': format('annotErase'),
-              onClick: () => pickTool('erase'),
+              onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
             }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-icon-btn',
               'aria-pressed': annotTool === 'text' ? 'true' : 'false',
               title: format('annotTextHint'), 'aria-label': format('annotText'),
-              onClick: () => pickTool('text'),
+              onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
             }, annotIcon('M4 6h16M12 6v13M9 19h6')),
             ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
               key: color,
@@ -5391,12 +5396,11 @@ window.__ModuleLoader__.load({
             }, format('retryAction'))
             : null
         ),
-        // While the text tool is picked, say what to do with it: an icon-only
-        // button otherwise looks dead until the page is clicked. A view-change
-        // hint wins over it, because that is the more surprising thing to say.
-        annotNote !== ''
-          ? h('div', { className: 'md-reader-note', role: 'status' }, annotNote)
-          : annotTool === 'text' && noteEdit === null && reader.mode === 'single'
+        // While a tool is picked in the bilingual view, say where the ink goes:
+        // both columns write the same page, so a note stays with that page.
+        dual && annotTool !== '' && noteEdit === null
+          ? h('div', { className: 'md-reader-note' }, format('annotDualHint'))
+          : annotTool === 'text' && noteEdit === null
             ? h('div', { className: 'md-reader-note' }, format('annotTextActiveHint'))
             : null,
         overlay && (overlayNote !== '' || translatedImage === '')
@@ -5429,6 +5433,8 @@ window.__ModuleLoader__.load({
                   onVisible: notifyVisible,
                   registerSlot,
                   onError: props.onError,
+                  overlay: annotLayer('left'),
+                  overlayPage: reader.page,
                 })
               ),
               h('div', { className: 'md-reader-column', ref: dualRight },
@@ -5472,6 +5478,8 @@ window.__ModuleLoader__.load({
                   onVisible: ignoreVisible,
                   registerSlot: ignoreSlot,
                   onError: props.onError,
+                  overlay: annotLayer('right'),
+                  overlayPage: reader.page,
                 })
               )
             ))
@@ -5504,9 +5512,14 @@ window.__ModuleLoader__.load({
                 onError: props.onError,
                 children: [
                   masksLayer,
-                  annotLayer,
+                  annotLayer('main'),
                   h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
                 ],
+                // Continuous mode paints the same layers on the page being read.
+                overlay: masksLayer === null
+                  ? annotLayer('main')
+                  : [masksLayer, annotLayer('main')],
+                overlayPage: reader.page,
               })
       )
     }
@@ -6476,9 +6489,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }
 
       // A draft belongs to the page it was started on: a page change (or the
-      // reader's edit) would otherwise save it into the new page's list.
+      // reader's edit) would otherwise save it into the new page's list. An
+      // in-flight stroke or box is dropped for the same reason.
       useEffect(() => {
         setNoteEdit(null)
+        draftRef.current = null
+        setDraftStroke(null)
+        maskStartRef.current = null
+        maskDraftRef.current = null
+        setMaskDraft(null)
       }, [page, annotRev, shownVariant])
 
       // Point in page coordinates (0..1), measured against the editing layer,
@@ -7046,10 +7065,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             id: 'tools',
             label: format('sideMenuTools'),
             children: [
-              { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, disabled: state.mode !== 'single', run: () => toggleTool('pen') },
-              { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, disabled: state.mode !== 'single', run: () => toggleTool('erase') },
-              { id: 'text', label: `${check(state.tool === 'text')}${format('annotText')}`, disabled: state.mode !== 'single', run: () => toggleTool('text') },
-              { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, disabled: state.mode !== 'single', run: () => toggleTool('mask') },
+              { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, run: () => toggleTool('pen') },
+              { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, run: () => toggleTool('erase') },
+              { id: 'text', label: `${check(state.tool === 'text')}${format('annotText')}`, run: () => toggleTool('text') },
+              { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, run: () => toggleTool('mask') },
               {
                 id: 'clear-annots',
                 label: format('sideMenuClearAnnots'),
@@ -7191,6 +7210,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               children: masksLayer === null
                 ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
                 : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
+              // Continuous mode has no single page box: the same layers ride on
+              // the page being read, so drawing and boxes work there too.
+              overlay: masksLayer === null
+                ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
+                : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
+              overlayPage: page,
             })
 
       return h('div', {
@@ -7268,36 +7293,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'pen' ? 'true' : 'false',
-            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotHint'),
+            title: format('annotHint'),
             'aria-label': format('annotPen'),
-            disabled: mode !== 'single',
             onClick: () => toggleTool('pen'),
           }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'erase' ? 'true' : 'false',
-            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotEraseHint'),
+            title: format('annotEraseHint'),
             'aria-label': format('annotErase'),
-            disabled: mode !== 'single',
             onClick: () => toggleTool('erase'),
           }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'text' ? 'true' : 'false',
-            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('annotTextHint'),
+            title: format('annotTextHint'),
             'aria-label': format('annotText'),
-            disabled: mode !== 'single',
             onClick: () => toggleTool('text'),
           }, annotIcon('M4 6h16M12 6v13M9 19h6')),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'mask' ? 'true' : 'false',
-            title: mode !== 'single' ? format('annotSingleOnlyHint') : format('overlayHint'),
+            title: format('overlayHint'),
             'aria-label': format('overlayToggle'),
-            disabled: mode !== 'single',
             onClick: () => toggleTool('mask'),
           }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
           h('span', { className: 'md-side-gap' }),

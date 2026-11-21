@@ -28,10 +28,54 @@ function promptFor(target, blocks) {
 
 function parseJson(content) {
   const trimmed = content.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+  // Take the first *balanced* object, not the first `{` .. last `}` pair: model
+  // prose after the JSON (or a stray brace in a formula) used to make the slice
+  // invalid, which silently sent the whole chapter down the whole-page path.
   const start = trimmed.indexOf('{')
-  const end = trimmed.lastIndexOf('}')
-  if (start < 0 || end <= start) throw new Error('模型没有返回 JSON')
-  return JSON.parse(trimmed.slice(start, end + 1))
+  if (start < 0) throw new Error('模型没有返回 JSON')
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < trimmed.length; index += 1) {
+    const char = trimmed[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') inString = true
+    else if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return JSON.parse(trimmed.slice(start, index + 1))
+    }
+  }
+  throw new Error('模型返回的 JSON 不完整')
+}
+
+/**
+ * Some answers wrap the mapping in another object (`{"blocks": {...}}`) or send
+ * a list of `{id, md}` rows. Unwrap those before matching block ids.
+ * @param {object} parsed - the parsed model answer.
+ * @returns {object} a plain id -> markdown mapping.
+ */
+function unwrap(parsed) {
+  if (parsed === null || typeof parsed !== 'object') return {}
+  if (Array.isArray(parsed)) {
+    const mapped = {}
+    for (const row of parsed) {
+      if (row !== null && typeof row === 'object' && typeof row.id === 'string') {
+        mapped[row.id] = typeof row.md === 'string' ? row.md : row.text
+      }
+    }
+    return mapped
+  }
+  for (const key of ['blocks', 'translations', 'result', 'data', 'mapping']) {
+    const nested = parsed[key]
+    if (nested !== null && typeof nested === 'object') return unwrap(nested)
+  }
+  return parsed
 }
 
 /**
@@ -77,7 +121,10 @@ export async function translatePageBlocks(options) {
   }
   const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string' || content.trim() === '') throw new Error('DeepSeek API 返回了空内容')
-  const mapping = parseJson(content)
+  const mapping = unwrap(parseJson(content))
+  const known = new Set(options.blocks.map(block => block.id))
+  const matched = Object.keys(mapping).filter(key => known.has(key))
+  if (matched.length === 0) throw new Error('模型没有按块返回（键名与块 id 不匹配）')
   return options.blocks.map(block => ({
     ...block,
     md: typeof mapping[block.id] === 'string' ? mapping[block.id] : '',

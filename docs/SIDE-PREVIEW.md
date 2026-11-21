@@ -119,7 +119,7 @@ const VIEW_PUBLISHED = {
 
 - `SidePdfView` 状态：`doc / count / page / renderScale(见 5.2) / mode / phase / error / docRev / strokes / masks / tool / shownVariant`；
 - 加载：`loadPdfjs()` + `getDocument({ url, isEvalSupported:false, ...pdfAssetUrls() })`，卸载或换版时 `task.destroy()`；
-- 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式挂遮罩层、标注层与编辑层，连续模式走 `ContinuousView` 的窗口化挂载；
+- 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式把图层放进页面盒，连续模式把同一组图层交给 `ContinuousView`，由 `ReaderPage` 画在当前页；
 - 工具条：`‹ 页码 ›`、笔/擦/文本框/框选四个图标、缩放百分比、`⋯`；**页码可以点**，就地变成输入框（Enter 跳页、Esc 取消；`v0.69.0`，不再用 `window.prompt`）；可在菜单里**隐藏**（`v0.64.0`），隐藏时右上角悬浮一个鼠标移入才出现的 `⋯` 作为入口，舞台顶部留 32px 让它不压页面；其余动作见 6.4 的右键菜单；
 - 标注层：`mathdesk:annots:<书>:<章>:<页>` → `.md-annot-readonly`（`pointer-events:none`）；编辑层只在选了工具时出现（`.md-annot-edit`）；
 - 遮罩层：`mathdesk:masks:<书>:<章>:<页>` → `.md-masks-readonly`（`z-index:4`，标注之下），每个框用 `OverlayMaskPage` 把**译文页**画进框里；框本身先出现、译文随后填进来。
@@ -129,7 +129,8 @@ const VIEW_PUBLISHED = {
 - 工具：笔（黑色 2px 折线）、擦除（`(8 + 半笔宽) / 页宽` 容差，按住可连擦）、文本框（点页面就地输入，见 6.1.3）、框选（拖出框即露译文；**点一下已有的框删除**）；
 - 菜单动作：清除本页标注、清空本页框选；
 - 持久化：`commitStrokes` / `commitMasks` 写同一条 localStorage 键，然后 `bumpAnnotRev`；
-- 只在**单页模式**可用：连续模式没有单页页面盒，工具按钮与菜单项置灰（按钮 tooltip 说明原因）；阅读器那边则是**自动切回单页**并提示一句，因为它的工具条在双语/连续下同样可见（`v0.69.1`）；
+- 单页、连续都能用（`v0.70.0`）：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在**当前页**的页面盒里渲染它，所以连续模式下图层跟着阅读位置走；跨页连续画不支持，翻页时草稿会关掉；
+- 阅读器双语模式：左右两栏各挂一个可写图层，笔记按页共享（同一份数据），草稿带 `side`，文字框只在打开它的那一栏显示编辑器；
 - 框选模式下会**提前加载**叠加/译文文档（`wantsMaskDoc` 把 `tool === 'mask'` 也算进去），这样画完第一框马上能看到译文。
 
 ### 6.1.3 文本框就地编辑（`v0.69.0`）
@@ -227,7 +228,7 @@ ctx.contextMenus.register({
 - **dispatch 依赖内部契约**：`sidebarRightTabs` / `sidebar.right.pane.tab` / `contextMenus` 是 DSH 的扩展点，但字段名随版本可能变；`start()` 里对服务与返回值都做了存在性判断，异常只记 trace 并降级。
 - **自定义 target kind**：`ContextMenuTargetMap` 是 TS 声明合并表，运行时不校验 kind，外部插件自定义 kind 属于预期用法；但若将来 DSH 加了运行时校验，菜单会静默不弹（阅读功能不受影响）。
 - **样式注入**：`document.head` 里多一份样式表；与页面内 `<style>` 内容相同，重复无害。
-- **标注与遮罩只在单页模式可见/可编辑**：`PdfViewer` 只在单页模式渲染 `children`；连续模式的图层需要另做（与阅读器现状一致），所以右侧工具在此模式下置灰。
+- **标注与遮罩画在当前页上（v0.70.0）**：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在当前页的页面盒里渲染，所以连续/双语也能写；跨页连续画仍不支持（图层跟着当前页走），翻页时未保存的草稿会关闭。
 - **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('mathdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
 - **没有撤销**：两端的笔都没有 undo，清空是整页清空（与阅读器一致）。
 - **遮罩的内存代价（v0.68.0 已降）**：整页只栅格化一次，所有框共用同一张位图（阅读器复用已有的整页 JPEG；右侧预览按页缓存最近两张）。以前是每个框一张整页 canvas。
