@@ -260,6 +260,22 @@ def cover_tex():
     )
 
 
+def sanitize_display_math(text):
+    """Drop single `$` inside `$$...$$` and close an unmatched display block.
+
+    The translation model sometimes mixes inline math into a display block,
+    which makes XeLaTeX abort with "Display math should end with $$".
+    """
+    parts = text.split("$$")
+    cleaned = []
+    for index, part in enumerate(parts):
+        cleaned.append(part.replace("$", "") if index % 2 == 1 else part)
+    merged = "$$".join(cleaned)
+    if len(parts) % 2 == 0:
+        merged += "\n\n$$"
+    return merged
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     if os.path.isdir(WORK):
@@ -324,7 +340,7 @@ if __name__ == "__main__":
         src, out = sys.argv[1], sys.argv[2]
         title = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(os.path.basename(src))[0]
         with open(src, encoding="utf-8") as handle:
-            lines = handle.read().split("\n")
+            lines = sanitize_display_math(handle.read()).split("\n")
         work = tempfile.mkdtemp(prefix="md2tex-")
         tex = os.path.join(work, "doc.tex")
         write_tex(tex, convert(lines, title))
