@@ -197,6 +197,8 @@ window.__ModuleLoader__.load({
       shelfNameEmpty: '书架名称不能为空',
       shelfEmpty: '这个书架还没有书',
       hiddenShelf: '隐藏书籍',
+      shelfDeleteConfirm: '删除这个书架？里面的书会回到书库，不会被隐藏。',
+      shelfDeleteHint: '右键删除书架',
       cleanupHint: '归档没说话的空会话；工作台自己留下的空白记录会被删除',
       cleanupNotice: '已清理 {n} 个没说话的空白会话（归档）。',
       retryRename: '重试改名',
@@ -407,6 +409,8 @@ window.__ModuleLoader__.load({
       shelfNameEmpty: 'A shelf needs a name',
       shelfEmpty: 'This shelf has no books yet',
       hiddenShelf: 'Hidden books',
+      shelfDeleteConfirm: 'Delete this shelf? Its books go back to the library, nothing is hidden.',
+      shelfDeleteHint: 'Right-click to delete the shelf',
       cleanupHint: 'Archive unused blank sessions; empty records the workbench itself left behind are deleted.',
       cleanupNotice: 'Cleaned {n} unused blank session(s) (archived).',
       retryRename: 'Retry rename',
@@ -1355,7 +1359,11 @@ window.__ModuleLoader__.load({
         type: 'button',
         className: 'md-collection',
         onClick: props.onOpen,
-        title: `${props.name} · ${format('shelfCount', { n: props.count })}`,
+        onContextMenu: event => {
+          event.preventDefault()
+          props.onDelete()
+        },
+        title: `${props.name} · ${format('shelfCount', { n: props.count })} · ${format('shelfDeleteHint')}`,
       },
         h('span', { className: 'md-collection-stack', 'aria-hidden': true },
           h('span', { className: 'md-collection-sheet md-sheet-3' }),
@@ -1579,7 +1587,7 @@ window.__ModuleLoader__.load({
         }
         props.onSelect(ids, start.additive)
       }
-      const empty = props.books.length === 0
+      const empty = props.books.length === 0 && props.collections.length === 0
       return h('div', {
         className: 'md-shelf',
         ref: surfaceRef,
@@ -1587,22 +1595,19 @@ window.__ModuleLoader__.load({
         onPointerMove,
         onPointerUp,
       },
-        props.groupName === null && props.collections.length > 0
-          ? h('div', { className: 'md-collection-row' },
-            props.collections.map(item => h(CollectionCard, {
-              key: item.id,
-              name: item.name,
-              count: item.count,
-              onOpen: () => props.onOpenGroup(item.id),
-            }))
-          )
-          : null,
         empty
           ? h('div', { className: 'md-empty' },
             h('div', { className: 'md-empty-title' }, format('shelfEmpty')),
             h('div', { className: 'md-empty-hint' }, format('emptyHint'))
           )
           : h('div', { className: 'md-grid' },
+            props.collections.map(item => h(CollectionCard, {
+              key: item.id,
+              name: item.name,
+              count: item.count,
+              onOpen: () => props.onOpenGroup(item.id),
+              onDelete: () => props.onDeleteGroup(item.id),
+            })),
             props.books.map(book => h(BookCard, {
               key: book.id,
               book,
@@ -2675,14 +2680,14 @@ window.__ModuleLoader__.load({
 .md-file-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
-.md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
+.md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
 .md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }
 .md-card-check { position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-inverse, #fff); display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
 .md-shelf { position: relative; display: flex; flex-direction: column; gap: 16px; }
 .md-shelf-head { display: flex; align-items: baseline; gap: 10px; }
 .md-collection-row { display: flex; flex-wrap: wrap; gap: 16px; }
-.md-collection { position: relative; display: flex; flex-direction: column; gap: 10px; width: 168px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; cursor: pointer; }
-.md-collection:hover { background: var(--dsw-alias-card-fill-hover); border-color: var(--dsw-alias-border-l4); }
+.md-collection { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; }
+.md-collection:hover { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; transform: translateY(-2px); }
 .md-collection-stack { position: relative; display: block; aspect-ratio: 3 / 4; }
 .md-collection-sheet { position: absolute; inset: 0; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-card-fill); }
 .md-collection-sheet.md-sheet-1 { background: linear-gradient(160deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, var(--dsw-alias-bg-layer-2)), var(--dsw-alias-bg-layer-2) 72%); }
@@ -2694,7 +2699,7 @@ window.__ModuleLoader__.load({
 .md-marquee { position: absolute; z-index: 3; border: 1px solid var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent); border-radius: 4px; pointer-events: none; }
 .md-shelf-actions { position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; }
 .md-shelf-selected { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-right: 4px; }
-.md-card:hover { background: var(--dsw-alias-card-fill-hover); border-color: var(--dsw-alias-border-l4); transform: translateY(-2px); }
+.md-card:hover { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; transform: translateY(-2px); }
 .md-card:active { transform: translateY(1px); }
 .md-cover { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 8px; background: linear-gradient(160deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, var(--dsw-alias-bg-layer-2)), var(--dsw-alias-bg-layer-2) 72%); border: 1px solid var(--dsw-alias-border-l2); overflow: hidden; }
 .md-cover-img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -4533,6 +4538,31 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setSelected(new Set())
       }, [group, saveShelfGroups, selected, shelfGroups])
 
+      const deleteShelf = useCallback(id => {
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('shelfDeleteConfirm'))) return
+        saveShelfGroups({ hidden: shelfGroups.hidden, shelves: shelfGroups.shelves.filter(shelf => shelf.id !== id) })
+        if (group === id) setGroup(null)
+        setSelected(new Set())
+      }, [group, saveShelfGroups, shelfGroups])
+
+      const goShelf = useCallback(() => {
+        // Breadcrumb navigation must not depend on the book-specific focus/restore
+        // path: set the view directly and drop everything the chapter page opened.
+        setReader(null)
+        readerRef.current = null
+        setPreview(null)
+        setGroup(null)
+        setSelected(new Set())
+        setCreateError(null)
+        setWork(previous => previous === null ? previous : {
+          ...previous,
+          view: 'shelf',
+          bookId: null,
+          activeChapter: null,
+        })
+      }, [])
+
       /** Load the bundled sample library's manifest once the libraries page opens. */      useEffect(() => {
         if (work === null || work.view !== 'libraries' || sample !== null) return undefined
         let alive = true
@@ -4693,6 +4723,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const backToLibraries = useCallback(() => {
         setReader(null)
         readerRef.current = null
+        setPreview(null)
+        setGroup(null)
+        setSelected(new Set())
         pendingFocus.current = ''
         setWork(previous => previous === null ? previous : { ...previous, view: 'libraries', bookId: null, activeChapter: null })
       }, [])
@@ -4874,6 +4907,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       } else {
         const hiddenSet = new Set(shelfGroups.hidden)
+        const shelved = new Set()
+        for (const shelf of shelfGroups.shelves) for (const id of shelf.books) shelved.add(id)
         const activeShelf = group === null || group === 'hidden'
           ? null
           : shelfGroups.shelves.find(shelf => shelf.id === group) ?? null
@@ -4881,7 +4916,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? books.filter(item => hiddenSet.has(item.id))
           : activeShelf !== null
             ? books.filter(item => activeShelf.books.includes(item.id))
-            : books.filter(item => !hiddenSet.has(item.id))
+            : books.filter(item => !hiddenSet.has(item.id) && !shelved.has(item.id))
         const groupNameForShelf = group === 'hidden'
           ? format('hiddenShelf')
           : activeShelf === null ? null : activeShelf.name
@@ -4906,6 +4941,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onOpen: openBook,
           registerRef,
           onOpenGroup: openGroup,
+          onDeleteGroup: deleteShelf,
           onCreateShelf: () => setShelfName(''),
           onHide: hideSelected,
           onUnhide: unhideSelected,
@@ -5003,20 +5039,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, libraryName)
                 : h('button', {
                   type: 'button', className: 'md-crumb',
-                  onClick: () => {
-                    setGroup(null)
-                    backToShelf()
-                  },
+                  onClick: goShelf,
                 }, libraryName),
-            groupName === null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            groupName === null
+            groupName === null || book !== null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
+            groupName === null || book !== null
               ? null
-              : book === null
-                ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
-                : h('button', {
-                  type: 'button', className: 'md-crumb',
-                  onClick: () => openGroup(group),
-                }, groupName),
+              : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title)
           ),
