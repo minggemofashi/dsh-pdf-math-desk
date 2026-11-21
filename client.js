@@ -37,6 +37,37 @@ window.__ModuleLoader__.load({
     const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-math-desk'
     const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
 
+    /**
+     * Last page read for one chapter, so leaving the reader does not reset it.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {number} a positive page number, or 1.
+     */
+    function readReaderPage(bookId, code) {
+      try {
+        const raw = window.localStorage.getItem(`mathdesk:page:${bookId}:${code}`)
+        const value = Number.parseInt(raw ?? '', 10)
+        return Number.isFinite(value) && value > 0 ? value : 1
+      } catch {
+        return 1
+      }
+    }
+
+    /**
+     * Remember the last page read for one chapter.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {number} page - 1-based page number.
+     * @returns {void}
+     */
+    function saveReaderPage(bookId, code, page) {
+      try {
+        window.localStorage.setItem(`mathdesk:page:${bookId}:${code}`, String(page))
+      } catch {
+        // storage unavailable
+      }
+    }
+
     /** A workbench session title: `[<book> cNN] <mode>`, half- or full-width brackets. */
     const SESSION_TITLE = /^[\[【](.+?)[\s\u3000]+(c\d{2,3})[\]】][\s\u3000]*(.+?)[\s\u3000]*$/i
 
@@ -2816,18 +2847,23 @@ window.__ModuleLoader__.load({
         }
         blocks.push(current)
       }
-      return blocks.map((block, index) => ({
-        id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
-        page: page.pageNumber,
-        kind: block.h > median * 1.25 ? 'heading' : 'paragraph',
-        bbox: [
-          Math.max(0, block.left / width - 3 / width),
-          Math.max(0, block.top / height - 3 / height),
-          (block.right - block.left) / width + 6 / width,
-          (block.bottom - block.top) / height + 6 / height,
-        ],
-        text: block.lines.map(line => line.text).join(' ').slice(0, 400),
-      }))
+      return blocks.map((block, index) => {
+        // Text items under-report ink: headings and the left edge need a
+        // margin proportional to the line height, not a fixed 3pt.
+        const pad = Math.max(5, block.h * 0.9)
+        return {
+          id: `b-${String(page.pageNumber).padStart(4, '0')}-${String(index + 1).padStart(2, '0')}`,
+          page: page.pageNumber,
+          kind: block.h > median * 1.25 ? 'heading' : 'paragraph',
+          bbox: [
+            Math.max(0, (block.left - pad) / width),
+            Math.max(0, (block.top - pad) / height),
+            Math.min(width, block.right - block.left + pad * 2) / width,
+            Math.min(height, block.bottom - block.top + pad * 2) / height,
+          ],
+          text: block.lines.map(line => line.text).join(' ').slice(0, 400),
+        }
+      })
     }
 
     /**
@@ -2891,6 +2927,9 @@ window.__ModuleLoader__.load({
       const slotRefs = useRef(new Map())
       const switchingMode = useRef(false)
       useEffect(() => setPageText(String(reader.page)), [reader.page])
+      useEffect(() => {
+        saveReaderPage(reader.bookId, reader.code, reader.page)
+      }, [reader.bookId, reader.code, reader.page])
 
       const registerSlot = useCallback((page, node) => {
         if (node === null) slotRefs.current.delete(page)
@@ -4070,7 +4109,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             bookTitle: target.bookTitle ?? '',
             fileName: target.fileName ?? '',
             name,
-            page: 1,
+            page: readReaderPage(target.bookId, target.code),
             count: 0,
             scale: null,
             mode: target.mode === 'continuous' ? 'continuous' : 'single',

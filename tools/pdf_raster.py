@@ -11,7 +11,7 @@ import sys
 import fitz
 
 pdf_path, out_dir = sys.argv[1], sys.argv[2]
-dpi = float(sys.argv[3]) if len(sys.argv) > 3 else 140.0
+dpi = int(sys.argv[3]) if len(sys.argv) > 3 else 140
 
 os.makedirs(out_dir, exist_ok=True)
 document = fitz.open(pdf_path)
