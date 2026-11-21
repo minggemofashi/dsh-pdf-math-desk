@@ -3655,6 +3655,9 @@ window.__ModuleLoader__.load({
             annots: strokes,
           })
           updateNote(`${format('exportDone')}：${payload.pdf}`)
+          // The new PDF lands in the chapter's artifact list; refresh it so the
+          // file shows up as soon as the reader closes instead of on reopen.
+          if (typeof props.onExported === 'function') props.onExported()
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
           updateNote(`${format('exportFailed')}：${message}`)
@@ -7485,6 +7488,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               name: reader.name,
               bookTitle: reader.bookTitle,
             }, true),
+            onExported: () => { void loadArtifacts(reader.bookId, reader.code, true) },
           })
       )
     }
