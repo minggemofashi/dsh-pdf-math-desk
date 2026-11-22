@@ -216,6 +216,10 @@ window.__ModuleLoader__.load({
       annotPen: '笔',
       annotErase: '擦',
       annotClear: '清空标注',
+      annotTools: '标注工具',
+      annotSelect: '选择',
+      selectionTitle: '已选中',
+      selectionDelete: '删除选中',
       annotHint: '手写批注；再点一次退出。按页保存，缩放不跑位',
       annotEraseHint: '点或划过笔画即可删除',
       annotClearHint: '清空本页手写标注',
@@ -381,6 +385,9 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live（xelatex + ctex）',
       envTexSize: '约 5 GB',
       settingsFeatures: '特殊功能',
+      toolRail: '工具条位置',
+      railLeft: '左',
+      railRight: '右',
       settingsTabReading: '阅读',
       settingsTabKeys: '快捷键',
       settingsTabEnv: '环境',
@@ -645,6 +652,10 @@ window.__ModuleLoader__.load({
       annotPen: 'Pen',
       annotErase: 'Erase',
       annotClear: 'Clear',
+      annotTools: 'Annotation tools',
+      annotSelect: 'Select',
+      selectionTitle: 'Selected',
+      selectionDelete: 'Delete selection',
       annotHint: 'Write on this page; click again to stop. Saved per page and keeps its place at any zoom',
       annotEraseHint: 'Click or drag across a stroke to delete it',
       annotClearHint: 'Remove every freehand stroke on this page',
@@ -811,6 +822,9 @@ window.__ModuleLoader__.load({
       envTex: 'TeX Live (xelatex + ctex)',
       envTexSize: '~5 GB',
       settingsFeatures: 'Features',
+      toolRail: 'Tool rail',
+      railLeft: 'Left',
+      railRight: 'Right',
       settingsTabReading: 'Reading',
       settingsTabKeys: 'Shortcuts',
       settingsTabEnv: 'Toolchain',
@@ -2681,6 +2695,13 @@ window.__ModuleLoader__.load({
               title: format('socraticHint'),
               onClick: props.onSocratic,
             }, props.socratic ? format('previewOn') : format('previewOff'))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('toolRail')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onRailSide,
+            }, props.railSide === 'left' ? format('railLeft') : format('railRight'))
           )
         ),
         h('div', { className: 'md-settings-section' },
@@ -5395,6 +5416,7 @@ window.__ModuleLoader__.load({
       // the annotation key are read from the same record the preview uses.
       const storeView = useChapterView(reader.bookId, reader.code)
       const diag = useDiag()
+      const railSide = props.railSide === 'left' ? 'left' : 'right'
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
@@ -5421,6 +5443,8 @@ window.__ModuleLoader__.load({
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
       const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
+      // Which existing mark the select tool has picked (index into `strokes`).
+      const [selection, setSelection] = useState(null)
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -5877,6 +5901,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         setNoteEdit(null)
         setDraftStroke(null)
+        setSelection(null)
         // The block pass belongs to one page: keep its signature only while the
         // boxes on screen are still that page's.
         setAutoBoxes(null)
@@ -5951,6 +5976,36 @@ window.__ModuleLoader__.load({
         if (draft.index < 0 && noteText.current.trim() === '') return
         savePageAnnots(applyNote(strokesRef.current, draft, noteText.current))
       }
+      const selectedEntry = selection === null ? undefined : strokes[selection.index]
+      const patchSelection = patch => {
+        if (selection === null) return
+        savePageAnnots(strokesRef.current.map((entry, index) => (index === selection.index ? { ...entry, ...patch } : entry)))
+      }
+      const deleteSelection = () => {
+        if (selection === null) return
+        savePageAnnots(strokesRef.current.filter((entry, index) => index !== selection.index))
+        setSelection(null)
+      }
+      const clearAnnots = () => {
+        if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.clear()
+        else savePageAnnots([])
+        setSelection(null)
+      }
+      /**
+       * One rail button: picking a tool toggles it, like the horizontal row did.
+       * @param {string} id - tool id.
+       * @param {string} labelKey - locale key for the label and tooltip.
+       * @param {string} path - SVG path for `annotIcon`.
+       * @returns {import('react').ReactElement} the button.
+       */
+      const railTool = (id, labelKey, path) => h('button', {
+        type: 'button',
+        className: 'md-rail-btn',
+        'aria-pressed': annotTool === id ? 'true' : 'false',
+        title: format(labelKey),
+        'aria-label': format(labelKey),
+        onClick: () => setAnnotTool(value => (value === id ? '' : id)),
+      }, annotIcon(path))
       const erasing = useRef(false)
       const annotDown = (event, side) => {
         if (annotTool === '') return
@@ -5959,6 +6014,13 @@ window.__ModuleLoader__.load({
         const point = annotPoint(event)
         if (point === null) return
         event.preventDefault()
+        if (annotTool === 'select') {
+          const found = strokesRef.current.findIndex(entry => annotHit(entry, point))
+          setSelection(found < 0
+            ? null
+            : { index: found, kind: strokesRef.current[found].kind === 'text' ? 'text' : 'stroke' })
+          return
+        }
         if (annotTool === 'erase') {
           erasing.current = true
           savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
@@ -6513,6 +6575,19 @@ window.__ModuleLoader__.load({
           preserveAspectRatio: 'none',
           'aria-hidden': true,
         },
+          selection !== null && selectedEntry !== undefined && selectedEntry.kind !== 'text'
+            ? h('polyline', {
+              key: 'selection',
+              points: (selectedEntry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: (selectedEntry.width ?? 2) + 8,
+              opacity: 0.35,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+            : null,
           strokes.filter(entry => entry.kind !== 'text').map((stroke, index) => h('polyline', {
             key: index,
             points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
@@ -6540,7 +6615,7 @@ window.__ModuleLoader__.load({
         strokes.map((entry, index) => (entry.kind === 'text'
           ? h('div', {
             key: `text-${index}`,
-            className: 'md-annot-text',
+            className: selection !== null && selection.index === index ? 'md-annot-text md-annot-selected' : 'md-annot-text',
             title: annotTool === '' ? format('annotTextEditHint') : undefined,
             style: {
               left: `${entry.x * 100}%`,
@@ -6776,25 +6851,6 @@ window.__ModuleLoader__.load({
               h('option', { value: 'import' }, format('importAnnots'))
             ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              'aria-pressed': annotTool === 'pen' ? 'true' : 'false',
-              title: format('annotHint'), 'aria-label': format('annotPen'),
-              onClick: () => setAnnotTool(value => (value === 'pen' ? '' : 'pen')),
-            }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              'aria-pressed': annotTool === 'erase' ? 'true' : 'false',
-              title: format('annotEraseHint'), 'aria-label': format('annotErase'),
-              onClick: () => setAnnotTool(value => (value === 'erase' ? '' : 'erase')),
-            }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              'aria-pressed': annotTool === 'text' ? 'true' : 'false',
-              title: format('annotTextHint'), 'aria-label': format('annotText'),
-              onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
-            }, annotIcon('M4 6h16M12 6v13M9 19h6')),
-            h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
             ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
               key: color,
               type: 'button',
@@ -6818,28 +6874,7 @@ window.__ModuleLoader__.load({
               }),
               h('span', { className: 'md-annot-width-value', 'aria-hidden': true }, `${annotWidth}px`)
             ),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: dual && activeSide === 'right' ? rightHistory.count === 0 : strokes.length === 0,
-              title: format('annotClearHint'), 'aria-label': format('annotClear'),
-              onClick: () => {
-                if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.clear()
-                else savePageAnnots([])
-              },
-            }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14')),
-            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: undoAvailable === 0,
-              title: format('undoHint'), 'aria-label': format('undo'),
-              onClick: undoEither,
-            }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
-              disabled: redoAvailable === 0,
-              title: format('redoHint'), 'aria-label': format('redo'),
-              onClick: redoEither,
-            }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
+            h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('select', {
               className: 'md-reader-lang',
@@ -7069,7 +7104,75 @@ window.__ModuleLoader__.load({
               `annot  ${annotKey}`,
             ],
           })
-          : null
+          : null,
+        h('div', { className: 'md-rail-hot', 'data-side': railSide, 'aria-hidden': true }),
+        h('div', { className: 'md-rail-wrap', 'data-side': railSide },
+          h('div', { className: 'md-rail', role: 'toolbar', 'aria-label': format('annotTools') },
+            railTool('select', 'annotSelect', 'M5 3l7 17 2-7 7-2z'),
+            railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
+            railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
+            railTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
+            h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              disabled: undoAvailable === 0,
+              title: format('undoHint'), 'aria-label': format('undo'),
+              onClick: undoEither,
+            }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              disabled: redoAvailable === 0,
+              title: format('redoHint'), 'aria-label': format('redo'),
+              onClick: redoEither,
+            }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              title: format('annotClearHint'), 'aria-label': format('annotClear'),
+              onClick: clearAnnots,
+            }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'))
+          )
+        ),
+        selection === null || selectedEntry === undefined
+          ? null
+          : h('div', { className: 'md-selection-panel', 'data-side': railSide },
+            h('div', { className: 'md-selection-head' },
+              h('span', null, format('selectionTitle')),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                'aria-label': format('previewClose'), onClick: () => setSelection(null),
+              }, '×')
+            ),
+            selectedEntry.kind === 'text'
+              ? h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection })
+              : h(React.Fragment, null,
+                h('div', { className: 'md-note-style-row' },
+                  h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                  ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                    key: color,
+                    type: 'button',
+                    className: 'md-note-color',
+                    style: { background: color },
+                    'data-on': (selectedEntry.color ?? '#e0554a') === color ? 'true' : undefined,
+                    'aria-label': color,
+                    onClick: () => patchSelection({ color }),
+                  }))
+                ),
+                h('div', { className: 'md-note-style-row' },
+                  h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                  h('input', {
+                    type: 'range', min: 1, max: 10, step: 1,
+                    value: selectedEntry.width ?? 2,
+                    'aria-label': format('annotWidthHint'),
+                    onChange: event => patchSelection({ width: Number(event.target.value) || 2 }),
+                  })
+                )
+              ),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small md-selection-delete',
+              onClick: deleteSelection,
+            }, format('selectionDelete'))
+          )
       )
     }
 
@@ -7639,6 +7742,29 @@ window.__ModuleLoader__.load({
 .md-mask-page-image { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
+.md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
+.md-annot-text.md-annot-selected { outline: 2px solid #2f6df6; outline-offset: 3px; border-radius: 3px; }
+/* The vertical tool rail: collected PDF tools, revealed only while the pointer
+   is on the page edge, with a short fade/slide so it does not pop. */
+.md-rail-wrap { position: absolute; top: 50%; transform: translateY(-50%); z-index: 13; width: 48px; display: flex; justify-content: center; pointer-events: none; }
+.md-rail-wrap[data-side="right"] { right: 4px; }
+.md-rail-wrap[data-side="left"] { left: 4px; }
+.md-rail-hot { position: absolute; top: 0; bottom: 0; width: 16px; z-index: 13; }
+.md-rail-hot[data-side="right"] { right: 0; }
+.md-rail-hot[data-side="left"] { left: 0; }
+.md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
+.md-rail-wrap[data-side="left"] .md-rail { transform: translateX(-10px); }
+.md-rail-hot:hover + .md-rail-wrap .md-rail, .md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within { opacity: 1; transform: none; pointer-events: auto; }
+.md-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.md-rail-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); }
+.md-rail-btn:disabled { opacity: .35; cursor: default; }
+.md-rail-sep { height: 1px; margin: 3px 4px; background: var(--dsw-alias-border-l2); }
+.md-selection-panel { position: absolute; top: 64px; z-index: 15; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.md-selection-panel[data-side="right"] { right: 58px; }
+.md-selection-panel[data-side="left"] { left: 58px; }
+.md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-selection-delete { align-self: flex-start; color: var(--dsw-alias-label-error, #c0392b); }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
 .md-annot[data-tool="text"] { cursor: text; }
 .md-annot[data-tool="erase"] { cursor: cell; }
@@ -9324,6 +9450,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [settingsOpen, setSettingsOpen] = useState(false)
+      // Which edge the vertical tool rail sits on; a page reload keeps the choice.
+      const [railSide, setRailSide] = useState(() => {
+        try {
+          return window.localStorage.getItem('pdfdesk:rail-side') === 'left' ? 'left' : 'right'
+        } catch {
+          return 'right'
+        }
+      })
       const [socratic, setSocratic] = useState(() => socraticEnabled())
       const [envTools, setEnvTools] = useState({ python: false, tex: false })
       useEffect(() => {
@@ -11946,6 +12080,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
               return next
             }),
+            railSide,
+            onRailSide: () => setRailSide(value => {
+              const next = value === 'right' ? 'left' : 'right'
+              try {
+                window.localStorage.setItem('pdfdesk:rail-side', next)
+              } catch {
+                // storage unavailable
+              }
+              return next
+            }),
             onPreview: () => setPreviewPdf(value => {
               const next = !value
               try {
@@ -11980,6 +12124,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? null
           : h(ReaderView, {
             reader,
+            railSide,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,
