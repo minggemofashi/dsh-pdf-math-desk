@@ -116,7 +116,7 @@ DSH → Plugins → Add plugin → 选择本仓库目录，重启 DSH。
 
 ### 可选依赖
 
-Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**。没检测到就不显示「转 PDF」按钮，读书、会话、预览 md 都不受影响。安装方法见库页的「书库说明书」。
+Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**；翻译还需要 **DeepSeek API Key**。缺环境时对应的「转 PDF」「翻译」「导出」会隐藏或禁用，阅读、会话、预览 md 都不受影响。安装方法见库页的「书库说明书」。
 
 ## 数据与隐私
 

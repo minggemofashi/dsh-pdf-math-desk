@@ -138,7 +138,7 @@ window.__ModuleLoader__.load({
       manualNaming2: '一章一个 PDF，保留目录；文件名带页码范围或 cNN 即可，工作台自动编号。',
       manualNaming3: '不想拆：整本 PDF 放进 整本\\，会作为只有一章的一本书。',
       manualSessionLine: '会话按「书 / 章 / 模式」归档，已有会话也可以导入。',
-      manualEnvLead: 'Markdown 转 PDF 需要 Python 3 + TeX（xelatex、ctex）。没装只是不显示「转 PDF」，阅读、会话和预览不受影响。',
+      manualEnvLead: 'Markdown 转 PDF 需要 Python 3 + TeX（xelatex、ctex）；翻译还需要 DeepSeek API Key。没装只会隐藏或禁用对应功能，阅读、会话和预览不受影响。',
       aiPromptTitle: '给 AI 的拆分提示词',
       manualStructureTitle: '书库结构',
       manualNamingTitle: '拆分与命名',
@@ -327,6 +327,8 @@ window.__ModuleLoader__.load({
       translateCancel: '取消翻译',
       translateResume: '补译缺失页',
       translateResumeHint: '只译还没有缓存的页，按缺失页数花 token',
+      translateNeedsEnv: '翻译需要 Python + TeX，并先在 设置 → 环境 配置 DeepSeek API Key。',
+      exportNeedsPython: '导出需要 Python；请先安装，并在 设置 → 环境 查看状态。',
       translatingResume: '正在补译缺失页…',
       translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
@@ -463,8 +465,9 @@ window.__ModuleLoader__.load({
       apiKeyConfigured: '已配置',
       apiKeyMissing: '未配置',
       apiKeySave: '保存',
-      envReady: '已就绪：md 可转 PDF',
-      envMissing: '未安装：md→PDF 按钮已隐藏，其余功能正常',
+      envReady: '已就绪：md→PDF、翻译和导出可用',
+      envMissing: '缺少 Python / TeX：md→PDF、翻译、导出会受限',
+      envImpact: '缺少 Python：md→PDF、翻译、导出不可用；缺少 TeX：md→PDF、翻译译文合成不可用；翻译还需要 API Key。',
       envDownload: '下载 TeX Live（约 5 GB）',
       envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
@@ -627,7 +630,7 @@ window.__ModuleLoader__.load({
       manualNaming2: 'One PDF per chapter, keep the contents; a page range or cNN in the file name is enough, the workbench numbers it.',
       manualNaming3: 'Do not want to split? Put a whole PDF under 整本\\ and it becomes a one-chapter book.',
       manualSessionLine: 'Conversations are filed by book / chapter / mode, and existing ones can be imported.',
-      manualEnvLead: 'Markdown-to-PDF needs Python 3 + TeX (xelatex, ctex). Without it the PDF button is hidden; reading, conversations and preview still work.',
+      manualEnvLead: 'Markdown-to-PDF needs Python 3 + TeX (xelatex, ctex); translation also needs a DeepSeek API key. Without them the matching buttons are hidden or disabled; reading, conversations and preview still work.',
       aiPromptTitle: 'Prompt for an AI splitter',
       manualStructureTitle: 'Library structure',
       manualNamingTitle: 'Splitting and naming',
@@ -815,6 +818,8 @@ window.__ModuleLoader__.load({
       translateCancel: 'Cancel translation',
       translateResume: 'Fill missing pages',
       translateResumeHint: 'Translate only the pages without cached text; pages that already have one are reused, so only the missing pages cost tokens',
+      translateNeedsEnv: 'Translation needs Python + TeX and a DeepSeek API key in Settings → Environment.',
+      exportNeedsPython: 'Export needs Python; install it and check Settings → Environment.',
       translatingResume: 'Filling in the missing pages…',
       translateCancelled: 'Translation cancelled',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
@@ -952,8 +957,9 @@ window.__ModuleLoader__.load({
       apiKeyConfigured: 'configured',
       apiKeyMissing: 'not configured',
       apiKeySave: 'Save',
-      envReady: 'ready: md can render to PDF',
-      envMissing: 'missing: md-to-PDF buttons are hidden, everything else works',
+      envReady: 'ready: md-to-PDF, translation and export are available',
+      envMissing: 'Python / TeX missing: md-to-PDF, translation and export are limited',
+      envImpact: 'Without Python: md-to-PDF, translation and export are unavailable; without TeX: md-to-PDF and translation composition are unavailable; translation also needs an API key.',
       envDownload: 'Download TeX Live (~5 GB)',
       envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
@@ -2719,7 +2725,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the dialog.
      */
     function SettingsDialog(props) {
-      const envTools = props.envTools ?? { python: false, tex: false }
+      const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       // The dialog is paged: reading switches, the keyboard table, the toolchain
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
       const [tab, setTab] = useState('reading')
@@ -2756,8 +2762,10 @@ window.__ModuleLoader__.load({
       const saveApiKey = async () => {
         try {
           const payload = await request('POST', 'deepseek-key', { key: apiKey })
-          setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing'))
+          const configured = payload !== null && payload.configured === true
+          setApiKeyNote(configured ? format('apiKeyConfigured') : format('apiKeyMissing'))
           setApiKey('')
+          if (typeof props.onApiKeyChange === 'function') props.onApiKeyChange(configured)
         } catch (error) {
           setApiKeyNote(error !== null && error !== undefined && error.message ? String(error.message) : String(error))
         }
@@ -2876,7 +2884,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-settings-row' },
             h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
             envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
-          )
+          ),
+          h('p', { className: 'md-shelf-sub' }, format('envImpact')),
+          h('p', { className: 'md-shelf-sub' }, `${format('apiKeyTitle')}：${envTools.apiKey ? format('apiKeyConfigured') : format('apiKeyMissing')}`)
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
@@ -2966,7 +2976,7 @@ window.__ModuleLoader__.load({
     }
 
     function LibrariesPage(props) {
-      const envTools = props.envTools ?? { python: false, tex: false }
+      const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       const [dir, setDir] = useState('')
       const [name, setName] = useState('')
       const [confirmId, setConfirmId] = useState('')
@@ -3735,7 +3745,7 @@ window.__ModuleLoader__.load({
           onContextMenu: event => {
             if (/\.md$/i.test(item.name)) {
               event.preventDefault()
-              props.onRender(item, props.code)
+              if (props.canRender === true) props.onRender(item, props.code)
               return
             }
             if (item.kind === 'pdf') {
@@ -6750,6 +6760,10 @@ window.__ModuleLoader__.load({
       // Whole chapter: pages without masks or notes stay the plain original; the
       // sidecar JSON keeps the normalized data next to the PDF.
       const exportChapter = async () => {
+        if (props.canExport !== true) {
+          updateNote(format('exportNeedsPython'))
+          return
+        }
         updateNote(format('exportingChapter'))
         try {
           const total = reader.count > 0 ? reader.count : 1
@@ -6800,6 +6814,10 @@ window.__ModuleLoader__.load({
       // of the overlay PDF, and the annotations. Saved into the chapter's
       // produced files so it can be opened from the shelf like any artifact.
       const exportPage = async () => {
+        if (props.canExport !== true) {
+          updateNote(format('exportNeedsPython'))
+          return
+        }
         updateNote(format('exporting'))
         try {
           const payload = await request('POST', 'export-page', {
@@ -7111,6 +7129,10 @@ window.__ModuleLoader__.load({
         props.onPage(value)
       }
       const runTranslate = async (resume = false) => {
+        if (props.canTranslate !== true) {
+          updateNote(format('translateNeedsEnv'))
+          return
+        }
         if (translating || reader.phase !== 'ready') return
         setTranslating(true)
         setDeskStatus('busy')
@@ -7520,6 +7542,10 @@ window.__ModuleLoader__.load({
               title: format('dualHint'),
               onClick: () => {
                 if (!hasTranslation) {
+                  if (props.canTranslate !== true) {
+                    updateNote(format('translateNeedsEnv'))
+                    return
+                  }
                   if (typeof window !== 'undefined' && typeof window.confirm === 'function'
                     && window.confirm(format('dualNeedsTranslation'))) {
                     void runTranslate()
@@ -7543,6 +7569,10 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (reader.variant === 'translated') return
                 if (!overlay && !hasTranslation) {
+                  if (props.canTranslate !== true) {
+                    updateNote(format('translateNeedsEnv'))
+                    return
+                  }
                   if (typeof window !== 'undefined' && typeof window.confirm === 'function'
                     && window.confirm(format('dualNeedsTranslation'))) {
                     void runTranslate()
@@ -7569,7 +7599,7 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'md-reader-lang md-reader-export',
               value: '',
-              title: format('exportGroupHint'),
+              title: props.canExport !== true ? format('exportNeedsPython') : format('exportGroupHint'),
               'aria-label': format('exportGroup'),
               onChange: event => {
                 const action = event.target.value
@@ -7580,8 +7610,8 @@ window.__ModuleLoader__.load({
               },
             },
               h('option', { value: '' }, format('exportGroup')),
-              h('option', { value: 'page' }, format('exportPage')),
-              h('option', { value: 'chapter' }, format('exportChapter')),
+              h('option', { value: 'page', disabled: props.canExport !== true }, format('exportPage')),
+              h('option', { value: 'chapter', disabled: props.canExport !== true }, format('exportChapter')),
               h('option', { value: 'import' }, format('importAnnots'))
             ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
@@ -7597,9 +7627,13 @@ window.__ModuleLoader__.load({
             ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
-              disabled: translating || reader.phase !== 'ready',
-              title: format('translateHint'),
+              disabled: translating || reader.phase !== 'ready' || props.canTranslate !== true,
+              title: props.canTranslate !== true ? format('translateNeedsEnv') : format('translateHint'),
               onClick: () => {
+                if (props.canTranslate !== true) {
+                  updateNote(format('translateNeedsEnv'))
+                  return
+                }
                 if (!window.confirm(format('translateCostConfirm'))) return
                 if (hasTranslation && !window.confirm(format('translateOverwriteConfirm'))) return
                 void runTranslate()
@@ -7635,7 +7669,7 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'md-btn md-btn-small',
             onClick: cancelTranslate,
           }, format('translateCancel')) : null,
-          !translating && partialPages.length > 0
+          !translating && partialPages.length > 0 && props.canTranslate === true
             ? h('button', {
               type: 'button', className: 'md-btn md-btn-small',
               title: format('translateResumeHint'),
@@ -10587,7 +10621,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [socratic, setSocratic] = useState(() => socraticEnabled())
-      const [envTools, setEnvTools] = useState({ python: false, tex: false })
+      const [envTools, setEnvTools] = useState({ python: false, tex: false, apiKey: false })
       useEffect(() => {
         if (!settingsOpen) return undefined
         const onDown = event => {
@@ -11473,7 +11507,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const shelves = Array.isArray(groups.shelves)
             ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
             : []
-          setEnvTools(data.environment !== null && typeof data.environment === 'object' ? { python: data.environment.python === true, tex: data.environment.tex === true } : { python: false, tex: false })
+          setEnvTools(data.environment !== null && typeof data.environment === 'object' ? { python: data.environment.python === true, tex: data.environment.tex === true, apiKey: data.environment.apiKey === true } : { python: false, tex: false, apiKey: false })
           setShelfGroups({ hidden, shelves })
           // Refresh re-reads data; it must not lose the shelf you are looking at.
           setGroup(previous => {
@@ -12886,6 +12920,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const skippedFiles = catalog === null ? 0 : catalog.skipped.reduce((sum, item) => sum + (Number(item.pdfCount) || 0), 0)
       const unparsedFiles = books.reduce((sum, item) => sum + (Number(item.unparsed) || 0), 0)
       const partialFiles = skippedFiles + unparsedFiles
+      const canRender = envTools.python && envTools.tex
+      const canTranslate = canRender && envTools.apiKey === true
+      const canExport = envTools.python
 
       let body
       if (blockingError !== '' && (catalog === null || work === null)) {
@@ -12905,7 +12942,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           libraries: libs.items,
           activeId: libs.activeId,
           envTools,
-          canRender: envTools.python && envTools.tex,
+          canRender,
           busy: libBusy,
           error: libError !== '' ? libError : problemText,
           onUse: activateLibrary,
@@ -12956,7 +12993,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onDigest: generateDigest,
           onOpenArtifact: openArtifact,
           onArtifactSession: newArtifactSession,
-          canRender: envTools.python && envTools.tex,
+          canRender,
           allowNonPdfDelete,
           onRenderArtifact: renderArtifact,
           onTrashArtifact: trashArtifact,
@@ -13194,6 +13231,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? h(SettingsDialog, {
             version: catalog === null ? '' : catalog.version,
             envTools,
+            onApiKeyChange: configured => setEnvTools(current => ({ ...current, apiKey: configured === true })),
             updateBusy,
             onCheckUpdate: checkUpdates,
             previewPdf,
@@ -13264,6 +13302,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             reader,
             railSide,
             roughness,
+            canTranslate,
+            canExport,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,

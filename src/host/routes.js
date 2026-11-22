@@ -355,7 +355,7 @@ async function activeLibrary() {
           indexPath: library.indexPath,
           covers: await coverIds(library.coverDir),
           target,
-          environment: detectEnvironment(),
+          environment: { ...detectEnvironment(), apiKey: (await deepseekKey()) !== '' },
           resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
           pending: pending === undefined ? {} : await pending.list(),
           links: links === undefined ? {} : await links.list(),
