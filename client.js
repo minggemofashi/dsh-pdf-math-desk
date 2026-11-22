@@ -2969,7 +2969,7 @@ window.__ModuleLoader__.load({
       const sub = book.whole === true
         ? `${format('wholeBadge')} · ${format('wholeHint')}`
         : [book.author, format('chapters', { n: chapters })].filter(item => item !== '').join(' · ')
-      return h('button', {
+      return h(KitButton, {
         type: 'button',
         className: props.selected ? 'md-card md-card-selected' : 'md-card',
         onClick: () => {
@@ -3007,7 +3007,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the tile.
      */
     function CollectionCard(props) {
-      return h('button', {
+      return h(KitButton, {
         type: 'button',
         className: 'md-collection',
         onClick: props.onOpen,
@@ -3150,11 +3150,9 @@ window.__ModuleLoader__.load({
 
     /**
      * Button adapter: host Button when the primitives bundle is available, the
-     * workbench's own button otherwise. They take the same business props.
-     * @param {object} props - variant, size, className, disabled, title, onClick, children.
-     * @returns {import('react').ReactElement} the button.
+     * workbench's own button otherwise. All native button props are forwarded.
      */
-    function KitButton(props) {
+    const KitButton = React.forwardRef(function KitButton(props, ref) {
       const ui = useHostUi()
       const className = typeof props.className === 'string' ? props.className : ''
       const variant = props.variant !== undefined
@@ -3164,11 +3162,11 @@ window.__ModuleLoader__.load({
           : className.includes('md-btn-ghost')
             ? 'ghost'
             : 'outline'
-      const size = props.size !== undefined
-        ? props.size
-        : className.includes('md-btn-small')
-          ? 'sm'
-          : 'md'
+      // Dense workbench controls use the small host size by default.
+      const size = props.size !== undefined ? props.size : 'sm'
+      const hostClasses = className.split(/\s+/).filter(name => name !== ''
+        && (name === 'md-btn-danger' || !name.startsWith('md-btn'))).join(' ')
+      const { variant: _variant, size: _size, hostClassName: _hostClassName, className: _className, children, ...rest } = props
       const HostButton = ui !== null && ui !== undefined && ui.Button !== undefined
         && ui.Button !== null
         && (typeof ui.Button === 'function' || (typeof ui.Button === 'object' && ui.Button.$$typeof))
@@ -3176,27 +3174,27 @@ window.__ModuleLoader__.load({
         : null
       if (HostButton !== null) {
         return h(HostButton, {
+          ...rest,
+          ref,
           variant,
           size,
-          className: props.hostClassName,
+          className: [hostClasses, props.hostClassName].filter(Boolean).join(' '),
           disabled: props.disabled === true,
           title: props.title,
           type: props.type === undefined ? 'button' : props.type,
-          'aria-label': props['aria-label'],
-          'aria-pressed': props['aria-pressed'],
           onClick: props.onClick,
-        }, props.children)
+        }, children)
       }
       return h('button', {
+        ...rest,
+        ref,
         type: props.type === undefined ? 'button' : props.type,
         className: props.className,
         disabled: props.disabled === true,
         title: props.title,
-        'aria-label': props['aria-label'],
-        'aria-pressed': props['aria-pressed'],
         onClick: props.onClick,
-      }, props.children)
-    }
+      }, children)
+    })
 
     /**
      * Input adapter: host Input when available; the business onChange always
@@ -3295,7 +3293,7 @@ window.__ModuleLoader__.load({
             h('h3', { className: 'md-env-title' }, props.title ?? ''),
             typeof props.onClose !== 'function'
               ? null
-              : h('button', {
+              : h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
                 'aria-label': format('modalClose'), title: format('modalClose'),
                 onClick: props.onClose,
@@ -3376,7 +3374,7 @@ window.__ModuleLoader__.load({
         trigger,
         open
           ? h('div', { className: 'md-kit-select-menu', role: 'listbox', 'aria-label': props.label },
-            options.map(option => h('button', {
+            options.map(option => h(KitButton, {
               key: String(option.value),
               type: 'button',
               className: 'md-kit-select-option',
@@ -3458,21 +3456,21 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('settingsFeatures')),
           h('div', { className: 'md-settings-row' },
             h('span', null, format('previewPdf')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onPreview,
             }, props.previewPdf ? format('previewOn') : format('previewOff'))
           ),
           h('div', { className: 'md-settings-row' },
             h('span', null, format('deleteNonPdf')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onNonPdf,
             }, props.allowNonPdfDelete ? format('previewOn') : format('previewOff'))
           ),
           h('div', { className: 'md-settings-row' },
             h('span', { title: format('socraticHint') }, format('socraticToggle')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               title: format('socraticHint'),
               onClick: props.onSocratic,
@@ -3480,7 +3478,7 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'md-settings-row' },
             h('span', null, format('toolRail')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onRailSide,
             }, props.railSide === 'left' ? format('railLeft') : format('railRight'))
@@ -3554,12 +3552,12 @@ window.__ModuleLoader__.load({
           SHORTCUT_ACTIONS.map(action => h('div', { className: 'md-settings-row md-shortcut-row', key: action.id },
             h('span', { className: 'md-shortcut-name' }, format(action.labelKey)),
             h('span', { className: 'md-shortcut-key' }, listening === action.id ? format('shortcutsRecording') : bindingLabel(bindings[action.id])),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               'aria-pressed': listening === action.id ? 'true' : 'false',
               onClick: () => setListening(listening === action.id ? '' : action.id),
             }, listening === action.id ? format('shortcutsCancel') : format('shortcutsRecord')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: bindingList(bindings[action.id]).length === 0,
               onClick: () => saveBinding(action.id, []),
@@ -3567,7 +3565,7 @@ window.__ModuleLoader__.load({
           ))
         ),
         h('div', { className: 'md-settings-actions' },
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small',
             onClick: () => {
               const defaults = {}
@@ -3576,7 +3574,7 @@ window.__ModuleLoader__.load({
               writeShortcutBindings(defaults)
             },
           }, format('shortcutsRestore')),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small',
             onClick: () => {
               const empty = {}
@@ -3592,11 +3590,11 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('envTitle')),
           h('div', { className: 'md-settings-row' },
             h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
-            envTools.python ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
+            envTools.python ? null : h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
           ),
           h('div', { className: 'md-settings-row' },
             h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
-            envTools.tex ? null : h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
+            envTools.tex ? null : h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
           ),
           h('p', { className: 'md-shelf-sub' }, format('envImpact')),
           h('p', { className: 'md-shelf-sub' }, `${format('apiKeyTitle')}：${envTools.apiKey ? format('apiKeyConfigured') : format('apiKeyMissing')}`)
@@ -3610,13 +3608,13 @@ window.__ModuleLoader__.load({
               value: apiKey, placeholder: 'sk-...',
               onChange: value => setApiKey(value),
             }),
-            h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
           )
         )
       )
       const about = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('githubRepo')),
-        h('button', {
+        h(KitButton, {
           type: 'button', className: 'md-btn md-btn-small',
           onClick: () => openLink(GITHUB_URL),
         }, format('githubRepo')),
@@ -3662,7 +3660,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
           ),
           h('div', { className: 'md-settings-tabs', role: 'tablist' },
-            tabs.map(item => h('button', {
+            tabs.map(item => h(KitButton, {
               key: item.id,
               type: 'button',
               role: 'tab',
@@ -3766,11 +3764,11 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'md-libraries md-home', ref: sectionRef, 'aria-label': format('librariesTitle') },
         h(PixelWhale),
         h('div', { className: `md-home-toolbar${stuck ? ' is-stuck' : ''}` },
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-primary', disabled: busy,
             onClick: scrollToAdd,
           }, format('libraryAddTitle')),
-          h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: scrollToManual }, format('manualTitle')),
+          h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: scrollToManual }, format('manualTitle')),
           h('span', { className: 'md-home-toolbar-count' }, format('heroMeta', { n: props.libraries.length }))
         ),
         h('header', { className: 'md-hero' },
@@ -3778,18 +3776,18 @@ window.__ModuleLoader__.load({
           h('h1', { className: 'md-hero-title' }, format('heroTitle')),
           h('p', { className: 'md-hero-lead' }, format('heroLead')),
           h('div', { className: 'md-hero-actions' },
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-primary', disabled: busy,
               onClick: scrollToAdd,
             }, format('libraryAddTitle')),
             props.libraries.length === 0
               ? null
-              : h('button', {
+              : h(KitButton, {
                 type: 'button', className: 'md-btn',
                 disabled: props.sampleBusy || busy || props.sample?.book == null,
                 onClick: props.onLoadSample,
               }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad')),
-            h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: scrollToManual }, format('manualTitle'))
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-ghost', onClick: scrollToManual }, format('manualTitle'))
           ),
           stuck
             ? null
@@ -3819,7 +3817,7 @@ window.__ModuleLoader__.load({
               ),
               h('code', { className: 'md-path' }, item.libraryDir),
               h('div', { className: 'md-library-actions' },
-                h('button', {
+                h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-icon-btn',
                   disabled: busy,
                   title: format('libraryRemove'),
@@ -3845,7 +3843,7 @@ window.__ModuleLoader__.load({
               'aria-label': format('libraryPath'),
               onChange: value => setDir(value),
             }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', disabled: busy,
               onClick: () => {
                 void props.onPick().then(picked => {
@@ -3865,7 +3863,7 @@ window.__ModuleLoader__.load({
               'aria-label': format('libraryName'),
               onChange: value => setName(value),
             }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-btn-primary md-add-submit',
               disabled: busy || dir.trim() === '',
               onClick: () => props.onAdd(dir, name),
@@ -3912,7 +3910,7 @@ window.__ModuleLoader__.load({
               h('p', { className: 'md-manual-text' }, format('manualEnvLead')),
               h('p', { className: 'md-manual-text' }, `${format('envTitle')}：${props.canRender ? format('envReady') : format('envMissing')}`),
               h('div', { className: 'md-manual-actions' },
-                props.canRender ? null : h('button', {
+                props.canRender ? null : h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-small',
                   onClick: () => {
                     try {
@@ -3928,7 +3926,7 @@ window.__ModuleLoader__.load({
                 h('summary', { className: 'md-manual-sub-summary' }, format('aiPromptTitle')),
                 h('p', { className: 'md-manual-text' }, format('aiPromptHint')),
                 h('code', { className: 'md-manual-code' }, format('aiPromptText')),
-                h('button', {
+                h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-small',
                   onClick: props.onCopyPrompt,
                 }, format('aiPromptCopy'))
@@ -3974,7 +3972,7 @@ window.__ModuleLoader__.load({
                       size: formatBytes(props.sample.book.bytes),
                     })}`),
                   h('p', { className: 'md-shelf-sub' }, format('sampleHint')),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn',
                     disabled: props.sampleBusy || props.busy,
                     onClick: props.onLoadSample,
@@ -3984,7 +3982,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
           h('p', { className: 'md-shelf-sub' }, format('splitHint')),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn', disabled: busy,
             onClick: props.onSplit,
           }, busy ? format('libraryBusy') : format('splitStart'))
@@ -3992,7 +3990,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('importToolTitle')),
           h('p', { className: 'md-shelf-sub' }, format('importFilesHint')),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn', disabled: busy || props.importBusy,
             onClick: props.onImport,
           }, props.importBusy ? format('importBusy') : format('importStart'))
@@ -4001,7 +3999,7 @@ window.__ModuleLoader__.load({
           h('h3', { className: 'md-subheading' }, format('envTitle')),
           h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
           h('div', { className: 'md-library-tools' },
-            envTools.python ? null : h('button', {
+            envTools.python ? null : h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 try {
@@ -4011,7 +4009,7 @@ window.__ModuleLoader__.load({
                 }
               },
             }, `${format('envPython')}（${format('envPythonSize')}）`),
-            envTools.tex ? null : h('button', {
+            envTools.tex ? null : h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 try {
@@ -4127,32 +4125,32 @@ window.__ModuleLoader__.load({
           ? null
           : h('div', { className: 'md-shelf-actions' },
             h('span', { className: 'md-shelf-selected' }, format('shelfSelected', { n: props.selected.size })),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onCreateShelf,
             }, format('shelfNew')),
             props.group === 'hidden'
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onUnhide,
               }, format('shelfUnhide'))
-              : h('button', {
+              : h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onHide,
               }, format('shelfHide')),
             props.group === 'hidden'
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onTrashSelected,
               }, format('shelfTrash'))
               : null,
             props.group !== null && props.group !== 'hidden'
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onRemoveFromShelf,
               }, format('shelfRemove'))
               : null,
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
               onClick: props.onClear,
             }, format('shelfClear'))
@@ -4228,17 +4226,17 @@ window.__ModuleLoader__.load({
                   }
                 },
               }),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small', disabled: renaming.saving,
                 onClick: props.onCommitRename,
               }, format('renameSave')),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-btn-ghost', disabled: renaming.saving,
                 onClick: props.onCancelRename,
               }, format('renameCancel')),
               renaming.error === '' ? null : h('span', { className: 'md-session-edit-error', role: 'alert' }, renaming.error)
             )
-            : h('button', {
+            : h(KitButton, {
               type: 'button',
               className: 'md-session',
               title,
@@ -4260,14 +4258,14 @@ window.__ModuleLoader__.load({
           editing ? null : h('span', { className: 'md-session-actions' },
             item.pending
               ? null
-              : h('button', {
+              : h(KitButton, {
                 type: 'button', className: 'md-icon-btn', title: format('rename'),
                 'aria-label': `${format('rename')}：${label}`,
                 onClick: () => props.onStartRename(props.chapter, item),
               }, '✎'),
             item.pending
               ? null
-              : h('button', {
+              : h(KitButton, {
                 type: 'button', className: 'md-icon-btn md-icon-btn-text', title: `${format('archiveSession')}（不删除，可在 DSH 归档里恢复）`,
                 'aria-label': `${format('archiveSession')}：${label}`,
                 onClick: () => {
@@ -4277,7 +4275,7 @@ window.__ModuleLoader__.load({
                 },
               }, format('archiveSession')),
             item.viaLink
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-icon-btn', title: format('unlink'),
                 'aria-label': `${format('unlink')}：${label}`,
                 onClick: () => props.onUnlink(item),
@@ -4292,12 +4290,12 @@ window.__ModuleLoader__.load({
           props.loaded
             ? null
             : h('span', { className: 'md-session-state' }, format(props.available ? 'sessionLoading' : 'sessionUnavailable')),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             onClick: props.onToggle,
           }, props.open === false ? format('artifactsExpand') : format('artifactsCollapse')),
           props.loaded && props.available
-            ? h('button', {
+            ? h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-session-digest',
               title: format('digestHint'),
               'aria-label': format('digestOf'),
@@ -4307,7 +4305,7 @@ window.__ModuleLoader__.load({
         ),
         props.error === '' ? null : h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error),
-          props.errorSession === null ? null : h('button', {
+          props.errorSession === null ? null : h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small', disabled: busy,
             onClick: props.onRetryRename,
           }, format('retryRename'))
@@ -4319,7 +4317,7 @@ window.__ModuleLoader__.load({
           return h('div', { key: mode, className: 'md-session-group' },
             h('div', { className: 'md-session-group-head' },
               h('span', { className: 'md-session-mode' }, format(`mode.${mode}`)),
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small md-session-new',
                 disabled: busy || !props.available,
@@ -4327,7 +4325,7 @@ window.__ModuleLoader__.load({
                 'aria-label': format('newSessionOf', { mode: format(`mode.${mode}`) }),
                 onClick: () => props.onNewSession(props.chapter, mode),
               }, props.creatingMode === mode ? format('creating') : `＋ ${format('newSession')}`),
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small md-btn-ghost',
                 disabled: busy || !props.available,
@@ -4335,7 +4333,7 @@ window.__ModuleLoader__.load({
                 'aria-label': format('forceNewOf', { mode: format(`mode.${mode}`) }),
                 onClick: () => props.onNewSession(props.chapter, mode, { forceNew: true }),
               }, format('forceNew')),
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small md-btn-ghost',
                 disabled: busy || !props.available,
@@ -4387,7 +4385,7 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'md-picker-empty' }, format('importEmpty'))
             : h('ul', { className: 'md-picker-list' },
               shown.map(item => h('li', { key: item.id },
-                h('button', {
+                h(KitButton, {
                   type: 'button',
                   className: 'md-picker-row',
                   disabled: item.linked,
@@ -4465,7 +4463,7 @@ window.__ModuleLoader__.load({
           key: `${index}:${item.name}`,
           className: String(item.name).includes('__') ? 'md-artifact-item md-artifact-child' : 'md-artifact-item',
         },
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-file',
           onContextMenu: event => {
@@ -4526,7 +4524,7 @@ window.__ModuleLoader__.load({
             : null,
           props.mathMode === true ? h('div', { className: 'md-artifact-modes' },
             MODES.map(mode => h(React.Fragment, { key: mode },
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
                 onClick: event => {
@@ -4539,7 +4537,7 @@ window.__ModuleLoader__.load({
                   props.onArtifactSession(props.chapter, item, mode, 0)
                 },
               }, format(`mode.${mode}`)),
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small md-btn-ghost md-artifact-mode',
                 title: format('forceNewHint'),
@@ -4552,7 +4550,7 @@ window.__ModuleLoader__.load({
           ) : null,
           props.mathMode === true && groups !== undefined
             ? h(React.Fragment, null,
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-artifact-session-toggle',
                 onClick: event => {
                   event.stopPropagation()
@@ -4569,7 +4567,7 @@ window.__ModuleLoader__.load({
                   MODES.flatMap(mode => (Array.isArray(groups[mode]) ? groups[mode] : []).map(entry => h('li', {
                     key: entry.id, className: 'md-session-row',
                   },
-                    h('button', {
+                    h(KitButton, {
                       type: 'button', className: 'md-session',
                       onClick: () => props.onOpenSession(entry),
                     }, h('span', { className: 'md-session-name' }, entry.title === '' ? entry.displayTitle : entry.title))
@@ -4595,7 +4593,7 @@ window.__ModuleLoader__.load({
       if (phase === 'error') {
         body = h('div', { className: 'md-alert md-alert-inline', role: 'alert' },
           h('span', { className: 'md-alert-text' }, state.error === '' ? format('artifactsFailed') : state.error),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             'aria-label': format('artifactsReloadAria'),
@@ -4609,7 +4607,7 @@ window.__ModuleLoader__.load({
           h('span', null, state.missing === true ? format('artifactsMissing') : format('artifactsEmpty')),
           h('span', { className: 'md-artifacts-hint' }, format('artifactsEmptyHint')),
           h('code', { className: 'md-path' }, state.dir),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-btn-ghost',
             onClick: () => props.onCopyPath(state.dir),
@@ -4629,7 +4627,7 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'md-artifacts-head' },
           h('span', { className: 'md-artifacts-title' }, format('artifactsTitle')),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             onClick: () => setCollapsed(value => !value),
           }, collapsed ? format('artifactsExpand') : format('artifactsCollapse')),
@@ -4639,7 +4637,7 @@ window.__ModuleLoader__.load({
           phase === 'ready' && truncated
             ? h('span', { className: 'md-session-count' }, format('filesTruncated', { n: items.length }))
             : null,
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('artifactsReloadAria'),
@@ -4682,7 +4680,7 @@ window.__ModuleLoader__.load({
           h('div', null, preview.error === '' ? format('previewFailed') : preview.error),
           preview.errorCode === 'not-found' ? h('div', null, format('previewGone')) : null,
           h('div', { className: 'md-state-actions' },
-            h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('previewRetry'))
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('previewRetry'))
           )
         )
       } else if (preview.phase === 'unsupported') {
@@ -4721,7 +4719,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'md-preview-meta' },
               [formatSize(preview.size), formatDate(preview.mtime)].filter(Boolean).join(' · '))
           ),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('previewClose'),
@@ -5145,7 +5143,7 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'md-note-style-row' },
           h('span', { className: 'md-note-style-label' }, format('annotFontFamily')),
-          Object.keys(NOTE_FONTS).map(key => h('button', {
+          Object.keys(NOTE_FONTS).map(key => h(KitButton, {
             key,
             type: 'button',
             className: 'md-note-style-btn',
@@ -5156,7 +5154,7 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'md-note-style-row' },
           h('span', { className: 'md-note-style-label' }, format('annotColor')),
-          NOTE_COLORS.map(value => h('button', {
+          NOTE_COLORS.map(value => h(KitButton, {
             key: value,
             type: 'button',
             className: 'md-note-color',
@@ -5179,7 +5177,7 @@ window.__ModuleLoader__.load({
     function NoteStyleMenu(props) {
       const [open, setOpen] = useState(false)
       return h('span', { className: 'md-note-style-wrap' },
-        h('button', {
+        h(KitButton, {
           type: 'button',
           className: 'md-btn md-btn-small md-note-style-trigger',
           'aria-haspopup': 'menu',
@@ -6149,14 +6147,14 @@ window.__ModuleLoader__.load({
             if (Array.isArray(row.children) && row.children.length > 0) {
               const open = openGroup === row.id
               return h('div', { key: row.id, className: 'md-fallback-group' },
-                h('button', {
+                h(KitButton, {
                   type: 'button',
                   className: 'md-fallback-row md-fallback-parent',
                   'aria-expanded': open ? 'true' : 'false',
                   onClick: () => setOpenGroup(open ? '' : row.id),
                 }, `${row.label} ${open ? '▾' : '▸'}`),
                 open
-                  ? h('div', { className: 'md-fallback-children' }, row.children.map(child => h('button', {
+                  ? h('div', { className: 'md-fallback-children' }, row.children.map(child => h(KitButton, {
                     key: child.id,
                     type: 'button',
                     className: 'md-fallback-row',
@@ -6165,7 +6163,7 @@ window.__ModuleLoader__.load({
                   }, child.label)))
                   : null)
             }
-            return h('button', {
+            return h(KitButton, {
               key: row.id,
               type: 'button',
               className: 'md-fallback-row',
@@ -7290,7 +7288,7 @@ window.__ModuleLoader__.load({
        * @param {string} path - SVG path for `annotIcon`.
        * @returns {import('react').ReactElement} the button.
        */
-      const railTool = (id, labelKey, path) => h('button', {
+      const railTool = (id, labelKey, path) => h(KitButton, {
         type: 'button',
         className: 'md-rail-btn',
         'aria-pressed': annotTool === id ? 'true' : 'false',
@@ -8183,23 +8181,23 @@ window.__ModuleLoader__.load({
         onPointerLeave: () => setRailOpen(false),
       },
         h('div', { className: 'md-reader-bar' },
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             title: format('readerShelfHint'), 'aria-label': format('readerShelf'),
             onClick: props.onShelf,
           }, `⌂ ${format('readerShelf')}`),
-          h('button', { type: 'button', className: 'md-btn md-btn-small md-btn-ghost', onClick: props.onBack }, `‹ ${format('readerBack')}`),
+          h(KitButton, { type: 'button', className: 'md-btn md-btn-small md-btn-ghost', onClick: props.onBack }, `‹ ${format('readerBack')}`),
           h('div', { className: 'md-reader-titles' },
             h('span', { className: 'md-reader-name', title: label }, label),
             sub === '' ? null : h('span', { className: 'md-reader-sub' }, sub)
           ),
           h('div', { className: 'md-reader-tools' },
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: reader.page <= 1, title: format('readerFirstHint'), 'aria-label': format('readerFirst'),
               onClick: () => props.onPage(1),
             }, '⇤'),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: reader.page <= 1, title: format('readerPrev'), 'aria-label': format('readerPrev'),
               onClick: props.onPrev,
@@ -8218,43 +8216,43 @@ window.__ModuleLoader__.load({
               onBlur: commitPage,
             }),
             h('span', { className: 'md-reader-of' }, format('readerOf', { n: reader.count > 0 ? reader.count : '?' })),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: reader.count === 0 || reader.page >= reader.count,
               title: format('readerNext'), 'aria-label': format('readerNext'),
               onClick: props.onNext,
             }, '›'),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerZoomOut'), 'aria-label': format('readerZoomOut'),
               onClick: props.onZoomOut,
             }, '−'),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerFit'),
               onClick: props.onFit,
             }, format('readerFit')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerZoomIn'), 'aria-label': format('readerZoomIn'),
               onClick: props.onZoomIn,
             }, '＋'),
             h('span', { className: `md-reader-scale${dual ? ' md-hidden' : ''}`, 'aria-hidden': true }, `${Math.round((reader.scale ?? 1) * 100)}%`)
           ),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('toolsToggle'), title: format('toolsToggle'),
             onClick: () => setToolsOpen(value => !value),
           }, toolsOpen ? '⌃' : '⌄'),
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('previewClose'), title: format('previewClose'),
             onClick: props.onBack,
           }, '×')
         ),
         h('div', { className: 'md-reader-subbar', style: toolsOpen ? undefined : { display: 'none' } },
-          h('button', {
+          h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small',
             disabled: props.busy,
             title: format('generalSessionHint'),
@@ -8264,20 +8262,20 @@ window.__ModuleLoader__.load({
           }, format('generalSession')),
           h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('single') ? 'true' : 'false',
               onClick: () => props.onMode('single'),
             }, format('readerModeSingle')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
               title: format('blocksHint'),
               onClick: () => setShowBlocks(value => !value),
             }, format('blocksToggle')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': dual ? 'true' : 'false',
               title: format('dualHint'),
               onClick: () => {
@@ -8303,7 +8301,7 @@ window.__ModuleLoader__.load({
                 })
               },
             }, format('dualToggle')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': overlay ? 'true' : 'false',
               title: format('overlayHint'),
               onClick: () => {
@@ -8329,7 +8327,7 @@ window.__ModuleLoader__.load({
               },
             }, format('overlayToggle')),
             overlay
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-blocks-toggle',
                 'aria-pressed': autoBoxed ? 'true' : 'false',
                 title: format(autoBoxed ? 'overlayBlocksCancelHint' : 'overlayBlocksHint'),
@@ -8365,7 +8363,7 @@ window.__ModuleLoader__.load({
               ],
               onChange: value => setTranslateTarget(value),
             }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: translating || reader.phase !== 'ready',
               title: format('translateHint'),
@@ -8384,14 +8382,14 @@ window.__ModuleLoader__.load({
             ? null
             : h(React.Fragment, null,
               h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 'aria-pressed': props.forceNew ? 'true' : 'false',
                 title: format('forceNewHint'),
                 onClick: () => props.onForceNew(!props.forceNew),
               }, format('forceNew')),
               h('span', { className: 'md-reader-newlabel' }, format('readerNewLabel')),
-              MODES.map(mode => h('button', {
+              MODES.map(mode => h(KitButton, {
                 key: mode,
                 type: 'button',
                 className: 'md-btn md-btn-small',
@@ -8405,25 +8403,25 @@ window.__ModuleLoader__.load({
         translateNote === '' ? null : h('div', { className: 'md-reader-note-reveal' },
           h('div', { className: 'md-reader-note', role: 'status' },
           h('span', null, translateNote),
-          translating ? h('button', {
+          translating ? h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small',
             onClick: cancelTranslate,
           }, format('translateCancel')) : null,
           !translating && partialPages.length > 0 && props.canTranslate === true
-            ? h('button', {
+            ? h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               title: format('translateResumeHint'),
               onClick: () => { void runTranslate(true) },
             }, format('translateResume'))
             : null,
           exportJob !== ''
-            ? h('button', {
+            ? h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: cancelExport,
             }, format('exportCancel'))
             : null,
           !translating && retryAction !== null
-            ? h('button', {
+            ? h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: () => {
                 const run = retryAction
@@ -8446,7 +8444,7 @@ window.__ModuleLoader__.load({
             // The button disappears while the rebuild runs; the note itself
             // carries the progress, so there is no button label to explain.
             overlayReflow && !realigning
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 title: format('overlayRealignHint'),
                 onClick: () => { void realignOverlay() },
@@ -8462,16 +8460,16 @@ window.__ModuleLoader__.load({
               h('div', { className: 'md-reader-column', ref: dualLeft },
                 h('div', { className: 'md-reader-colhead' },
                   h('span', { className: 'md-reader-coltitle' }, format('dualOriginal')),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setDualLeftScale(value => Math.max(0.2, (value ?? dualFit.left ?? 1) / 1.2)),
                   }, '−'),
                   h('span', { className: 'md-reader-scale' }, String(Math.round((dualLeftScale ?? dualFit.left ?? 1) * 100)) + '%'),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setDualLeftScale(value => Math.min(3, (value ?? dualFit.left ?? 1) * 1.2)),
                   }, '+'),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setDualLeftScale(null),
                   }, format('readerFitScreen'))
@@ -8496,16 +8494,16 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'md-reader-colhead' },
                   h('span', { className: 'md-reader-coltitle' }, format('dualTranslated')),
                   h('span', { className: 'md-reader-scale' }, format('dualPage', { n: dualRightPage })),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(value => Math.max(0.5, (value ?? dualFit.right ?? 1) - 0.1)),
                   }, '−'),
                   h('span', { className: 'md-reader-scale' }, String(Math.round((rightScale ?? dualFit.right ?? 1) * 100)) + '%'),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(value => Math.min(3, (value ?? dualFit.right ?? 1) + 0.1)),
                   }, '+'),
-                  h('button', {
+                  h(KitButton, {
                     type: 'button', className: 'md-btn md-btn-small',
                     onClick: () => setRightScale(null),
                   }, format('readerFitScreen'))
@@ -8546,7 +8544,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
                   h('div', null, reader.error === '' ? format('readerFailed') : reader.error),
                   h('div', { className: 'md-state-actions' },
-                    h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('readerRetry'))
+                    h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: props.onRetry }, format('readerRetry'))
                   )
                 ))
               : h(PdfViewer, {
@@ -8609,19 +8607,19 @@ window.__ModuleLoader__.load({
             railTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
             railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-rail-btn',
               disabled: undoAvailable === 0,
               title: format('undoHint'), 'aria-label': format('undo'),
               onClick: undoEither,
             }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-rail-btn',
               disabled: redoAvailable === 0,
               title: format('redoHint'), 'aria-label': format('redo'),
               onClick: redoEither,
             }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-rail-btn',
               title: format('annotClearHint'), 'aria-label': format('annotClear'),
               onClick: clearAnnots,
@@ -8642,7 +8640,7 @@ window.__ModuleLoader__.load({
                       : h(React.Fragment, null,
                         h('div', { className: 'md-note-style-row' },
                           h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                          ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                          ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
                             key: color,
                             type: 'button',
                             className: 'md-note-color',
@@ -8672,7 +8670,7 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'md-selection-panel', 'data-side': railSide },
             h('div', { className: 'md-selection-head' },
               h('span', null, format('selectionTitle')),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
                 'aria-label': format('previewClose'), onClick: () => setSelection(null),
               }, '×')
@@ -8682,7 +8680,7 @@ window.__ModuleLoader__.load({
                 h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection }),
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('alignTitle')),
-                  [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']].map(item => h('button', {
+                  [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']].map(item => h(KitButton, {
                     key: item[0],
                     type: 'button',
                     className: 'md-note-style-btn',
@@ -8694,7 +8692,7 @@ window.__ModuleLoader__.load({
               : h(React.Fragment, null,
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                  ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                  ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
                     key: color,
                     type: 'button',
                     className: 'md-note-color',
@@ -8717,12 +8715,12 @@ window.__ModuleLoader__.load({
                   ? h(React.Fragment, null,
                     h('div', { className: 'md-note-style-row' },
                       h('span', { className: 'md-note-style-label' }, format('fillTitle')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': selectedEntry.fill === undefined || selectedEntry.fill === '' ? 'true' : undefined,
                         onClick: () => patchSelection({ fill: '' }),
                       }, format('fillNone')),
-                      ['#f2c94c', '#f28b82', '#aecbfa', '#b7e1cd'].map(color => h('button', {
+                      ['#f2c94c', '#f28b82', '#aecbfa', '#b7e1cd'].map(color => h(KitButton, {
                         key: color,
                         type: 'button',
                         className: 'md-note-color',
@@ -8734,12 +8732,12 @@ window.__ModuleLoader__.load({
                     ),
                     h('div', { className: 'md-note-style-row' },
                       h('span', { className: 'md-note-style-label' }, format('fillStyleTitle')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': selectedEntry.fillStyle !== 'solid' ? 'true' : undefined,
                         onClick: () => patchSelection({ fillStyle: 'hachure' }),
                       }, format('fillHachure')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': selectedEntry.fillStyle === 'solid' ? 'true' : undefined,
                         onClick: () => patchSelection({ fillStyle: 'solid' }),
@@ -8747,17 +8745,17 @@ window.__ModuleLoader__.load({
                     ),
                     h('div', { className: 'md-note-style-row' },
                       h('span', { className: 'md-note-style-label' }, format('strokeStyleTitle')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': (selectedEntry.strokeStyle ?? 'solid') === 'solid' ? 'true' : undefined,
                         onClick: () => patchSelection({ strokeStyle: 'solid' }),
                       }, format('styleSolid')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': selectedEntry.strokeStyle === 'dashed' ? 'true' : undefined,
                         onClick: () => patchSelection({ strokeStyle: 'dashed' }),
                       }, format('styleDashed')),
-                      h('button', {
+                      h(KitButton, {
                         type: 'button', className: 'md-note-style-btn',
                         'data-on': selectedEntry.strokeStyle === 'dotted' ? 'true' : undefined,
                         onClick: () => patchSelection({ strokeStyle: 'dotted' }),
@@ -8777,11 +8775,11 @@ window.__ModuleLoader__.load({
               h('span', { className: 'md-note-size-value' }, `${Math.round((selectedEntry.opacity ?? 1) * 100)}%`)
             ),
             h('div', { className: 'md-selection-actions' },
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: duplicateSelection }, format('duplicateSelection')),
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(true) }, format('bringFront')),
-              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(false) }, format('sendBack'))
+              h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: duplicateSelection }, format('duplicateSelection')),
+              h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(true) }, format('bringFront')),
+              h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(false) }, format('sendBack'))
             ),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-selection-delete',
               onClick: deleteSelection,
             }, format('selectionDelete'))
@@ -8827,7 +8825,7 @@ window.__ModuleLoader__.load({
         files === 0 ? '' : format(filesMore ? 'filesCountPlus' : 'filesCount', { n: files }),
       ].filter(Boolean).join(' · ')
       return h('li', { className: 'md-chapter', 'data-open': open ? 'true' : undefined },
-        h('button', {
+        h(KitButton, {
           type: 'button',
           className: 'md-row',
           'aria-expanded': open ? 'true' : 'false',
@@ -8847,13 +8845,13 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-detail-key' }, format('pdfLabel')),
             h('span', { className: 'md-detail-value' }, `${chapter.file}.pdf`),
             typeof chapter.pdfPath === 'string' && chapter.pdfPath !== ''
-              ? h('button', {
+              ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
                 title: chapter.pdfPath,
                 onClick: () => props.onCopyPath(chapter.pdfPath),
               }, format('copyPath'))
               : null,
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-detail-open',
               onClick: () => props.onOpenPdf(chapter),
             }, format('openPdf'))
@@ -8861,11 +8859,11 @@ window.__ModuleLoader__.load({
           translatedPdf === '' ? null : h('div', { className: 'md-detail-line' },
             h('span', { className: 'md-detail-key' }, format('translatedLabel')),
             h('span', { className: 'md-detail-value' }, translatedPdf),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-detail-open',
               onClick: () => props.onOpenPdf(chapter, 'translated'),
             }, format('openPdf')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               onClick: async () => {
                 if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -9026,7 +9024,7 @@ window.__ModuleLoader__.load({
             }),
             visible < chapters.length
               ? h('li', { key: '__more', className: 'md-chapters-more', ref: sentinel },
-                h('button', {
+                h(KitButton, {
                   type: 'button',
                   className: 'md-btn md-btn-small',
                   onClick: () => setVisible(count => Math.min(chapters.length, count + WINDOW)),
@@ -9856,7 +9854,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
         if (sideCloseTimer.current !== null) clearTimeout(sideCloseTimer.current)
       }, [])
-      const sideRailTool = (id, labelKey, path) => h('button', {
+      const sideRailTool = (id, labelKey, path) => h(KitButton, {
         type: 'button',
         className: 'md-rail-btn',
         'aria-pressed': tool === id ? 'true' : 'false',
@@ -10905,7 +10903,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? h('div', { className: 'md-reader-state md-state-error', role: 'alert' },
             h('div', null, error === '' ? format('readerFailed') : error),
             h('div', { className: 'md-state-actions' },
-              h('button', {
+              h(KitButton, {
                 type: 'button',
                 className: 'md-btn md-btn-small',
                 onClick: () => setDocRev(value => value + 1),
@@ -10949,7 +10947,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         toolsHidden
           // The way back to the toolbar: a handle that appears when the pointer
           // is over the preview, without taking any layout space.
-          ? h('button', {
+          ? h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-side-handle',
             title: format('sideShowToolbar'),
@@ -10960,7 +10958,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }, '⋯')
           : null,
         toolsHidden ? null : h('div', { className: 'md-side-bar' },
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerPrev'),
@@ -10993,7 +10991,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               },
               onBlur: () => setGotoOpen(false),
             })
-            : h('button', {
+            : h(KitButton, {
               type: 'button',
               className: 'md-btn md-btn-small md-side-count',
               title: format('sideGotoHint'),
@@ -11001,7 +10999,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               disabled: count === 0 || phase !== 'ready',
               onClick: () => setGotoOpen(true),
             }, count === 0 ? String(page) : `${page} / ${count}`),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerNext'),
@@ -11009,7 +11007,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: count === 0 || page >= count || phase !== 'ready',
             onClick: () => goPage(page + 1),
           }, '›'),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerMode'),
@@ -11017,7 +11015,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-pressed': mode === 'continuous' ? 'true' : 'false',
             onClick: () => setMode(mode === 'single' ? 'continuous' : 'single'),
           }, mode === 'single' ? format('readerModeSingle') : format('readerModeContinuous')),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerZoomOut'),
@@ -11025,7 +11023,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: phase !== 'ready',
             onClick: () => zoomTo(renderScale / 1.2),
           }, '−'),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerFit'),
@@ -11033,7 +11031,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: phase !== 'ready',
             onClick: () => fitToColumn(),
           }, '⤢'),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
             title: format('readerZoomIn'),
@@ -11042,7 +11040,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => zoomTo(renderScale * 1.2),
           }, '+'),
           h('span', { className: 'md-side-gap' }),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'pen' ? 'true' : 'false',
@@ -11050,7 +11048,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('annotPen'),
             onClick: () => toggleTool('pen'),
           }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'erase' ? 'true' : 'false',
@@ -11058,7 +11056,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('annotErase'),
             onClick: () => toggleTool('erase'),
           }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'text' ? 'true' : 'false',
@@ -11067,7 +11065,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => toggleTool('text'),
           }, annotIcon('M4 6h16M12 6v13M9 19h6')),
           h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'mask' ? 'true' : 'false',
@@ -11076,7 +11074,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => toggleTool('mask'),
           }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
           h('span', { className: 'md-side-gap' }),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             disabled: historyCounts.undo === 0,
@@ -11084,7 +11082,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('undo'),
             onClick: () => undoPage(),
           }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
             disabled: historyCounts.redo === 0,
@@ -11095,7 +11093,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('span', { className: 'md-side-gap' }),
           h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
             `${Math.round(shown * 100)}%`),
-          h('button', {
+          h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-side-more',
             title: format('sideMenuHint'),
@@ -11122,13 +11120,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             sideRailTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
             sideRailTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-rail-btn',
               disabled: historyCounts.undo === 0,
               title: format('undoHint'), 'aria-label': format('undo'),
               onClick: () => undoPage(),
             }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
-            h('button', {
+            h(KitButton, {
               type: 'button', className: 'md-rail-btn',
               disabled: historyCounts.redo === 0,
               title: format('redoHint'), 'aria-label': format('redo'),
@@ -11152,7 +11150,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                     : h(React.Fragment, null,
                       h('div', { className: 'md-note-style-row' },
                         h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                        ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                        ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
                           key: color,
                           type: 'button',
                           className: 'md-note-color',
@@ -14002,7 +14000,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-empty-title' }, format('loadFailed')),
           h('p', { className: 'md-state-detail' }, blockingError),
           h('div', { className: 'md-state-actions' },
-            h('button', { type: 'button', className: 'md-btn', onClick: reload }, format('retry'))
+            h(KitButton, { type: 'button', className: 'md-btn', onClick: reload }, format('retry'))
           )
         )
       } else if (catalog === null || work === null) {
@@ -14035,7 +14033,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('div', { className: 'md-empty-title' }, format('loadFailed')),
           h('p', { className: 'md-state-detail' }, blockingError),
           h('div', { className: 'md-state-actions' },
-            h('button', { type: 'button', className: 'md-btn', onClick: reload }, format('retry'))
+            h(KitButton, { type: 'button', className: 'md-btn', onClick: reload }, format('retry'))
           )
         )
       } else if (book !== null) {
@@ -14197,10 +14195,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }, format(mathMode ? 'workflowMath' : 'workflowGeneral'))
             ),
             h('div', { className: 'md-head-actions' },
-              book === null ? null : h('button', {
+              book === null ? null : h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-ghost', onClick: backToShelf,
               }, `‹ ${format('back')}`),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-ghost',
                 title: GITHUB_URL,
                 onClick: () => {
@@ -14212,25 +14210,25 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 },
               }, 'GitHub'),
               h('div', { className: 'md-settings' },
-                h('button', {
+                h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-ghost',
                   'aria-haspopup': 'dialog', 'aria-expanded': settingsOpen ? 'true' : 'false',
                   onClick: () => setSettingsOpen(value => !value),
                 }, `⚙ ${format('settings')}`)
               ),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn', disabled: busy || creatingKey !== '',
                 title: format('cleanupHint'),
                 onClick: cleanupNow,
               }, format('cleanup')),
-              h('button', {
+              h(KitButton, {
                 type: 'button', className: 'md-btn', disabled: busy,
                 onClick: reload,
               }, busy ? format('refreshing') : format('refresh'))
             )
           ),
           h('nav', { className: 'md-crumbs', 'aria-label': format('crumbsLabel'), inert: covered ? '' : undefined },
-            h('button', {
+            h(KitButton, {
               type: 'button',
               className: librariesView ? 'md-crumb-current' : 'md-crumb',
               disabled: librariesView,
@@ -14241,7 +14239,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               ? null
               : book === null && groupName === null
                 ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, libraryName)
-                : h('button', {
+                : h(KitButton, {
                   type: 'button', className: 'md-crumb',
                   onClick: goShelf,
                 }, libraryName),
@@ -14250,7 +14248,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               ? null
               : book === null
                 ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
-                : h('button', {
+                : h(KitButton, {
                   type: 'button', className: 'md-crumb',
                   onClick: () => openGroup(group),
                 }, groupName),
@@ -14259,7 +14257,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ),
           inlineError === '' ? null : h('div', { className: 'md-alert', role: 'alert', inert: covered ? '' : undefined },
             h('span', { className: 'md-alert-text' }, inlineError),
-            h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: reload }, format('retry'))
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: reload }, format('retry'))
           ),
           notice === '' ? null : h('div', { className: 'md-notice', role: 'status', inert: covered ? '' : undefined }, notice),
           catalog === null || blockingError !== '' || partialFiles === 0 ? null : h('div', { className: 'md-hint', inert: covered ? '' : undefined },
@@ -14504,7 +14502,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               h('p', { className: 'md-state-detail' }, format('pageCrashHint')),
               h('pre', { className: 'md-state-detail' }, message),
               h('div', { className: 'md-state-actions' },
-                h('button', { type: 'button', className: 'md-btn', onClick: this.retry }, format('retry'))
+                h(KitButton, { type: 'button', className: 'md-btn', onClick: this.retry }, format('retry'))
               )
             )
           )
