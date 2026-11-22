@@ -2,7 +2,7 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
-## 未发布
+## v1.3.2
 
 - **构建链**：esbuild + 官方 `@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.5`，只构建 Button/Input/Modal，生成 `vendor/host-ui.cjs/css`；React/ReactDOM 走宿主 require，CSS Modules 本地编译。
 - **宿主 Button 试点**：设置里的「检查更新」「立即更新」优先使用宿主 Button；加载失败自动回退。关于页显示当前是宿主组件还是回退。

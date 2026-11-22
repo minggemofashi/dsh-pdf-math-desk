@@ -139,7 +139,7 @@
 ### npm（推荐给市场与一键更新）
 
 ```bash
-dsh plugin add dsh-pdf-workbench@1.3.1
+dsh plugin add dsh-pdf-workbench@1.3.2
 ```
 
 ### 本地目录（开发）
@@ -174,7 +174,7 @@ Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**；翻译还
 答：不会。插件没有云同步；需要备份就把书库和 `~/.dsh/pdfdesk/` 一起复制。
 
 **问：从哪里安装？**  
-答：三种方式任选：**npm**（`dsh plugin add dsh-pdf-workbench@1.3.1`）、[GitHub Releases](https://github.com/minggemofashi/dsh-pdf-workbench/releases) 的 zip，或等插件市场收录后在 dsh-market 搜索「PDF 阅读」。旧包 `dsh-pdf-math-desk` 已从 npm 删除，请用新包名。
+答：三种方式任选：**npm**（`dsh plugin add dsh-pdf-workbench@1.3.2`）、[GitHub Releases](https://github.com/minggemofashi/dsh-pdf-workbench/releases) 的 zip，或等插件市场收录后在 dsh-market 搜索「PDF 阅读」。旧包 `dsh-pdf-math-desk` 已从 npm 删除，请用新包名。
 
 **问：形状能像 Excalidraw 一样多选 / 绑定箭头吗？**  
 答：目前没有多选、没有箭头绑定和曲线。现有的是单元素选择、移动、四角缩放、样式、复制和层级。
