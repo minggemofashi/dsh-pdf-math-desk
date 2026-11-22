@@ -355,6 +355,9 @@ window.__ModuleLoader__.load({
       previewPdfHint: '新建会话时在右栏显示本章 PDF（预览，不进上下文）',
       deleteNonPdf: '非PDF删除',
       deleteNonPdfHint: '开启后 md/txt 等产物也能删除；关闭时只删 PDF',
+      socraticToggle: '答疑苏格拉底人格',
+      socraticHint: '新建或打开答疑会话时，把本地 qa-persona.md 放进输入框（其他模式不注入）',
+      personaFailed: '答疑人格读取失败（检查 ~/.dsh/mathdesk/qa-persona.md 或重启 DSH）',
       settings: '设置',
       version: '版本',
       githubRepo: 'GitHub 仓库',
@@ -781,6 +784,9 @@ window.__ModuleLoader__.load({
       previewPdfHint: 'Show this chapter\'s PDF in the side column when a session is created (preview only, not context)',
       deleteNonPdf: 'Delete non-PDF',
       deleteNonPdfHint: 'When on, md/txt artifacts can be deleted too; when off, only PDFs',
+      socraticToggle: 'Socratic Q&A persona',
+      socraticHint: 'Put the local qa-persona.md into the input when a Q&A session is created or opened (other modes are left alone)',
+      personaFailed: 'Could not read the Q&A persona (check ~/.dsh/mathdesk/qa-persona.md or restart DSH)',
       settings: 'Settings',
       version: 'Version',
       githubRepo: 'GitHub repository',
@@ -1756,6 +1762,19 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Whether the local Socratic persona is enabled (Settings → 答疑人格).
+     * Missing preference means on: the file is the opt-in.
+     * @returns {boolean} the setting.
+     */
+    function socraticEnabled() {
+      try {
+        return window.localStorage.getItem('mathdesk:socratic') !== '0'
+      } catch {
+        return true
+      }
+    }
+
+    /**
      * Put the local Socratic persona into a Q&A session that is being opened
      * again. The persona is pre-filled only when a session is created, so a
      * resumed conversation would otherwise never see it; once per session is
@@ -1765,6 +1784,7 @@ window.__ModuleLoader__.load({
      */
     async function seedQaPersona(sessionId) {
       if (typeof sessionId !== 'string' || sessionId === '') return
+      if (!socraticEnabled()) return
       const key = `mathdesk:qa-persona:${sessionId}`
       try {
         if (window.localStorage.getItem(key) === '1') return
@@ -1779,7 +1799,8 @@ window.__ModuleLoader__.load({
         return
       }
       if (persona === '') return
-      const prefill = await beginPrefill(sessionId, `${persona}\n\n${format('sessionQuestionLead')}`)
+      const block = `答疑人格（本会话生效）：\n${persona}`
+      const prefill = await beginPrefill(sessionId, `${block}\n\n${format('sessionQuestionLead')}`)
       if (!prefill.applied) {
         if (prefill.reference !== null) {
           try { prefill.reference.release() } catch { /* already released */ }
@@ -4242,14 +4263,16 @@ window.__ModuleLoader__.load({
      * The context line every new conversation starts with: which book, chapter
      * and PDF it belongs to, and where the reader is. With `paths`, it also names
      * the library, the chapter's folder and the exact PDF, so the model never
-     * has to search for the book.
+     * has to search for the book. With `persona`, a Q&A session starts with the
+     * local Socratic instruction in the same prompt.
      * @param {{ title: string }} bookRow - catalog book row.
      * @param {{ code: string, title: string, file: string }} chapter - catalog chapter row.
      * @param {{ pdf: string, page: number, mode: string } | null} position - the open reader when it is this chapter.
      * @param {{ libraryDir: string, bookDir: string, pdfPath: string, artifactDir: string } | null} [paths] - the chapter's absolute locations.
+     * @param {string} [persona] - the local Q&A persona, when enabled.
      * @returns {string} the header block.
      */
-    function sessionSeedText(bookRow, chapter, position, paths) {
+    function sessionSeedText(bookRow, chapter, position, paths, persona) {
       const pdf = position === null
         ? (chapter.file === '' ? '' : `${chapter.file}.pdf`)
         : position.pdf
@@ -4262,12 +4285,21 @@ window.__ModuleLoader__.load({
         ? ''
         : ` · 阅读位置：第 ${position.page} 页（${position.mode === 'continuous' ? '连续' : '单页'}）`
       const header = `${parts.join(' · ')}${suffix}`
-      if (paths === null || paths === undefined) return header
-      const lines = [header, '路径（已给出，不要搜索或列举目录）：']
-      if (paths.libraryDir !== '') lines.push(`书库：${paths.libraryDir}`)
-      if (paths.bookDir !== '') lines.push(`书目录：${paths.bookDir}`)
-      if (paths.pdfPath !== '') lines.push(`本章 PDF：${paths.pdfPath}`)
-      if (paths.artifactDir !== '') lines.push(`产物目录：${paths.artifactDir}`)
+      const hasPaths = paths !== null && paths !== undefined
+      const hasPersona = typeof persona === 'string' && persona !== ''
+      if (!hasPaths && !hasPersona) return header
+      const lines = [header]
+      if (hasPaths) {
+        lines.push('路径（已给出，不要搜索或列举目录）：')
+        if (paths.libraryDir !== '') lines.push(`书库：${paths.libraryDir}`)
+        if (paths.bookDir !== '') lines.push(`书目录：${paths.bookDir}`)
+        if (paths.pdfPath !== '') lines.push(`本章 PDF：${paths.pdfPath}`)
+        if (paths.artifactDir !== '') lines.push(`产物目录：${paths.artifactDir}`)
+      }
+      if (hasPersona) {
+        lines.push('答疑人格（本会话生效）：')
+        lines.push(persona)
+      }
       return lines.join('\n')
     }
 
@@ -7581,7 +7613,7 @@ window.__ModuleLoader__.load({
 .md-annot[data-tool=""] .md-annot-text:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 /* The in-place editor is transparent too: only the text and the caret show.
    The style row never takes focus, so changing a font cannot blur-save. */
-.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; pointer-events: auto; }
+.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; padding: 2px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); border-radius: 6px; pointer-events: auto; }
 .md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 0; background: transparent; box-shadow: none; }
 .md-note-style-btn { min-width: 20px; height: 20px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
 .md-note-style-btn:hover { background: color-mix(in srgb, var(--dsw-alias-bg-base) 70%, transparent); }
@@ -9229,6 +9261,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [settingsOpen, setSettingsOpen] = useState(false)
+      const [socratic, setSocratic] = useState(() => socraticEnabled())
       const [envTools, setEnvTools] = useState({ python: false, tex: false })
       useEffect(() => {
         if (!settingsOpen) return undefined
@@ -10677,7 +10710,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * @param {object} chapter - catalog chapter row.
        * @returns {string} the header line.
        */
-      const seedFor = useCallback((bookRow, chapter, paths) => {
+      const seedFor = useCallback((bookRow, chapter, paths, persona) => {
         const shown = readerRef.current
         const sameChapter = shown !== null && shown.bookId === bookRow.id && shown.code === chapter.code
         const position = sameChapter
@@ -10687,7 +10720,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             mode: shown.mode,
           }
           : null
-        return sessionSeedText(bookRow, chapter, position, paths ?? null)
+        return sessionSeedText(bookRow, chapter, position, paths ?? null, typeof persona === 'string' ? persona : '')
       }, [])
 
       /**
@@ -10852,21 +10885,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 ? `${catalog.artifactDir}\\${book.id}\\${chapter.code}\\`
                 : '',
             }
-          const parts = [seedFor(book, chapter, paths)]
-          // The Socratic persona is a local-only workflow file, used for Q&A only.
-          let personaInDraft = false
-          if (mode === 'qa') {
+          // The Q&A persona is part of the same initial prompt as the paths: one
+          // block the model reads before the user's question, gated by Settings.
+          let persona = ''
+          let personaFailed = false
+          if (mode === 'qa' && socraticEnabled()) {
             try {
               const payload = await request('GET', 'qa-persona')
-              const persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
-              if (persona !== '') {
-                parts.unshift(persona)
-                personaInDraft = true
-              }
+              persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
             } catch {
-              // no local persona file (or offline): the session works as before
+              personaFailed = true
             }
           }
+          const parts = [seedFor(book, chapter, paths, persona)]
           if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
           let hasOutline = false
           if (continuation >= 2) {
@@ -10882,8 +10913,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           let draftReference = null
           const prefill = await beginPrefill(sessionId, draft)
           if (prefill.applied) {
-            showNotice(format(hasOutline ? 'sessionWithOutline' : 'sessionWithContext'))
-            if (personaInDraft) {
+            showNotice(format(personaFailed ? 'personaFailed' : (hasOutline ? 'sessionWithOutline' : 'sessionWithContext')))
+            if (persona !== '') {
               // Mark it: opening this session again must not append the persona
               // a second time.
               try { window.localStorage.setItem(`mathdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
@@ -11734,7 +11765,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   'aria-haspopup': 'menu', 'aria-expanded': settingsOpen ? 'true' : 'false',
                   onClick: () => setSettingsOpen(value => !value),
                 }, `⚙ ${format('settings')}`),
-                false
+                settingsOpen
                   ? h('div', { className: 'md-settings-menu', role: 'menu' },
                     h('div', { className: 'md-settings-version' }, `${format('version')} ${catalog === null ? '' : catalog.version}`),
                     h('button', {
@@ -11786,7 +11817,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                           return next
                         })
                       },
-                    }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`)
+                    }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`),
+                    h('button', {
+                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
+                      'aria-checked': socratic ? 'true' : 'false',
+                      title: format('socraticHint'),
+                      onClick: () => {
+                        setSocratic(value => {
+                          const next = !value
+                          try {
+                            window.localStorage.setItem('mathdesk:socratic', next ? '1' : '0')
+                          } catch {
+                            // storage unavailable
+                          }
+                          return next
+                        })
+                      },
+                    }, `${format('socraticToggle')}：${socratic ? format('previewOn') : format('previewOff')}`)
                   )
                   : null
               ),
