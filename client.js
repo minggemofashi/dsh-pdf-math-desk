@@ -37,6 +37,62 @@ window.__ModuleLoader__.load({
     const TITLE_MODE = { extract: '提取', qa: '答疑', exercise: '习题' }
     const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-workbench'
     const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
+    const PYTHON_URL = 'https://www.python.org/downloads/windows/'
+
+    /** Optional workflows; general is the always-on base and has no entry here. */
+    const WORKFLOWS = Object.freeze([
+      { id: 'math', labelKey: 'workflowMath', descKey: 'workflowMathDesc' },
+    ])
+    const WORKFLOW_STORAGE = 'pdfdesk:workflow'
+    const WORKFLOW_EVENT = 'pdfdesk:workflow'
+
+    /**
+     * The one optional workflow that is enabled, or '' for general mode.
+     * @returns {string} a workflow id or ''.
+     */
+    function readWorkflowMode() {
+      try {
+        const value = window.localStorage.getItem(WORKFLOW_STORAGE)
+        return WORKFLOWS.some(item => item.id === value) ? value : ''
+      } catch {
+        return ''
+      }
+    }
+
+    /**
+     * Persist one workflow id and notify the other mounted halves.
+     * @param {string} value - workflow id, or '' for general.
+     * @returns {void}
+     */
+    function writeWorkflowMode(value) {
+      const next = WORKFLOWS.some(item => item.id === value) ? value : ''
+      try {
+        if (next === '') window.localStorage.removeItem(WORKFLOW_STORAGE)
+        else window.localStorage.setItem(WORKFLOW_STORAGE, next)
+      } catch {
+        // storage unavailable: keep the in-memory switch
+      }
+      if (typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event(WORKFLOW_EVENT))
+    }
+
+    /**
+     * Follow the active workflow across the page and the side preview.
+     * @returns {string} the active workflow id, or '' for general.
+     */
+    function useWorkflowMode() {
+      const [value, setValue] = React.useState(readWorkflowMode)
+      React.useEffect(() => {
+        const sync = () => setValue(readWorkflowMode())
+        if (typeof window.addEventListener !== 'function') return undefined
+        window.addEventListener(WORKFLOW_EVENT, sync)
+        window.addEventListener('storage', sync)
+        return () => {
+          window.removeEventListener(WORKFLOW_EVENT, sync)
+          window.removeEventListener('storage', sync)
+        }
+      }, [])
+      return value
+    }
 
     /**
      * Last page read for one chapter, so leaving the reader does not reset it.
@@ -138,7 +194,7 @@ window.__ModuleLoader__.load({
       manualNaming2: '一章一个 PDF，保留目录；文件名带页码范围或 cNN 即可，工作台自动编号。',
       manualNaming3: '不想拆：整本 PDF 放进 整本\\，会作为只有一章的一本书。',
       manualSessionLine: '会话按「书 / 章 / 模式」归档，已有会话也可以导入。',
-      manualEnvLead: 'Markdown 转 PDF 需要 Python 3 + TeX（xelatex、ctex）；翻译还需要 DeepSeek API Key。没装只会隐藏或禁用对应功能，阅读、会话和预览不受影响。',
+      manualEnvLead: 'Markdown 转 PDF 需要 Python 3 + TeX（xelatex、ctex）；翻译还需要 DeepSeek API Key。没装时对应按钮会给出说明和下载入口，阅读、会话和预览不受影响。',
       aiPromptTitle: '给 AI 的拆分提示词',
       manualStructureTitle: '书库结构',
       manualNamingTitle: '拆分与命名',
@@ -443,6 +499,7 @@ window.__ModuleLoader__.load({
       railRight: '右',
       sketchRoughness: '手绘强度',
       settingsTabReading: '阅读',
+      settingsTabWorkflow: '模式',
       settingsTabKeys: '快捷键',
       settingsTabEnv: '环境',
       settingsTabAbout: '关于',
@@ -468,6 +525,26 @@ window.__ModuleLoader__.load({
       envReady: '已就绪：md→PDF、翻译和导出可用',
       envMissing: '缺少 Python / TeX：md→PDF、翻译、导出会受限',
       envImpact: '缺少 Python：md→PDF、翻译、导出不可用；缺少 TeX：md→PDF、翻译译文合成不可用；翻译还需要 API Key。',
+      envPromptTitle: '需要环境',
+      envNeedPython: 'Python 3',
+      envNeedTex: 'TeX Live（xelatex、ctex）',
+      envNeedKey: 'DeepSeek API Key',
+      envUseRender: 'Markdown 转 PDF',
+      envUseTranslate: '整章翻译与译文合成',
+      envUseExport: '导出本页 / 整章',
+      envPromptBody: '需要 {needs}，用于 {use}。',
+      envPromptBack: '返回',
+      envPromptDownloadPython: '下载 Python',
+      envPromptDownloadTex: '下载 TeX Live',
+      envPromptKey: '配置 API Key',
+      workflowTitle: '工作流',
+      workflowHint: '通用模式是基础，始终开启；同一时间只能启用一个可选工作流。目前只有数学。',
+      workflowGeneral: '通用',
+      workflowGeneralDesc: '阅读、标注、翻译与通用工具；不需要选择，始终作为基础。',
+      workflowMath: '数学',
+      workflowMathDesc: '提取 / 答疑 / 习题三种会话、数学提示词与 LaTeX 模板。',
+      workflowOnlyOne: '同一时间只能启用一个模式；以后会增加其它工作流，结构已经按单选写好。',
+      workflowOff: '只使用通用模式',
       envDownload: '下载 TeX Live（约 5 GB）',
       envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
@@ -630,7 +707,7 @@ window.__ModuleLoader__.load({
       manualNaming2: 'One PDF per chapter, keep the contents; a page range or cNN in the file name is enough, the workbench numbers it.',
       manualNaming3: 'Do not want to split? Put a whole PDF under 整本\\ and it becomes a one-chapter book.',
       manualSessionLine: 'Conversations are filed by book / chapter / mode, and existing ones can be imported.',
-      manualEnvLead: 'Markdown-to-PDF needs Python 3 + TeX (xelatex, ctex); translation also needs a DeepSeek API key. Without them the matching buttons are hidden or disabled; reading, conversations and preview still work.',
+      manualEnvLead: 'Markdown-to-PDF needs Python 3 + TeX (xelatex, ctex); translation also needs a DeepSeek API key. Without them the matching buttons explain what to install and offer downloads; reading, conversations and preview still work.',
       aiPromptTitle: 'Prompt for an AI splitter',
       manualStructureTitle: 'Library structure',
       manualNamingTitle: 'Splitting and naming',
@@ -935,6 +1012,7 @@ window.__ModuleLoader__.load({
       railRight: 'Right',
       sketchRoughness: 'Sketch strength',
       settingsTabReading: 'Reading',
+      settingsTabWorkflow: 'Modes',
       settingsTabKeys: 'Shortcuts',
       settingsTabEnv: 'Toolchain',
       settingsTabAbout: 'About',
@@ -960,6 +1038,26 @@ window.__ModuleLoader__.load({
       envReady: 'ready: md-to-PDF, translation and export are available',
       envMissing: 'Python / TeX missing: md-to-PDF, translation and export are limited',
       envImpact: 'Without Python: md-to-PDF, translation and export are unavailable; without TeX: md-to-PDF and translation composition are unavailable; translation also needs an API key.',
+      envPromptTitle: 'Environment required',
+      envNeedPython: 'Python 3',
+      envNeedTex: 'TeX Live (xelatex, ctex)',
+      envNeedKey: 'DeepSeek API key',
+      envUseRender: 'Markdown-to-PDF',
+      envUseTranslate: 'whole-chapter translation and PDF composition',
+      envUseExport: 'exporting a page or chapter',
+      envPromptBody: 'Requires {needs}, used for {use}.',
+      envPromptBack: 'Back',
+      envPromptDownloadPython: 'Download Python',
+      envPromptDownloadTex: 'Download TeX Live',
+      envPromptKey: 'Configure API key',
+      workflowTitle: 'Workflows',
+      workflowHint: 'General is the always-on base; only one optional workflow can be active at a time. Math is the only one for now.',
+      workflowGeneral: 'General',
+      workflowGeneralDesc: 'Reading, annotations, translation and general tools; always on, no selection needed.',
+      workflowMath: 'Math',
+      workflowMathDesc: 'Extract / Q&A / exercise sessions, math prompts and LaTeX templates.',
+      workflowOnlyOne: 'Only one mode can be active at a time; the single-select structure is ready for more workflows.',
+      workflowOff: 'General only',
       envDownload: 'Download TeX Live (~5 GB)',
       envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
@@ -2724,11 +2822,71 @@ window.__ModuleLoader__.load({
      * @param {{ version: string, envTools: object, previewPdf: boolean, allowNonPdfDelete: boolean, onPreview: Function, onNonPdf: Function, onClose: Function }} props - settings state and handlers.
      * @returns {import('react').ReactElement} the dialog.
      */
+    /**
+     * Explain which environment a feature needs and offer the download links.
+     * @param {{ kind: string, envTools: object, onClose: Function, onOpenSettings: Function }} props - feature kind and capabilities.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function EnvPrompt(props) {
+      const kind = props.kind
+      const python = props.envTools === undefined || props.envTools.python !== true
+      const tex = (kind === 'render' || kind === 'translate') && (props.envTools === undefined || props.envTools.tex !== true)
+      const key = kind === 'translate' && (props.envTools === undefined || props.envTools.apiKey !== true)
+      const needs = [
+        python ? format('envNeedPython') : '',
+        tex ? format('envNeedTex') : '',
+        key ? format('envNeedKey') : '',
+      ].filter(Boolean)
+      const useKey = kind === 'render' ? 'envUseRender' : kind === 'export' ? 'envUseExport' : 'envUseTranslate'
+      const open = url => {
+        try {
+          window.open(url, '_blank', 'noopener')
+        } catch {
+          // popup blocked
+        }
+      }
+      return h('div', {
+        className: 'md-env-backdrop',
+        role: 'presentation',
+        onClick: event => {
+          if (event.target === event.currentTarget) props.onClose()
+        },
+      },
+        h('div', {
+          className: 'md-env-dialog', role: 'dialog', 'aria-modal': 'true',
+          'aria-label': format('envPromptTitle'),
+        },
+          h('h3', { className: 'md-env-title' }, format('envPromptTitle')),
+          h('p', { className: 'md-env-body' }, format('envPromptBody', {
+            needs: needs.join(' + '),
+            use: format(useKey),
+          })),
+          h('div', { className: 'md-env-actions' },
+            h('button', { type: 'button', className: 'md-btn', onClick: props.onClose }, format('envPromptBack')),
+            python ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => open(PYTHON_URL),
+            }, format('envPromptDownloadPython')) : null,
+            tex ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => open(TEXLIVE_URL),
+            }, format('envPromptDownloadTex')) : null,
+            key ? h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                if (typeof props.onOpenSettings === 'function') props.onOpenSettings()
+              },
+            }, format('envPromptKey')) : null
+          )
+        )
+      )
+    }
+
     function SettingsDialog(props) {
       const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       // The dialog is paged: reading switches, the keyboard table, the toolchain
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
-      const [tab, setTab] = useState('reading')
+      const [tab, setTab] = useState(props.initialTab ?? 'reading')
       const [apiKey, setApiKey] = useState('')
       const [apiKeyNote, setApiKeyNote] = useState('')
       const [bindings, setBindingsState] = useState(() => readShortcutBindings())
@@ -2779,6 +2937,7 @@ window.__ModuleLoader__.load({
       }
       const tabs = [
         { id: 'reading', label: format('settingsTabReading') },
+        { id: 'workflow', label: format('settingsTabWorkflow') },
         { id: 'keys', label: format('settingsTabKeys') },
         { id: 'env', label: format('settingsTabEnv') },
         { id: 'about', label: format('settingsTabAbout') },
@@ -2830,6 +2989,40 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('settingsNotesTitle')),
           h('p', { className: 'md-shelf-sub' }, format('settingsNotesHint'))
         )
+      )
+      const workflow = h('div', { className: 'md-settings-section' },
+        h('h4', { className: 'md-settings-heading' }, format('workflowTitle')),
+        h('p', { className: 'md-shelf-sub' }, format('workflowHint')),
+        h('div', { className: 'md-workflow-base' },
+          h('span', { className: 'md-mode-pill', 'data-mode': 'general' }, format('workflowGeneral')),
+          h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc'))
+        ),
+        WORKFLOWS.map(item => h('label', {
+          key: item.id,
+          className: 'md-workflow-card',
+          'data-active': props.activeWorkflow === item.id ? 'true' : 'false',
+        },
+          h('input', {
+            type: 'radio',
+            name: 'pdfdesk-workflow',
+            checked: props.activeWorkflow === item.id,
+            onChange: () => {
+              if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange(item.id)
+            },
+          }),
+          h('span', { className: 'md-workflow-text' },
+            h('strong', null, format(item.labelKey)),
+            h('span', null, format(item.descKey))
+          )
+        )),
+        h('button', {
+          type: 'button', className: 'md-btn md-btn-small',
+          disabled: props.activeWorkflow === '',
+          onClick: () => {
+            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
+          },
+        }, format('workflowOff')),
+        h('p', { className: 'md-shelf-sub' }, format('workflowOnlyOne'))
       )
       const keys = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('shortcutsTitle')),
@@ -2935,7 +3128,7 @@ window.__ModuleLoader__.load({
               onClick: () => setTab(item.id),
             }, item.label))
           ),
-          tab === 'reading' ? reading : tab === 'keys' ? keys : tab === 'env' ? env : about
+          tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : about
         )
       )
     }
@@ -3746,6 +3939,7 @@ window.__ModuleLoader__.load({
             if (/\.md$/i.test(item.name)) {
               event.preventDefault()
               if (props.canRender === true) props.onRender(item, props.code)
+              else if (typeof props.onEnvRequired === 'function') props.onEnvRequired('render')
               return
             }
             if (item.kind === 'pdf') {
@@ -3768,19 +3962,21 @@ window.__ModuleLoader__.load({
           h('span', { className: 'md-file-name' }, item.name),
           h('span', { className: 'md-file-meta', 'aria-hidden': true },
             [formatSize(item.size), formatDate(item.mtime)].filter(Boolean).join(' · ')),
-          /\.md$/i.test(item.name) && props.canRender === true
+          /\.md$/i.test(item.name)
             ? h('span', {
               className: 'md-file-action', role: 'button', tabIndex: 0,
               title: format('renderActionHint'),
               onClick: event => {
                 event.stopPropagation()
-                props.onRender(item, props.code)
+                if (props.canRender === true) props.onRender(item, props.code)
+                else if (typeof props.onEnvRequired === 'function') props.onEnvRequired('render')
               },
               onKeyDown: event => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
                 event.stopPropagation()
-                props.onRender(item, props.code)
+                if (props.canRender === true) props.onRender(item, props.code)
+                else if (typeof props.onEnvRequired === 'function') props.onEnvRequired('render')
               },
             }, format('renderAction'))
             : null
@@ -3795,7 +3991,7 @@ window.__ModuleLoader__.load({
               },
             }, format('trashAction'))
             : null,
-          h('div', { className: 'md-artifact-modes' },
+          props.mathMode === true ? h('div', { className: 'md-artifact-modes' },
             MODES.map(mode => h(React.Fragment, { key: mode },
               h('button', {
                 type: 'button',
@@ -3820,10 +4016,9 @@ window.__ModuleLoader__.load({
                 },
               }, `+ ${format('forceNew')}`)
             ))
-          ),
-          groups === undefined
-            ? null
-            : h(React.Fragment, null,
+          ) : null,
+          props.mathMode === true && groups !== undefined
+            ? h(React.Fragment, null,
               h('button', {
                 type: 'button', className: 'md-artifact-session-toggle',
                 onClick: event => {
@@ -3848,6 +4043,7 @@ window.__ModuleLoader__.load({
                   ))))
                 : null
             )
+            : null
         )
       }
       const ordered = [...items].sort((left, right) => {
@@ -4571,13 +4767,15 @@ window.__ModuleLoader__.load({
      * @returns {null} nothing to draw.
      */
     function QaPersonaSeat(props) {
+      const workflow = useWorkflowMode()
       const list = useSessionList()
       const summary = list === null || list.byId === undefined ? undefined : list.byId[props.sessionId]
       const title = summary === undefined ? '' : summary.title
       useEffect(() => {
+        if (workflow !== 'math') return
         const parsed = parseSessionTitle(title)
         if (parsed !== null && parsed.mode === 'qa') void seedQaPersona(props.sessionId)
-      }, [props.sessionId, title])
+      }, [props.sessionId, title, workflow])
       return null
     }
 
@@ -6761,7 +6959,7 @@ window.__ModuleLoader__.load({
       // sidecar JSON keeps the normalized data next to the PDF.
       const exportChapter = async () => {
         if (props.canExport !== true) {
-          updateNote(format('exportNeedsPython'))
+          if (typeof props.onEnvRequired === 'function') props.onEnvRequired('export')
           return
         }
         updateNote(format('exportingChapter'))
@@ -6815,7 +7013,7 @@ window.__ModuleLoader__.load({
       // produced files so it can be opened from the shelf like any artifact.
       const exportPage = async () => {
         if (props.canExport !== true) {
-          updateNote(format('exportNeedsPython'))
+          if (typeof props.onEnvRequired === 'function') props.onEnvRequired('export')
           return
         }
         updateNote(format('exporting'))
@@ -7130,7 +7328,7 @@ window.__ModuleLoader__.load({
       }
       const runTranslate = async (resume = false) => {
         if (props.canTranslate !== true) {
-          updateNote(format('translateNeedsEnv'))
+          if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
           return
         }
         if (translating || reader.phase !== 'ready') return
@@ -7543,7 +7741,7 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (!hasTranslation) {
                   if (props.canTranslate !== true) {
-                    updateNote(format('translateNeedsEnv'))
+                    if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
                     return
                   }
                   if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -7570,7 +7768,7 @@ window.__ModuleLoader__.load({
                 if (reader.variant === 'translated') return
                 if (!overlay && !hasTranslation) {
                   if (props.canTranslate !== true) {
-                    updateNote(format('translateNeedsEnv'))
+                    if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
                     return
                   }
                   if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -7599,7 +7797,7 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'md-reader-lang md-reader-export',
               value: '',
-              title: props.canExport !== true ? format('exportNeedsPython') : format('exportGroupHint'),
+              title: format('exportGroupHint'),
               'aria-label': format('exportGroup'),
               onChange: event => {
                 const action = event.target.value
@@ -7610,8 +7808,8 @@ window.__ModuleLoader__.load({
               },
             },
               h('option', { value: '' }, format('exportGroup')),
-              h('option', { value: 'page', disabled: props.canExport !== true }, format('exportPage')),
-              h('option', { value: 'chapter', disabled: props.canExport !== true }, format('exportChapter')),
+              h('option', { value: 'page' }, format('exportPage')),
+              h('option', { value: 'chapter' }, format('exportChapter')),
               h('option', { value: 'import' }, format('importAnnots'))
             ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
@@ -7627,11 +7825,11 @@ window.__ModuleLoader__.load({
             ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
-              disabled: translating || reader.phase !== 'ready' || props.canTranslate !== true,
-              title: props.canTranslate !== true ? format('translateNeedsEnv') : format('translateHint'),
+              disabled: translating || reader.phase !== 'ready',
+              title: format('translateHint'),
               onClick: () => {
                 if (props.canTranslate !== true) {
-                  updateNote(format('translateNeedsEnv'))
+                  if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
                   return
                 }
                 if (!window.confirm(format('translateCostConfirm'))) return
@@ -7640,7 +7838,7 @@ window.__ModuleLoader__.load({
               },
             }, translating ? format('translating') : format('translateChapterAction'))
           ),
-          false
+          props.mathMode !== true
             ? null
             : h(React.Fragment, null,
               h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
@@ -8139,7 +8337,7 @@ window.__ModuleLoader__.load({
               },
             }, format('translatedDelete'))
           ),
-          h('div', {
+          props.mathMode === true ? h('div', {
             className: 'md-sessions-wrap',
             'data-collapsed': sessionsOpen ? 'false' : 'true',
           }, h(ChapterSessions, {
@@ -8164,7 +8362,7 @@ window.__ModuleLoader__.load({
             onRenameInput: props.onRenameInput,
             onCommitRename: props.onCommitRename,
             onCancelRename: props.onCancelRename,
-          })),
+          })) : null,
           h(ChapterArtifacts, {
             bookId: props.bookId,
             bookTitle: props.bookTitle,
@@ -8172,6 +8370,8 @@ window.__ModuleLoader__.load({
             code: chapter.code,
             sessionIndex: props.sessionIndex,
             canRender: props.canRender,
+            mathMode: props.mathMode,
+            onEnvRequired: props.onEnvRequired,
             onArtifactSession: props.onArtifactSession,
             allowNonPdfDelete: props.allowNonPdfDelete,
             onOpenSession: props.onOpenSession,
@@ -8243,6 +8443,8 @@ window.__ModuleLoader__.load({
                 sessionIndex: props.sessionIndex,
                 onArtifactSession: props.onArtifactSession,
                 canRender: props.canRender,
+                mathMode: props.mathMode,
+                onEnvRequired: props.onEnvRequired,
                 allowNonPdfDelete: props.allowNonPdfDelete,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
@@ -8343,6 +8545,20 @@ window.__ModuleLoader__.load({
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
 .md-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .01em; }
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
+.md-mode-pill { display: inline-flex; align-items: center; align-self: flex-start; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-l1); }
+.md-mode-pill[data-mode='math'] { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
+.md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.md-workflow-base .md-mode-pill { margin-top: 0; }
+.md-workflow-card { display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
+.md-workflow-card[data-active='true'] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-l1); }
+.md-workflow-card input { margin-top: 2px; accent-color: var(--dsw-alias-brand-primary); }
+.md-workflow-text { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-workflow-text strong { font-size: 13px; color: var(--dsw-alias-label-primary); }
+.md-env-backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .28); }
+.md-env-dialog { width: min(380px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-l1); box-shadow: 0 18px 50px rgba(0, 0, 0, .22); }
+.md-env-title { margin: 0; font-size: 15px; }
+.md-env-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.md-env-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .md-head-actions { display: flex; align-items: center; gap: 8px; }
 .md-settings { position: relative; }
 .md-settings-version { padding: 4px 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
@@ -8934,6 +9150,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
      */
     function SidePdfView(props) {
       useT()
+      const mathMode = useWorkflowMode() === 'math'
       const info = props.useTabInfo()
       const target = sideTarget(info.tab.contentId)
       // A restored tab record may carry no navigation yet.
@@ -10070,9 +10287,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               },
             ],
           },
-        ]
+        ].filter(item => mathMode || item.id !== 'sessions')
         // The action bodies read `menuState`, so only the constructors matter.
-      }, [fitToColumn, goPage, toggleAutoFit, toggleFollow, zoomTo])
+      }, [fitToColumn, goPage, mathMode, toggleAutoFit, toggleFollow, zoomTo])
 
       const openSideMenu = useCallback(event => {
         if (event !== null && event !== undefined) {
@@ -10516,6 +10733,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [phase, setPhase] = useState('loading')
       const [error, setError] = useState('')
       const [notice, setNotice] = useState('')
+      const activeWorkflow = useWorkflowMode()
+      const mathMode = activeWorkflow === 'math'
+      const [envPrompt, setEnvPrompt] = useState('')
       const [reloadKey, setReloadKey] = useState(0)
       // A chapter the right column asked to open, held until the catalog knows it.
       const [deskRequest, setDeskRequest] = useState(null)
@@ -10603,6 +10823,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [settingsOpen, setSettingsOpen] = useState(false)
+      const [settingsTab, setSettingsTab] = useState('reading')
       // Which edge the vertical tool rail sits on; a page reload keeps the choice.
       const [railSide, setRailSide] = useState(() => {
         try {
@@ -12973,6 +13194,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           headingRef,
           sessionIndex,
           sessionAvailable,
+          mathMode,
+          onEnvRequired: setEnvPrompt,
           artifacts,
           libraryDir: catalog.libraryDir,
           counts: counts[book.id],
@@ -13114,7 +13337,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onDoubleClick: () => backToLibraries(),
             },
               h('h1', { className: 'md-title' }, format('title')),
-              h('p', { className: 'md-subtitle' }, format('subtitle', { books: books.length, chapters: totalChapters }))
+              h('p', { className: 'md-subtitle' }, format('subtitle', { books: books.length, chapters: totalChapters })),
+              h('span', {
+                className: 'md-mode-pill',
+                'data-mode': mathMode ? 'math' : 'general',
+                title: format('workflowHint'),
+              }, format(mathMode ? 'workflowMath' : 'workflowGeneral'))
             ),
             h('div', { className: 'md-head-actions' },
               book === null ? null : h('button', {
@@ -13231,6 +13459,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? h(SettingsDialog, {
             version: catalog === null ? '' : catalog.version,
             envTools,
+            initialTab: settingsTab,
+            activeWorkflow,
+            onWorkflowChange: value => writeWorkflowMode(value),
             onApiKeyChange: configured => setEnvTools(current => ({ ...current, apiKey: configured === true })),
             updateBusy,
             onCheckUpdate: checkUpdates,
@@ -13304,6 +13535,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             roughness,
             canTranslate,
             canExport,
+            mathMode,
+            onEnvRequired: setEnvPrompt,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,
@@ -13337,6 +13570,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               bookTitle: reader.bookTitle,
             }, true),
             onExported: () => { void loadArtifacts(reader.bookId, reader.code, true) },
+          }),
+        envPrompt === ''
+          ? null
+          : h(EnvPrompt, {
+            kind: envPrompt,
+            envTools,
+            onClose: () => setEnvPrompt(''),
+            onOpenSettings: () => {
+              setEnvPrompt('')
+              setSettingsTab('env')
+              setSettingsOpen(true)
+            },
           })
       )
     }
