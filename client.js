@@ -8495,7 +8495,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         setFallbackMenu(null)
-        menus.open({ kind: SIDE_MENU_KIND, value: { bookId, code, page } }, point)
+        try {
+          menus.open({ kind: SIDE_MENU_KIND, value: { bookId, code, page } }, point)
+        } catch (error) {
+          // A mounted service that refuses to open must not eat the gesture.
+          trace('side', 'menu open failed', String(error))
+          setFallbackMenu({ x: point.x, y: point.y })
+        }
       }, [bookId, code, page])
 
       useEffect(() => {
