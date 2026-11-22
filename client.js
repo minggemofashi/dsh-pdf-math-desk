@@ -128,6 +128,12 @@ window.__ModuleLoader__.load({
       libraryBooks: '{n} 本',
       modeMath: '数学',
       manualTitle: '书库说明书',
+      manualSummary: '结构 · 命名 · 环境 · 来源',
+      manualStructureTitle: '书库结构',
+      manualNamingTitle: '拆分与命名',
+      manualEnvTitle: '导出环境',
+      manualSourceTitle: '目录来源',
+      manualSourceHint: '书库列表在 ~/.dsh/pdfdesk/libraries.json；标注镜像在 <库根>\\.pdfdesk\\annotations\\。',
       manualWhy: '「分片」= 把书**按章节**切成小 PDF：一章一个文件，每个会话只读一章，上下文小、定位也清楚。**先由你手动按章节拆**（每章从哪页到哪页看目录），工具负责按规则重命名与校验；不要整本拆（整本拆=整本 OCR，贵且容易撑爆上下文）。**目录必须有**（放进 c00，它是定位各章的索引）。任何 PDF 都可以这样读；注解、框选翻译与导出都在阅读器里完成，不会改动原文件。',
       manualStructure: '放法：{root}\\分片\\<书 id>\\ 下，一章一个 PDF，保留目录。文件名带页码范围（如 概率论_积分和数学期望_97-138.pdf）即可，工作台会按页序自动编号；也可以写成 <书 id>_cNN_章名_p起-止.pdf。产物\\ 与 封面\\ 可选。',
       manualIdNote: '书 id 就是书目名/分片名前缀，添加书库后不要再改名：会话标题与产物目录都按它关联，改名会让旧会话和产物对不上（书名可以改显示，目录名请保持稳定）。',
@@ -598,6 +604,12 @@ window.__ModuleLoader__.load({
       libraryBooks: '{n} books',
       modeMath: 'Math',
       manualTitle: 'Library manual',
+      manualSummary: 'Structure · naming · export · source',
+      manualStructureTitle: 'Library structure',
+      manualNamingTitle: 'Splitting and naming',
+      manualEnvTitle: 'Export environment',
+      manualSourceTitle: 'Directory source',
+      manualSourceHint: 'The library list lives in ~/.dsh/pdfdesk/libraries.json; annotation mirrors in <root>\\.pdfdesk\\annotations\\.',
       manualWhy: '"分片" = the book cut into one PDF **per chapter**: each conversation reads one chapter, so its context stays small and the chapter is easy to locate. **You split manually, chapter by chapter** (page ranges from the contents); the tools rename and verify. Never split the whole book (whole-book splitting means whole-book OCR: expensive and context-blowing). The **table of contents must stay in c00** — it is the index that locates chapters. Any PDF can be read this way; ink, boxed translation and exports happen in the reader and never touch the original file.',
       manualStructure: 'Put one PDF per chapter under {root}\\分片\\<book id>\\, keep the contents. Page ranges in the name (e.g. 概率论_积分和数学期望_97-138.pdf) are enough — the workbench numbers chapters by page order; explicit <book id>_cNN_章名_p起-止.pdf also works. 产物\\ and 封面\\ optional.',
       manualSplit: 'Split with any PDF tool by chapter, keep the contents, and drop the files into 分片\\<book id>\\. No manual numbering: page ranges sort the chapters (contents/preface become c00, appendices c90+).',
@@ -3093,36 +3105,57 @@ window.__ModuleLoader__.load({
           onToggle: event => setManualOpen(event.currentTarget.open),
           style: { order: 7 },
         },
-          h('summary', { className: 'md-details-summary' }, format('manualTitle')),
-          h('p', { className: 'md-shelf-sub' }, format('manualWhy')),
-          h('p', { className: 'md-shelf-sub' }, format('manualStructure', { root: props.libraryDir })),
-          h('p', { className: 'md-shelf-sub' }, format('manualIdNote')),
-          h('p', { className: 'md-shelf-sub' }, format('manualSplit')),
-          h('p', { className: 'md-shelf-sub' }, format('manualWhole', { root: props.libraryDir })),
-          h('p', { className: 'md-shelf-sub' }, format('manualSession')),
-          h('p', { className: 'md-shelf-sub' }, `${format('envTitle')}：${props.canRender ? format('envReady') : format('envMissing')}`),
-          h('div', { className: 'md-library-tools' },
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: () => {
-                try {
-                  window.open('https://tug.org/texlive/acquire.html', '_blank', 'noopener')
-                } catch {
-                  // popup blocked
-                }
-              },
-            }, format('envDownload')),
-            h('span', { className: 'md-shelf-sub' }, format('envHint'))
+          h('summary', { className: 'md-manual-summary' },
+            h('span', { className: 'md-manual-summary-main' },
+              h('span', { className: 'md-manual-title' }, format('manualTitle')),
+              h('span', { className: 'md-manual-sub' }, format('manualSummary'))
+            ),
+            h('span', { className: 'md-manual-chevron', 'aria-hidden': true }, '⌄')
           ),
-          h('p', { className: 'md-shelf-sub' }, format('aiPromptHint')),
-          h('code', { className: 'md-path' }, format('aiPromptText')),
-          h('button', {
-            type: 'button', className: 'md-btn md-btn-small',
-            onClick: props.onCopyPrompt,
-          }, format('aiPromptCopy')),
-          h('div', { className: 'md-manual-path' },
-            h('span', { className: 'md-manual-label' }, format('libraryPath')),
-            h('code', { className: 'md-path' }, props.libraryDir)
+          h('div', { className: 'md-manual-grid' },
+            h('section', { className: 'md-manual-group' },
+              h('h4', { className: 'md-manual-heading' }, format('manualStructureTitle')),
+              h('p', { className: 'md-manual-text' }, format('manualWhy')),
+              h('p', { className: 'md-manual-text' }, format('manualStructure', { root: props.libraryDir })),
+              h('p', { className: 'md-manual-text' }, format('manualIdNote'))
+            ),
+            h('section', { className: 'md-manual-group' },
+              h('h4', { className: 'md-manual-heading' }, format('manualNamingTitle')),
+              h('p', { className: 'md-manual-text' }, format('manualSplit')),
+              h('p', { className: 'md-manual-text' }, format('manualWhole', { root: props.libraryDir })),
+              h('p', { className: 'md-manual-text' }, format('manualSession'))
+            ),
+            h('section', { className: 'md-manual-group' },
+              h('h4', { className: 'md-manual-heading' }, format('manualEnvTitle')),
+              h('p', { className: 'md-manual-text' }, `${format('envTitle')}：${props.canRender ? format('envReady') : format('envMissing')}`),
+              h('div', { className: 'md-manual-actions' },
+                props.canRender ? null : h('button', {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  onClick: () => {
+                    try {
+                      window.open('https://tug.org/texlive/acquire.html', '_blank', 'noopener')
+                    } catch {
+                      // popup blocked
+                    }
+                  },
+                }, format('envDownload')),
+                h('span', { className: 'md-manual-text' }, format('envHint'))
+              ),
+              h('p', { className: 'md-manual-text' }, format('aiPromptHint')),
+              h('code', { className: 'md-manual-code' }, format('aiPromptText')),
+              h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: props.onCopyPrompt,
+              }, format('aiPromptCopy'))
+            ),
+            h('section', { className: 'md-manual-group' },
+              h('h4', { className: 'md-manual-heading' }, format('manualSourceTitle')),
+              h('div', { className: 'md-manual-path' },
+                h('span', { className: 'md-manual-label' }, format('libraryPath')),
+                h('code', { className: 'md-path' }, props.libraryDir)
+              ),
+              h('p', { className: 'md-manual-text' }, format('manualSourceHint'))
+            )
           )
         ),
         h('div', { className: 'md-home-tools-head' },
@@ -8405,8 +8438,21 @@ window.__ModuleLoader__.load({
 .md-home .md-library-toolscroll > .md-subheading { display: none; }
 .md-home .md-tool-card { flex: 0 0 300px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-card-fill); }
 .md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
-.md-home .md-manual { border-radius: 16px; padding: 18px 22px; }
-.md-home .md-manual .md-shelf-sub { max-width: 860px; }
+.md-home .md-manual { border-radius: 18px; padding: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); background: transparent; }
+.md-manual-summary { list-style: none; display: flex; align-items: center; gap: 16px; padding: 18px 22px; cursor: pointer; }
+.md-manual-summary::-webkit-details-marker { display: none; }
+.md-manual-summary-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.md-manual-title { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.md-manual-sub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-manual-chevron { margin-left: auto; font-size: 16px; line-height: 1; color: var(--dsw-alias-label-secondary); transition: transform .18s ease; }
+.md-manual[open] .md-manual-chevron { transform: rotate(180deg); }
+.md-manual-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; padding: 18px 22px 26px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.md-manual-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.md-manual-heading { margin: 0; font-size: 11px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--dsw-alias-label-secondary); }
+.md-manual-text { margin: 0; font-size: 12.5px; line-height: 1.75; color: var(--dsw-alias-label-secondary); }
+.md-manual-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.md-manual-code { display: block; max-height: 130px; overflow: auto; margin: 0; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+.md-manual-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-book-head { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 16px; }
 .md-book-title { margin: 0; font-size: 18px; font-weight: 600; }
 .md-book-title:focus-visible { outline-offset: 4px; }
