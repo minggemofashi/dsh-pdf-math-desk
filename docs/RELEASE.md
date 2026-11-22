@@ -52,7 +52,7 @@ Release 说明直接复制 `CHANGELOG` 的该版本条目。
 npm 包名固定 **`dsh-pdf-workbench`**。必须从**干净 worktree / 干净 clone**发布，避免带上本机 `tools/py.cmd`、`tools/node.cmd`、`__pycache__`：
 
 ```powershell
-cd C:\Users\18346\Documents\deepseek-harness\default-workspace\math-desk
+cd <工作区>\math-desk
 git worktree add ..\dist\npm-release vX.Y.Z
 cd ..\dist\npm-release
 npm login --auth-type=web
@@ -73,7 +73,7 @@ npm view dsh-pdf-workbench@X.Y.Z version
 清理：
 
 ```powershell
-cd C:\Users\18346\Documents\deepseek-harness\default-workspace
+cd <工作区>
 git -C math-desk worktree remove ..\dist\npm-release
 ```
 
