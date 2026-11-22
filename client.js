@@ -8452,7 +8452,7 @@ window.__ModuleLoader__.load({
 .md-home .md-library .md-path { margin-top: 10px; font-size: 12px; }
 .md-home .md-library-actions { position: absolute; top: 14px; right: 14px; opacity: 0; transition: opacity .16s ease; }
 .md-home .md-library:hover .md-library-actions, .md-home .md-library:focus-within .md-library-actions { opacity: 1; }
-.md-home .md-library-add { max-width: 800px; padding: 14px 16px; border-radius: 16px; gap: 10px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); }
+.md-home .md-library-add { max-width: none; width: 100%; padding: 14px 16px; border-radius: 16px; gap: 10px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); }
 .md-add-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .md-add-head .md-subheading { margin: 0; font-size: 14px; font-weight: 600; }
 .md-add-head .md-shelf-sub { font-size: 11.5px; }
