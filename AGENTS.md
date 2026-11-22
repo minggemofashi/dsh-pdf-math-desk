@@ -6,7 +6,7 @@
 
 **默认只存档，不发版。** 只有用户**明确说**「发布 / 发版 / 更新 / 推送」时，才做版本号、tag、push、GitHub Release 这一套。日常修复和功能**不升版本、不打 tag、不 push、不发 Release**，也**不要每轮追问“要不要发布”**——用户会说。
 
-发布渠道：**GitHub Release 是默认渠道**；插件市场通过 `awesome-dsh-plugin` 列表提交；**不发布 npm**（旧 npm 包已弃用）。
+发布渠道：**GitHub Release + npm（`dsh-pdf-workbench`）**；插件市场通过 `awesome-dsh-plugin` 列表提交。旧 npm 包 `dsh-pdf-math-desk` 已弃用。
 
 ### 日常改动（每次）
 
@@ -24,13 +24,14 @@
 
 ### 发版（用户明确说“该更新了”之后）
 
-**GitHub Release 是默认渠道；插件市场通过 `awesome-dsh-plugin` 列表提交；不发布 npm。**
+**GitHub Release + npm（`dsh-pdf-workbench`）；插件市场通过 `awesome-dsh-plugin` 列表提交。**
 
 1. 汇总日常提交，升 `package.json` 版本（修复/文档 +补丁位，新功能 +次版本位）；
 2. 更新 `CHANGELOG.md`、README（必要时 `安装与分发.md`）；
 3. `git tag vX.Y.Z` + `git push origin main && git push --tags origin`；
 4. `powershell -ExecutionPolicy Bypass -File .\build-dist.ps1` 构建 `dist/dsh-pdf-workbench-X.Y.Z.zip`，建 GitHub Release 并上传附件；
-5. 一致性检查（tag / Release 附件 / zip 内的 package.json 版本 / README 安装说明 / 远程 main）。
+5. npm：`npm stage publish` + 2FA / 网页批准（首次新包）；确认 `dsh-pdf-workbench@X.Y.Z` 可装；
+6. 市场条目只更新版本/描述（如需要）；一致性检查（tag / Release / npm / zip 内版本 / 远程 main）。
 
 ### 检查（日常与发版都跑）
 
