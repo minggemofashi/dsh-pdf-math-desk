@@ -223,6 +223,19 @@ window.__ModuleLoader__.load({
       shapeRect: '矩形',
       shapeEllipse: '椭圆',
       selectionTitle: '已选中',
+      fillTitle: '填充',
+      fillNone: '无',
+      fillStyleTitle: '填充样式',
+      fillHachure: '斜线',
+      fillSolid: '实心',
+      strokeStyleTitle: '线型',
+      styleSolid: '实线',
+      styleDashed: '虚线',
+      styleDotted: '点线',
+      opacityTitle: '不透明度',
+      duplicateSelection: '复制',
+      bringFront: '置顶',
+      sendBack: '置底',
       selectionDelete: '删除选中',
       annotHint: '手写批注；再点一次退出。按页保存，缩放不跑位',
       annotEraseHint: '点或划过笔画即可删除',
@@ -664,6 +677,19 @@ window.__ModuleLoader__.load({
       shapeRect: 'Rectangle',
       shapeEllipse: 'Ellipse',
       selectionTitle: 'Selected',
+      fillTitle: 'Fill',
+      fillNone: 'None',
+      fillStyleTitle: 'Fill style',
+      fillHachure: 'Hachure',
+      fillSolid: 'Solid',
+      strokeStyleTitle: 'Line style',
+      styleSolid: 'Solid',
+      styleDashed: 'Dashed',
+      styleDotted: 'Dotted',
+      opacityTitle: 'Opacity',
+      duplicateSelection: 'Duplicate',
+      bringFront: 'Bring front',
+      sendBack: 'Send back',
       selectionDelete: 'Delete selection',
       annotHint: 'Write on this page; click again to stop. Saved per page and keeps its place at any zoom',
       annotEraseHint: 'Click or drag across a stroke to delete it',
@@ -3885,6 +3911,10 @@ window.__ModuleLoader__.load({
         seed: Number.isFinite(entry.seed) ? entry.seed : 1,
         disableMultiStroke: false,
       }
+      if (typeof entry.fill === 'string' && entry.fill !== '' && entry.shape !== 'line' && entry.shape !== 'arrow') {
+        options.fill = entry.fill
+        options.fillStyle = entry.fillStyle === 'solid' ? 'solid' : 'hachure'
+      }
       const px = value => value * ROUGH_VW
       const py = value => value * ROUGH_VH
       let drawable
@@ -4030,26 +4060,38 @@ window.__ModuleLoader__.load({
      */
     function ShapeMark(props) {
       const entry = props.entry
+      const width = Number.isFinite(entry.width) ? entry.width : 2
       const paths = sketchPaths(entry, props.roughness ?? 1)
+      const opacity = Number.isFinite(entry.opacity) ? entry.opacity : 1
+      const dash = entry.strokeStyle === 'dashed' ? '7 5' : entry.strokeStyle === 'dotted' ? '2 4' : undefined
       if (paths !== null) {
-        return h('g', { transform: 'scale(0.001 0.0007072)' },
-          paths.map((path, index) => h('path', {
-            key: index,
-            d: path.d,
-            fill: 'none',
-            stroke: path.stroke,
-            strokeWidth: path.strokeWidth,
-            vectorEffect: 'non-scaling-stroke',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          })))
+        return h('g', { transform: 'scale(0.001 0.0007072)', opacity },
+          paths.map((path, index) => {
+            // Hachure fill paths are stroked with the fill colour at half the
+            // stroke width; solid fills carry `fill` and no stroke. Neither
+            // should inherit the outline's dashed style.
+            const isFill = (path.fill !== undefined && path.fill !== 'none')
+              || (typeof entry.fill === 'string' && entry.fill !== '' && path.stroke === entry.fill && (path.strokeWidth ?? 0) < width)
+            return h('path', {
+              key: index,
+              d: path.d,
+              fill: path.fill ?? 'none',
+              stroke: path.stroke,
+              strokeWidth: path.strokeWidth,
+              strokeDasharray: isFill ? undefined : dash,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+          }))
       }
       const color = entry.color ?? '#e0554a'
-      const width = Number.isFinite(entry.width) ? entry.width : 2
       const common = {
-        fill: 'none',
+        fill: entry.fill ?? 'none',
         stroke: color,
         strokeWidth: width,
+        strokeDasharray: dash,
+        opacity,
         vectorEffect: 'non-scaling-stroke',
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
@@ -6178,6 +6220,26 @@ window.__ModuleLoader__.load({
         savePageAnnots(strokesRef.current.filter((entry, index) => index !== selection.index))
         setSelection(null)
       }
+      const duplicateSelection = () => {
+        if (selection === null) return
+        const source = strokesRef.current[selection.index]
+        if (source === undefined) return
+        const copy = translateEntry(source, 0.02, 0.02)
+        if (copy.kind === 'shape') copy.seed = Math.floor(Math.random() * 2147483647)
+        const next = [...strokesRef.current, copy]
+        savePageAnnots(next)
+        setSelection({ index: next.length - 1, kind: copy.kind === 'text' ? 'text' : copy.kind === 'shape' ? 'shape' : 'stroke' })
+      }
+      const reorderSelection = toFront => {
+        if (selection === null) return
+        const list = [...strokesRef.current]
+        const [entry] = list.splice(selection.index, 1)
+        if (entry === undefined) return
+        if (toFront) list.push(entry)
+        else list.unshift(entry)
+        savePageAnnots(list)
+        setSelection({ index: toFront ? list.length - 1 : 0, kind: entry.kind === 'text' ? 'text' : entry.kind === 'shape' ? 'shape' : 'stroke' })
+      }
       const clearAnnots = () => {
         if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.clear()
         else savePageAnnots([])
@@ -6889,6 +6951,7 @@ window.__ModuleLoader__.load({
               fill: 'none',
               stroke: shown.color ?? '#e0554a',
               strokeWidth: shown.width ?? 2,
+              opacity: shown.opacity ?? 1,
               vectorEffect: 'non-scaling-stroke',
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
@@ -6942,6 +7005,7 @@ window.__ModuleLoader__.load({
               color: entry.color ?? '#e0554a',
               fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
               fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+              opacity: entry.opacity ?? 1,
             },
             onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
             onDoubleClick: annotTool === ''
@@ -7518,8 +7582,75 @@ window.__ModuleLoader__.load({
                     'aria-label': format('annotWidthHint'),
                     onChange: event => patchSelection({ width: Number(event.target.value) || 2 }),
                   })
-                )
+                ),
+                selectedEntry.kind === 'shape'
+                  ? h(React.Fragment, null,
+                    h('div', { className: 'md-note-style-row' },
+                      h('span', { className: 'md-note-style-label' }, format('fillTitle')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': selectedEntry.fill === undefined || selectedEntry.fill === '' ? 'true' : undefined,
+                        onClick: () => patchSelection({ fill: '' }),
+                      }, format('fillNone')),
+                      ['#f2c94c', '#f28b82', '#aecbfa', '#b7e1cd'].map(color => h('button', {
+                        key: color,
+                        type: 'button',
+                        className: 'md-note-color',
+                        style: { background: color },
+                        'data-on': selectedEntry.fill === color ? 'true' : undefined,
+                        'aria-label': color,
+                        onClick: () => patchSelection({ fill: color }),
+                      }))
+                    ),
+                    h('div', { className: 'md-note-style-row' },
+                      h('span', { className: 'md-note-style-label' }, format('fillStyleTitle')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': selectedEntry.fillStyle !== 'solid' ? 'true' : undefined,
+                        onClick: () => patchSelection({ fillStyle: 'hachure' }),
+                      }, format('fillHachure')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': selectedEntry.fillStyle === 'solid' ? 'true' : undefined,
+                        onClick: () => patchSelection({ fillStyle: 'solid' }),
+                      }, format('fillSolid'))
+                    ),
+                    h('div', { className: 'md-note-style-row' },
+                      h('span', { className: 'md-note-style-label' }, format('strokeStyleTitle')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': (selectedEntry.strokeStyle ?? 'solid') === 'solid' ? 'true' : undefined,
+                        onClick: () => patchSelection({ strokeStyle: 'solid' }),
+                      }, format('styleSolid')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': selectedEntry.strokeStyle === 'dashed' ? 'true' : undefined,
+                        onClick: () => patchSelection({ strokeStyle: 'dashed' }),
+                      }, format('styleDashed')),
+                      h('button', {
+                        type: 'button', className: 'md-note-style-btn',
+                        'data-on': selectedEntry.strokeStyle === 'dotted' ? 'true' : undefined,
+                        onClick: () => patchSelection({ strokeStyle: 'dotted' }),
+                      }, format('styleDotted'))
+                    )
+                  )
+                  : null
               ),
+            h('div', { className: 'md-note-style-row' },
+              h('span', { className: 'md-note-style-label' }, format('opacityTitle')),
+              h('input', {
+                type: 'range', min: 0.2, max: 1, step: 0.05,
+                value: selectedEntry.opacity ?? 1,
+                'aria-label': format('opacityTitle'),
+                onChange: event => patchSelection({ opacity: Number(event.target.value) }),
+              }),
+              h('span', { className: 'md-note-size-value' }, `${Math.round((selectedEntry.opacity ?? 1) * 100)}%`)
+            ),
+            h('div', { className: 'md-selection-actions' },
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: duplicateSelection }, format('duplicateSelection')),
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(true) }, format('bringFront')),
+              h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => reorderSelection(false) }, format('sendBack'))
+            ),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-selection-delete',
               onClick: deleteSelection,
@@ -8117,6 +8248,7 @@ window.__ModuleLoader__.load({
 .md-selection-panel[data-side="left"] { left: 58px; }
 .md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
 .md-selection-delete { align-self: flex-start; color: var(--dsw-alias-label-error, #c0392b); }
+.md-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
 .md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid #2f6df6; border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
