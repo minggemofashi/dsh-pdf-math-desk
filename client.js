@@ -64,6 +64,55 @@ window.__ModuleLoader__.load({
     ])
     const WORKFLOW_STORAGE = 'pdfdesk:workflow'
     const WORKFLOW_EVENT = 'pdfdesk:workflow'
+    const WORKSPACE_STORAGE = 'pdfdesk:workspace:'
+
+    /**
+     * The workspace the user explicitly chose for one library, if any.
+     * @param {string} libraryId - library id.
+     * @returns {{ workspaceId: string, cwd: string } | null} the stored target.
+     */
+    function readStoredWorkspace(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return null
+      try {
+        const raw = window.localStorage.getItem(`${WORKSPACE_STORAGE}${libraryId}`)
+        if (raw === null || raw === '') return null
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return null
+        if (typeof parsed.workspaceId !== 'string' || parsed.workspaceId === '') return null
+        return { workspaceId: parsed.workspaceId, cwd: typeof parsed.cwd === 'string' ? parsed.cwd : '' }
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Remember an explicit workspace choice across reloads.
+     * @param {string} libraryId - library id.
+     * @param {{ workspaceId: string, cwd: string }} target - chosen workspace.
+     * @returns {void}
+     */
+    function writeStoredWorkspace(libraryId, target) {
+      if (typeof libraryId !== 'string' || libraryId === '') return
+      try {
+        window.localStorage.setItem(`${WORKSPACE_STORAGE}${libraryId}`, JSON.stringify(target))
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /**
+     * Forget a workspace choice (library removed or workspace gone).
+     * @param {string} libraryId - library id.
+     * @returns {void}
+     */
+    function clearStoredWorkspace(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return
+      try {
+        window.localStorage.removeItem(`${WORKSPACE_STORAGE}${libraryId}`)
+      } catch {
+        // storage unavailable
+      }
+    }
 
     /**
      * The one optional workflow that is enabled, or '' for general mode.
@@ -10908,6 +10957,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [workspaces, setWorkspaces] = useState([])
       const [workspacePrompt, setWorkspacePrompt] = useState(null)
       const workspaceTarget = useRef(null)
+      const workspaceRequest = useRef(null)
+      const inFlightSessions = useRef(new Set())
       const [reloadKey, setReloadKey] = useState(0)
       // A chapter the right column asked to open, held until the catalog knows it.
       const [deskRequest, setDeskRequest] = useState(null)
@@ -11871,6 +11922,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (Array.isArray(codes)) expandedByBook[id] = codes.filter(code => typeof code === 'string')
           }
           const known = typeof stored.bookId === 'string' && books.some(book => book.id === stored.bookId)
+          const libraryId = data.library !== null && typeof data.library === 'object' && typeof data.library.id === 'string' ? data.library.id : ''
+          const storedWorkspace = readStoredWorkspace(libraryId)
+          const storedWorkspaceEntry = storedWorkspace !== null && Array.isArray(data.workspaces)
+            ? data.workspaces.find(item => item !== null && typeof item === 'object' && item.id === storedWorkspace.workspaceId)
+            : null
+          if (storedWorkspace !== null && storedWorkspaceEntry === undefined) clearStoredWorkspace(libraryId)
+          const effectiveTarget = storedWorkspaceEntry !== null && storedWorkspaceEntry !== undefined
+            ? { workspaceId: storedWorkspaceEntry.id, cwd: typeof storedWorkspaceEntry.path === 'string' ? storedWorkspaceEntry.path : storedWorkspace.cwd }
+            : data.target !== null && typeof data.target === 'object'
+              ? {
+                workspaceId: typeof data.target.workspaceId === 'string' && data.target.workspaceId !== '' ? data.target.workspaceId : null,
+                cwd: typeof data.target.cwd === 'string' ? data.target.cwd : '',
+              }
+              : { workspaceId: null, cwd: '' }
+          workspaceTarget.current = effectiveTarget.workspaceId === null ? null : effectiveTarget
           setCatalog({
             books,
             skipped: Array.isArray(data.skipped) ? data.skipped : [],
@@ -11884,12 +11950,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fragmentDir: typeof data.fragmentDir === 'string' ? data.fragmentDir : '',
             artifactDir: typeof data.artifactDir === 'string' ? data.artifactDir : '',
             resumeRatio: typeof data.resumeRatio === 'number' ? data.resumeRatio : 0.85,
-            target: data.target !== null && typeof data.target === 'object'
-              ? {
-                workspaceId: typeof data.target.workspaceId === 'string' && data.target.workspaceId !== '' ? data.target.workspaceId : null,
-                cwd: typeof data.target.cwd === 'string' ? data.target.cwd : '',
-              }
-              : { workspaceId: null, cwd: '' },
+            target: effectiveTarget,
           })
           setLibs(data.libraries !== null && typeof data.libraries === 'object' && Array.isArray(data.libraries.items)
             ? { items: data.libraries.items, activeId: typeof data.libraries.activeId === 'string' ? data.libraries.activeId : '' }
@@ -12733,6 +12794,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * @returns {Promise<void>} completion.
        */
       const resolveWorkspacePrompt = useCallback(target => {
+        workspaceRequest.current = null
         setWorkspacePrompt(current => {
           if (current !== null) current.resolve(target)
           return null
@@ -12747,10 +12809,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const ensureWorkspaceTarget = useCallback(async () => {
         const chosen = workspaceTarget.current
         if (chosen !== null && typeof chosen.workspaceId === 'string' && chosen.workspaceId !== '') return chosen
+        if (workspaceRequest.current !== null) return await workspaceRequest.current
         if (catalog !== null && catalog.target !== null && typeof catalog.target.workspaceId === 'string' && catalog.target.workspaceId !== '') {
           return { workspaceId: catalog.target.workspaceId, cwd: typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '' }
         }
-        return await new Promise(resolve => setWorkspacePrompt({ resolve }))
+        const request = new Promise(resolve => setWorkspacePrompt({ resolve }))
+        workspaceRequest.current = request
+        return await request
       }, [catalog])
 
       const createWorkspace = useCallback(async path => {
@@ -12766,6 +12831,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
         const target = { workspaceId: String(view.id), cwd: typeof view.path === 'string' ? view.path : path }
         workspaceTarget.current = target
+        if (library !== null) writeStoredWorkspace(library.id, target)
         setCatalog(current => current === null ? current : { ...current, target })
         setWorkspaces(current => {
           const entry = { id: target.workspaceId, title: typeof view.title === 'string' ? view.title : '', path: target.cwd }
@@ -12773,17 +12839,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
         resolveWorkspacePrompt(target)
         return target
-      }, [resolveWorkspacePrompt])
+      }, [library, resolveWorkspacePrompt])
 
       const pickWorkspace = useCallback(workspace => {
         const target = { workspaceId: String(workspace.id), cwd: workspace.path }
         workspaceTarget.current = target
+        if (library !== null) writeStoredWorkspace(library.id, target)
         setCatalog(current => current === null ? current : { ...current, target })
         resolveWorkspacePrompt(target)
-      }, [resolveWorkspacePrompt])
+      }, [library, resolveWorkspacePrompt])
 
       const resumeOrCreate = useCallback(async (chapter, mode, options) => {
         if (book === null || catalog === null || creatingRef.current) return
+        const key = `${book.id}|${chapter.code}|${mode}`
+        if (inFlightSessions.current.has(key)) return
+        inFlightSessions.current.add(key)
+        try {
         const limit = typeof catalog.resumeRatio === 'number' ? catalog.resumeRatio : 0.85
         const current = options !== undefined && options.forceNew === true
           ? null
@@ -12832,6 +12903,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           continuation: nextContinuation(book.id, chapter.code, mode),
           target,
         })
+        } finally {
+          inFlightSessions.current.delete(key)
+        }
       }, [book, catalog, createSession, ensureWorkspaceTarget, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
 
       /**
