@@ -1803,13 +1803,15 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * What each end may publish. The reader owns the view (page, zoom, mode,
-     * variant) and the file's version counters; the side preview owns nothing
-     * but where it is, so its zoom and file revisions never travel back.
+     * What each end may publish. The reader owns the zoom, mode, variant and the
+     * file's version counters; the side preview only shares the mode, so its zoom
+     * and file revisions never travel back. The page is not published here: it
+     * has a cause (a user jump or a scroll report) and goes through
+     * setChapterPage / reportChapterPage below, which is the only writer.
      */
     const VIEW_PUBLISHED = {
-      reader: ['page', 'scale', 'mode', 'variant', 'docRev', 'annotRev'],
-      side: ['page', 'mode', 'annotRev'],
+      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev'],
+      side: ['mode', 'annotRev'],
     }
 
     /** One chapter's shared view state, keyed `book:code`. */
@@ -1851,13 +1853,22 @@ window.__ModuleLoader__.load({
         if (value !== undefined && link.state[name] !== value) patch[name] = value
       }
       if (Object.keys(patch).length === 0) return
-      Object.assign(link.state, patch, { origin })
+      Object.assign(link.state, patch, { origin, cause: 'sync' })
+      broadcastView(link)
+    }
+
+    /**
+     * Hand one chapter's merged state to every listener. One broken end must not
+     * break the other one.
+     * @param {{ state: object, listeners: Set<Function> }} link - the chapter record.
+     * @returns {void}
+     */
+    function broadcastView(link) {
       const snapshot = { ...link.state }
       link.listeners.forEach(listener => {
         try {
           listener(snapshot)
         } catch (error) {
-          // A broken end must not break the other one.
           trace('side', 'listener failed', String(error))
         }
       })
@@ -1883,6 +1894,116 @@ window.__ModuleLoader__.load({
      */
     function readView(bookId, code) {
       return viewLink(bookId, code).state
+    }
+
+    /** How long one programmatic scroll keeps scroll reports from winning. */
+    const JUMP_WINDOW_MS = 800
+
+    /**
+     * The page a chapter should show, clamped to the chapter's page count (the
+     * source document's count — never the translated file's own count).
+     * @param {number} page - the wanted page.
+     * @param {number} count - the chapter's page count (0 while unknown).
+     * @returns {number} a page number of at least 1.
+     */
+    function clampChapterPage(page, count) {
+      const wanted = Math.max(1, Math.round(Number(page) || 1))
+      return count > 0 ? Math.min(count, wanted) : wanted
+    }
+
+    /**
+     * Move one chapter to a page on behalf of a user action. This is the single
+     * writer of a chapter's page: the page box, both previews, the annotation
+     * keys and the undo keys all derive from the same value, and a jump marks
+     * the moment so the views can scroll there without their own scroll reports
+     * bouncing the page back.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'reader'|'side'} origin - which end moved.
+     * @param {number} page - the wanted page.
+     * @param {'navigate'|'load'} [cause] - a user jump, or a restored position.
+     * @returns {number} the page that is now current.
+     */
+    function setChapterPage(bookId, code, origin, page, cause) {
+      const link = viewLink(bookId, code)
+      const next = clampChapterPage(page, Number(link.state.count) || 0)
+      const reason = cause === 'load' ? 'load' : 'navigate'
+      Object.assign(link.state, {
+        page: next,
+        jump: (Number(link.state.jump) || 0) + 1,
+        cause: reason,
+        origin,
+        jumpUntil: Date.now() + JUMP_WINDOW_MS,
+      })
+      broadcastView(link)
+      return next
+    }
+
+    /**
+     * Report the page a view has scrolled to. A report never beats a jump that
+     * is still settling: the intermediate pages crossed by a programmatic
+     * scroll must not pull the chapter back to where the scroll started.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'reader'|'side'} origin - which end scrolled.
+     * @param {number} page - the page now on screen.
+     * @returns {boolean} whether the report was accepted.
+     */
+    function reportChapterPage(bookId, code, origin, page) {
+      const link = viewLink(bookId, code)
+      const next = clampChapterPage(page, Number(link.state.count) || 0)
+      if (Number(link.state.page) === next) return true
+      if (Date.now() < (Number(link.state.jumpUntil) || 0)) return false
+      Object.assign(link.state, { page: next, cause: 'report', origin })
+      broadcastView(link)
+      return true
+    }
+
+    /**
+     * Record the chapter's page count (the source document's). A page restored
+     * past the end of the file is corrected once, as a jump, so both views move
+     * there together instead of each clamping to a different number.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {number} count - pages in the source document.
+     * @param {'reader'|'side'} [origin] - which end vouched for the count.
+     * @returns {void}
+     */
+    function setChapterCount(bookId, code, count, origin) {
+      const link = viewLink(bookId, code)
+      const total = Math.max(0, Math.round(Number(count) || 0))
+      if (Number(link.state.count) === total) return
+      link.state.count = total
+      if (total > 0 && Number(link.state.page) > total) {
+        Object.assign(link.state, {
+          page: total,
+          jump: (Number(link.state.jump) || 0) + 1,
+          cause: 'load',
+          origin: origin === 'side' ? 'side' : 'reader',
+          jumpUntil: Date.now() + JUMP_WINDOW_MS,
+        })
+        broadcastView(link)
+      }
+    }
+
+    /**
+     * Live view of one chapter's shared state: the reader, the preview and the
+     * diagnostic overlay all read the same record.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {object} the merged state (empty when the chapter has none yet).
+     */
+    function useChapterView(bookId, code) {
+      const [view, setView] = useState(() => (bookId === '' || code === '' ? {} : { ...readView(bookId, code) }))
+      useEffect(() => {
+        if (bookId === '' || code === '') {
+          setView({})
+          return undefined
+        }
+        setView({ ...readView(bookId, code) })
+        return subscribeView(bookId, code, state => setView({ ...state }))
+      }, [bookId, code])
+      return view
     }
 
     /**
@@ -4298,6 +4419,51 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Development-only readout: Ctrl+Alt+D toggles a small overlay that shows
+     * which page every layer thinks it is on. The preference is persisted so a
+     * reload keeps it on while a bug is being chased; end users never see it.
+     * @returns {boolean} whether the overlay is on.
+     */
+    function useDiag() {
+      const [on, setOn] = useState(() => {
+        try {
+          return window.localStorage.getItem('mathdesk:diag') === '1'
+        } catch {
+          return false
+        }
+      })
+      useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined
+        const onKeyDown = event => {
+          if (event.ctrlKey !== true || event.altKey !== true || String(event.key).toLowerCase() !== 'd') return
+          event.preventDefault()
+          event.stopPropagation()
+          let now = false
+          try {
+            now = window.localStorage.getItem('mathdesk:diag') === '1'
+            window.localStorage.setItem('mathdesk:diag', now ? '0' : '1')
+          } catch {
+            // storage unavailable: the toggle still works for this render
+          }
+          setOn(!now)
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [])
+      return on
+    }
+
+    /**
+     * The diagnostic overlay: one line per fact, in the order the views resolve
+     * them. Pointer events pass through, so it can never block the page.
+     * @param {{ lines: string[] }} props - the lines to show.
+     * @returns {import('react').ReactElement} the readout.
+     */
+    function DiagPanel(props) {
+      return h('pre', { className: 'md-hud', 'aria-hidden': true }, props.lines.join('\n'))
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -4739,6 +4905,10 @@ window.__ModuleLoader__.load({
      */
     function ReaderView(props) {
       const reader = props.reader
+      // The chapter's shared state, for the diagnostic overlay: the page box and
+      // the annotation key are read from the same record the preview uses.
+      const storeView = useChapterView(reader.bookId, reader.code)
+      const diag = useDiag()
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
@@ -4782,6 +4952,9 @@ window.__ModuleLoader__.load({
       const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
       const switchingMode = useRef(false)
+      // Until this timestamp a programmatic jump is still settling: the pages it
+      // crosses must not report themselves as the page being read.
+      const jumpingUntil = useRef(0)
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
@@ -5573,6 +5746,7 @@ window.__ModuleLoader__.load({
       // recreated every IntersectionObserver and made scrolling jittery.
       const notifyVisible = useCallback(page => {
         if (switchingMode.current) return
+        if (Date.now() < jumpingUntil.current) return
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
         visibleTimer.current = setTimeout(() => { props.onVisible(page) }, 350)
       }, [props.onVisible])
@@ -5693,6 +5867,13 @@ window.__ModuleLoader__.load({
         const top = node.getBoundingClientRect().top - column.getBoundingClientRect().top + column.scrollTop
         if (Math.abs(column.scrollTop - top) > 4) column.scrollTop = Math.max(0, top)
         // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [reader.jump])
+
+      // A jump scrolls the column programmatically. The pages it crosses in
+      // between must not report themselves as "where the reader is", or the
+      // preview would drag the reader back to the page it just left.
+      useEffect(() => {
+        jumpingUntil.current = Date.now() + 700
       }, [reader.jump])
 
       // Explicit page changes (buttons, the page box, restore) scroll the
@@ -5834,6 +6015,13 @@ window.__ModuleLoader__.load({
       }
       const label = reader.name === '' ? `${reader.fileName}.pdf` : reader.name
       const ready = reader.phase === 'ready'
+      // The page this document can paint. The chapter's page stays the source of
+      // truth; a translated file with a different page count only clamps here.
+      const visiblePage = reader.count > 0 ? Math.min(reader.page, reader.count) : reader.page
+      // The bilingual left column paints the original, or the translated file
+      // when that variant is open; its own count clamps the page it draws.
+      const leftCount = reader.variant === 'translated' ? (dualDoc === null ? 0 : dualDoc.numPages || 0) : reader.count
+      const leftPage = leftCount > 0 ? Math.min(reader.page, leftCount) : reader.page
       const sub = [reader.bookTitle, `${reader.code} ${reader.title}`].filter(item => typeof item === 'string' && item !== '').join(' · ')
       const modeOf = mode => reader.mode === mode
       // The block button is a toggle: pressed while the page still holds exactly
@@ -6320,15 +6508,15 @@ window.__ModuleLoader__.load({
                   showBlocks,
                   bookId: reader.bookId,
                   code: reader.code,
-                  count: reader.variant === 'translated' ? (dualDoc.numPages || 0) : reader.count,
-                  page: reader.page,
+                  count: reader.variant === 'translated' ? (dualDoc === null ? 0 : dualDoc.numPages || 0) : reader.count,
+                  page: leftPage,
                   scale: dualLeftScale ?? dualFit.left ?? 1,
                   rootRef: dualLeft,
                   onVisible: notifyVisible,
                   registerSlot,
                   onError: props.onError,
                   overlay: annotLayer('left'),
-                  overlayPage: reader.page,
+                  overlayPage: leftPage,
                 })
               ),
               h('div', { className: 'md-reader-column', ref: dualRight },
@@ -6392,7 +6580,7 @@ window.__ModuleLoader__.load({
                 variant: 'stage',
                 mode: reader.mode,
                 doc: props.doc,
-                page: reader.page,
+                page: visiblePage,
                 count: reader.count,
                 scale: reader.scale,
                 fitScale: props.fitScale,
@@ -6413,8 +6601,20 @@ window.__ModuleLoader__.load({
                 overlay: masksLayer === null
                   ? annotLayer('main')
                   : [masksLayer, annotLayer('main')],
-                overlayPage: reader.page,
-              })
+                overlayPage: visiblePage,
+              }),
+        diag
+          ? h(DiagPanel, {
+            lines: [
+              `book   ${reader.bookId}/${reader.code}${reader.name === '' ? '' : ` · ${reader.name}`}`,
+              `view   ${reader.variant === 'translated' ? 'translated' : 'source'} · ${reader.mode} · ${reader.phase}`,
+              `page   ${reader.page} / ${reader.count} · jump ${reader.jump ?? 0} · ${Math.round((reader.scale ?? 1) * 100)}%`,
+              `shared ${storeView.page ?? '—'} / ${storeView.count ?? '—'} · jump ${storeView.jump ?? 0} · ${storeView.cause ?? '—'} @${storeView.origin ?? '—'}`,
+              `dual   right ${dualRightPage} · tool ${annotTool || '—'} · side ${activeSide}`,
+              `annot  ${annotKey}`,
+            ],
+          })
+          : null
       )
     }
 
@@ -7101,6 +7301,8 @@ window.__ModuleLoader__.load({
    SidePdfView's measurement; the stable gutter keeps that measurement from
    moving when the page grows a scrollbar. */
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
+/* The developer readout (Ctrl+Alt+D): one small overlay, never takes a click. */
+.md-hud { position: absolute; left: 8px; bottom: 8px; z-index: 60; margin: 0; padding: 6px 8px; max-width: calc(100% - 16px); overflow: hidden; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; pointer-events: none; opacity: 0.94; }
 .md-side .md-reader-state { margin: 16px; }
 /* While the reader is in use, the floating balance widget fades so the page and
    its translation boxes stay readable underneath. The selector belongs to
@@ -7158,6 +7360,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const variant = params !== null && typeof params === 'object' && params.variant === 'translated' ? 'translated' : ''
       const bookId = target === null ? '' : target.bookId
       const code = target === null ? '' : target.code
+      // The chapter's shared state, for the diagnostic overlay.
+      const storeView = useChapterView(bookId, code)
+      const diag = useDiag()
       const revision = navigation.revision ?? 0
       // The chapter's conversations, for the 提取/答疑/习题 jumps.
       const sessionList = useSessionList()
@@ -7259,10 +7464,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const slots = useRef(new Map())
       const visibleTimer = useRef(null)
       const jumping = useRef(false)
-      const limits = useRef(0)
       const pageRef = useRef(1)
-      limits.current = count
+      // The page the document can paint, read by the subscription which runs in
+      // a stale-count closure otherwise.
+      const countRef = useRef(0)
       pageRef.current = page
+      countRef.current = count
+      // What this document can paint: the chapter's page stays the source of
+      // truth, a translated file with a different count only clamps the render.
+      const displayPage = count > 0 ? Math.min(count, page) : page
+      const displayPageRef = useRef(displayPage)
+      displayPageRef.current = displayPage
       const sessionListRef = useRef(sessionList)
       const archivedRef = useRef(archivedIds)
       sessionListRef.current = sessionList
@@ -7313,7 +7525,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }
             setDoc(loaded)
             setCount(loaded.numPages || 0)
-            setPage(current => Math.max(1, Math.min(loaded.numPages || 1, current)))
+            // The page is the chapter's, not this file's: a translated file with
+            // fewer pages must not shrink the chapter's page (the render clamps
+            // to what this document actually has). A source file may vouch for
+            // the chapter's page count when the reader has not loaded yet.
+            if (shownVariant !== 'translated' && bookId !== '' && code !== '') {
+              setChapterCount(bookId, code, loaded.numPages || 0, 'side')
+            }
             setPhase('ready')
           } catch (failure) {
             if (cancelled) return
@@ -7663,7 +7881,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const wantMaskImage = maskDoc !== null && (masks.length > 0 || tool === 'mask') && shownVariant !== 'translated'
       useEffect(() => {
         if (!wantMaskImage) return undefined
-        const key = `${page}|${docRev}`
+        // The translated page is painted from this document's own pages.
+        const pageNumber = displayPageRef.current
+        const key = `${pageNumber}|${docRev}`
         const cached = maskImageCache.current.get(key)
         if (cached !== undefined) {
           setMaskImage(cached)
@@ -7673,7 +7893,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         void (async () => {
           const doc = maskDoc
           if (doc === null) return
-          const rendered = await maskPageImage(doc, page, 1200)
+          const rendered = await maskPageImage(doc, pageNumber, 1200)
           if (cancelled) return
           if (rendered.url === '') {
             setMaskImage('')
@@ -7798,21 +8018,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         else slots.current.set(number, node)
       }, [])
       const goPage = useCallback(number => {
-        const limit = limits.current > 0 ? limits.current : 1
-        const next = Math.max(1, Math.min(limit, Math.round(number)))
-        if (pageRef.current === next) return
-        setPage(next)
-        setJump(value => value + 1)
-      }, [])
+        if (bookId === '' || code === '') return
+        // The chapter owns the page: this end only asks for the move.
+        setChapterPage(bookId, code, 'side', number, 'navigate')
+      }, [bookId, code])
 
       // Scrolling reports a page; it must not echo back as a programmatic jump.
       const onVisible = useCallback(number => {
         if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
         visibleTimer.current = setTimeout(() => {
           if (jumping.current) return
-          setPage(current => (current === number ? current : number))
+          reportChapterPage(bookId, code, 'side', number)
         }, 350)
-      }, [])
+      }, [bookId, code])
 
       const scrollToPage = useCallback(number => {
         jumping.current = true
@@ -7829,28 +8047,29 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       useEffect(() => {
         if (mode !== 'continuous' || phase !== 'ready') return
-        scrollToPage(page)
-        // `page` is read but not watched: pages reported by scrolling must not
+        scrollToPage(displayPageRef.current)
+        // The page is read but not watched: pages reported by scrolling must not
         // scroll the column again. `jump` marks the explicit moves.
       }, [jump, mode, phase, scrollToPage])
 
-      // Where this preview is, for the reader; its zoom never travels back.
+      // Where this preview is, for the reader; its zoom never travels back. The
+      // page does not travel this way: it moves through setChapterPage.
       useEffect(() => {
         if (!started || bookId === '' || code === '') return
-        syncView(bookId, code, { page, mode }, 'side')
-      }, [started, bookId, code, page, mode])
+        syncView(bookId, code, { mode }, 'side')
+      }, [started, bookId, code, mode])
 
+      // The reader's page and mode come back here; its zoom never does. A page
+      // the reader moved to carries a jump, so this column scrolls there.
       useEffect(() => {
         if (bookId === '' || code === '') return undefined
         return subscribeView(bookId, code, state => {
-          if (state.origin === 'side') return
           if (typeof state.page === 'number') {
-            const limit = limits.current > 0 ? limits.current : 1
-            const next = Math.max(1, Math.min(limit, state.page))
-            if (pageRef.current !== next) {
-              setPage(next)
-              setJump(value => value + 1)
-            }
+            const jumpTo = state.cause === 'navigate' || state.cause === 'load' || state.origin !== 'side'
+            const wanted = Math.max(1, Math.round(state.page))
+            const next = countRef.current > 0 ? Math.min(countRef.current, wanted) : wanted
+            setPage(current => (current === next ? current : next))
+            if (jumpTo) setJump(value => value + 1)
           }
           if (state.scale === null || typeof state.scale === 'number') setFollowScale(state.scale)
           if (state.mode === 'single' || state.mode === 'continuous') setMode(state.mode)
@@ -8215,7 +8434,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               variant: 'stage',
               mode,
               doc,
-              page,
+              page: displayPage,
               count,
               scale: renderScale,
               fitScale: noopScale,
@@ -8235,7 +8454,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               overlay: masksLayer === null
                 ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
                 : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
-              overlayPage: page,
+              overlayPage: displayPage,
             })
 
       return h('div', {
@@ -8370,7 +8589,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: target === null,
             onClick: event => openSideMenu(event),
           }, '⋯')),
-        h('div', { className: 'md-side-body' }, body))
+        h('div', { className: 'md-side-body' }, body),
+        diag
+          ? h(DiagPanel, {
+            lines: [
+              `book   ${bookId}/${code} · ${shownVariant === 'translated' ? 'translated' : 'source'} · ${mode}`,
+              `page   ${page} / ${count} · display ${displayPage} · jump ${jump} · ${Math.round(shown * 100)}%`,
+              `shared ${storeView.page ?? '—'} / ${storeView.count ?? '—'} · jump ${storeView.jump ?? 0} · ${storeView.cause ?? '—'} @${storeView.origin ?? '—'}`,
+              `tool   ${tool || '—'} · ${autoFit ? 'auto' : follow ? 'follow' : 'manual'}`,
+              `annot  mathdesk:annots:${bookId}:${code}:${page}`,
+            ],
+          })
+          : null)
     }
 
     /**
@@ -8869,6 +9099,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         const name = target.name ?? ''
         const wanted = Number(target.page)
         const page = Number.isFinite(wanted) && wanted > 0 ? Math.round(wanted) : readReaderPage(target.bookId, target.code)
+        // The chapter PDF shares one page with its right-column preview. A
+        // produced PDF is a document of its own, so it keeps its page locally.
+        // Only a real difference is announced: re-opening the same document must
+        // not scroll both views back to the top of the page.
+        if (name === '' && Number(readView(target.bookId, target.code).page) !== page) {
+          setChapterPage(target.bookId, target.code, 'reader', page, 'load')
+        }
         setReader(previous => {
           const same = previous !== null && previous.bookId === target.bookId
             && previous.code === target.code && previous.name === name
@@ -8926,13 +9163,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               return
             }
             readerDoc.current = doc
+            // Only the source document owns the chapter's page count. A
+            // translated file may have a different count; letting it publish one
+            // would shrink the chapter's page (the render clamps instead).
+            const sourceDoc = reader.name === '' && reader.variant !== 'translated'
             setReader(previous => previous === null ? null : {
               ...previous,
-              page: Math.max(1, Math.min(doc.numPages || 1, previous.page || 1)),
+              page: sourceDoc ? Math.max(1, Math.min(doc.numPages || 1, previous.page || 1)) : previous.page,
               count: doc.numPages || 0,
               phase: 'ready',
               error: '',
             })
+            if (sourceDoc) setChapterCount(reader.bookId, reader.code, doc.numPages || 0)
           } catch (error) {
             if (cancelled) return
             const name = error !== null && error !== undefined ? String(error.name) : ''
@@ -8968,7 +9210,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => previous === null || previous.scale !== null ? previous : { ...previous, scale })
       }, [])
 
+      // Every page move of a chapter PDF goes through the chapter's shared
+      // page, so the preview, the page box, the annotation keys and the undo
+      // keys can never be on different pages. A produced PDF is not a chapter,
+      // so it keeps its page to itself.
       const readerPage = useCallback(page => {
+        const shown = readerRef.current
+        if (shown === null) return
+        if (shown.name === '') {
+          setChapterPage(shown.bookId, shown.code, 'reader', page, 'navigate')
+          return
+        }
         setReader(previous => {
           if (previous === null) return null
           const limit = previous.count > 0 ? previous.count : 1
@@ -8979,23 +9231,28 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       const readerPrev = useCallback(() => {
-        setReader(previous => previous === null || previous.page <= 1
-          ? previous
-          : { ...previous, page: previous.page - 1, jump: (previous.jump ?? 0) + 1 })
-      }, [])
+        const shown = readerRef.current
+        if (shown === null || shown.page <= 1) return
+        readerPage(shown.page - 1)
+      }, [readerPage])
 
       const readerNext = useCallback(() => {
-        setReader(previous => {
-          if (previous === null) return null
-          const limit = previous.count > 0 ? previous.count : previous.page
-          if (previous.page >= limit) return previous
-          return { ...previous, page: previous.page + 1, jump: (previous.jump ?? 0) + 1 }
-        })
-      }, [])
+        const shown = readerRef.current
+        if (shown === null) return
+        const limit = shown.count > 0 ? shown.count : shown.page
+        if (shown.page >= limit) return
+        readerPage(shown.page + 1)
+      }, [readerPage])
 
-      /** A page scrolled into view in continuous mode: no jump, no re-scroll. */
+      /** A page scrolled into view in continuous mode: a report, never a jump. */
       const readerVisible = useCallback(page => {
-        setReader(previous => previous === null || previous.page === page ? previous : { ...previous, page })
+        const shown = readerRef.current
+        if (shown === null) return
+        if (shown.name === '') {
+          reportChapterPage(shown.bookId, shown.code, 'reader', page)
+          return
+        }
+        setReader(previous => (previous === null || previous.page === page ? previous : { ...previous, page }))
       }, [])
 
       const readerMode = useCallback(mode => {
@@ -9023,17 +9280,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       const closeReader = useCallback(() => setReader(null), [])
 
-      // Keep the right column's chapter preview on this page and reading mode.
-      // The key is a string so a scroll that only re-reports the same page does
-      // not re-publish; zoom travels one way (reader -> preview).
+      // The right column follows this reader's zoom, mode and variant. The page
+      // does not travel this way: it goes through setChapterPage /
+      // reportChapterPage, which remember why it moved.
       const readerViewKey = reader === null
         ? ''
-        : `${reader.bookId}|${reader.code}|${reader.page}|${reader.scale}|${reader.mode}|${reader.variant}`
+        : `${reader.bookId}|${reader.code}|${reader.scale}|${reader.mode}|${reader.variant}`
       useEffect(() => {
         const shown = readerRef.current
         if (shown === null) return
         syncView(shown.bookId, shown.code, {
-          page: shown.page,
           scale: shown.scale,
           mode: shown.mode,
           variant: shown.variant,
@@ -9041,20 +9297,31 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [readerViewKey])
 
       // The preview's page and reading mode come back here; its zoom never does.
+      // A page this reader moved to is already on screen; one the preview moved
+      // to carries a jump, so the reader scrolls there before anything is drawn
+      // on the wrong page.
       const readerLinkKey = reader === null ? '' : `${reader.bookId}|${reader.code}`
       useEffect(() => {
         const shown = readerRef.current
         if (shown === null) return undefined
         return subscribeView(shown.bookId, shown.code, state => {
-          if (state.origin === 'reader') return
-          if (typeof state.page === 'number') readerPage(state.page)
+          if (typeof state.page === 'number') {
+            const jumpTo = state.cause === 'navigate' || state.cause === 'load' || state.origin !== 'reader'
+            setReader(previous => {
+              if (previous === null) return null
+              const wanted = Math.max(1, Math.round(state.page))
+              const next = previous.count > 0 ? Math.min(previous.count, wanted) : wanted
+              if (next === previous.page && !jumpTo) return previous
+              return { ...previous, page: next, jump: jumpTo ? (previous.jump ?? 0) + 1 : (previous.jump ?? 0) }
+            })
+          }
           if (state.mode === 'single' || state.mode === 'continuous') {
             setReader(previous => (previous === null || previous.mode === state.mode
               ? previous
               : { ...previous, mode: state.mode, jump: (previous.jump ?? 0) + 1 }))
           }
         })
-      }, [readerLinkKey, readerPage])
+      }, [readerLinkKey])
 
       // Reader keyboard: every binding comes from the user's shortcut table
       // (Settings → 快捷键), whose defaults are the keys this reader has always
