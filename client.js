@@ -4464,6 +4464,74 @@ window.__ModuleLoader__.load({
       return h('pre', { className: 'md-hud', 'aria-hidden': true }, props.lines.join('\n'))
     }
 
+    /**
+     * The preview's own action list, used only when the host's shared context
+     * menu service is not mounted: same rows, same callbacks, so every action
+     * stays reachable instead of a dead right-click. Groups expand in place.
+     * @param {{ x: number, y: number, rows: Array<object>, onClose: Function }} props - position and rows.
+     * @returns {import('react').ReactElement} the menu.
+     */
+    function FallbackMenu(props) {
+      const [openGroup, setOpenGroup] = useState('')
+      useEffect(() => {
+        const onKeyDown = event => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          props.onClose()
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [props.onClose])
+      const view = typeof window === 'undefined' ? { width: 0, height: 0 } : { width: window.innerWidth, height: window.innerHeight }
+      const left = Math.max(8, Math.min(props.x, view.width - 230))
+      const top = Math.max(8, Math.min(props.y, view.height - 340))
+      const run = row => {
+        if (row.disabled === true || typeof row.run !== 'function') return
+        props.onClose()
+        row.run()
+      }
+      return h('div', {
+        className: 'md-fallback-backdrop',
+        onClick: props.onClose,
+        onContextMenu: event => { event.preventDefault(); props.onClose() },
+      },
+        h('div', {
+          className: 'md-fallback-menu',
+          role: 'menu',
+          style: { left: `${left}px`, top: `${top}px` },
+          onClick: event => event.stopPropagation(),
+        },
+          props.rows.map(row => {
+            if (Array.isArray(row.children) && row.children.length > 0) {
+              const open = openGroup === row.id
+              return h('div', { key: row.id, className: 'md-fallback-group' },
+                h('button', {
+                  type: 'button',
+                  className: 'md-fallback-row md-fallback-parent',
+                  'aria-expanded': open ? 'true' : 'false',
+                  onClick: () => setOpenGroup(open ? '' : row.id),
+                }, `${row.label} ${open ? '▾' : '▸'}`),
+                open
+                  ? h('div', { className: 'md-fallback-children' }, row.children.map(child => h('button', {
+                    key: child.id,
+                    type: 'button',
+                    className: 'md-fallback-row',
+                    disabled: child.disabled === true,
+                    onClick: () => run(child),
+                  }, child.label)))
+                  : null)
+            }
+            return h('button', {
+              key: row.id,
+              type: 'button',
+              className: 'md-fallback-row',
+              disabled: row.disabled === true,
+              onClick: () => run(row),
+            }, row.label)
+          })))
+    }
+
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -7303,6 +7371,14 @@ window.__ModuleLoader__.load({
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
 /* The developer readout (Ctrl+Alt+D): one small overlay, never takes a click. */
 .md-hud { position: absolute; left: 8px; bottom: 8px; z-index: 60; margin: 0; padding: 6px 8px; max-width: calc(100% - 16px); overflow: hidden; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; pointer-events: none; opacity: 0.94; }
+/* The preview's action list when the shared context menu service is absent. */
+.md-fallback-backdrop { position: fixed; inset: 0; z-index: 80; }
+.md-fallback-menu { position: fixed; min-width: 190px; max-width: 240px; max-height: 70vh; overflow: auto; padding: 4px; background: var(--dsw-alias-card-fill, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16); }
+.md-fallback-row { display: block; width: 100%; padding: 6px 10px; font: inherit; font-size: 13px; text-align: left; color: var(--dsw-alias-label-primary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.md-fallback-row:hover:not(:disabled), .md-fallback-row:focus-visible { background: var(--dsw-alias-interactive-bg-hover); outline: none; }
+.md-fallback-row:disabled { opacity: 0.45; cursor: default; }
+.md-fallback-parent { font-weight: 600; }
+.md-fallback-children { padding-left: 10px; }
 .md-side .md-reader-state { margin: 16px; }
 /* While the reader is in use, the floating balance widget fades so the page and
    its translation boxes stay readable underneath. The selector belongs to
@@ -7426,6 +7502,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The page number turns into an input on click: `window.prompt` does not
       // exist in DSH Desktop, so the menu's "go to page" used to do nothing.
       const [gotoOpen, setGotoOpen] = useState(false)
+      // The in-panel fallback menu, at a viewport point, used only when the
+      // shared context menu service is not available.
+      const [fallbackMenu, setFallbackMenu] = useState(null)
       const gotoInput = useRef(null)
       useEffect(() => {
         if (!gotoOpen) return
@@ -8396,14 +8475,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           event.preventDefault()
           event.stopPropagation()
         }
-        const menus = clientContext === null ? null : clientContext.get('contextMenus')
-        if (menus === null || menus === undefined || typeof menus.open !== 'function') return
         const node = event !== null && event !== undefined && event.currentTarget !== undefined ? event.currentTarget : null
         const rect = node !== null && typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null
         const blank = event === null || event === undefined || (event.clientX === 0 && event.clientY === 0)
         const point = blank && rect !== null
           ? { x: rect.left + 8, y: rect.bottom - 2 }
           : { x: event.clientX, y: event.clientY }
+        const menus = clientContext === null ? null : clientContext.get('contextMenus')
+        if (menus === null || menus === undefined || typeof menus.open !== 'function') {
+          // No shared menu in this build: show the same rows in the panel, so a
+          // right-click is never a dead end.
+          setFallbackMenu({ x: point.x, y: point.y })
+          return
+        }
+        setFallbackMenu(null)
         menus.open({ kind: SIDE_MENU_KIND, value: { bookId, code, page } }, point)
       }, [bookId, code, page])
 
@@ -8527,6 +8612,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: count === 0 || page >= count || phase !== 'ready',
             onClick: () => goPage(page + 1),
           }, '›'),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerMode'),
+            'aria-label': format('readerMode'),
+            'aria-pressed': mode === 'continuous' ? 'true' : 'false',
+            onClick: () => setMode(mode === 'single' ? 'continuous' : 'single'),
+          }, mode === 'single' ? format('readerModeSingle') : format('readerModeContinuous')),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerFit'),
+            'aria-label': format('readerFit'),
+            disabled: phase !== 'ready',
+            onClick: () => fitToColumn(),
+          }, '⤢'),
           h('span', { className: 'md-side-gap' }),
           h('button', {
             type: 'button',
@@ -8600,7 +8701,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               `annot  mathdesk:annots:${bookId}:${code}:${page}`,
             ],
           })
-          : null)
+          : null,
+        fallbackMenu === null
+          ? null
+          : h(FallbackMenu, {
+            x: fallbackMenu.x,
+            y: fallbackMenu.y,
+            rows: menuActions(),
+            onClose: () => setFallbackMenu(null),
+          }))
     }
 
     /**
