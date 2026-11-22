@@ -98,15 +98,9 @@ git -C math-desk worktree remove ..\dist\npm-release
 - 远程 `main` 包含发版提交；
 - npm 页面可见，market 能搜到（缓存可能有延迟）。
 
-## 5. 旧包处理（一次性）
+## 5. 旧包处理（已完成）
 
-旧包 `dsh-pdf-math-desk` 已全部弃用。彻底删除需要 npm 登录后的 2FA：
-
-```powershell
-npm unpublish dsh-pdf-math-desk --force
-```
-
-新包未批准前不要删旧包，避免空窗。
+旧包 `dsh-pdf-math-desk` 已从 npm 删除（`npm view` 返回 404），无需再处理；不要重新发布这个名称。
 
 ## 6. 不要做
 

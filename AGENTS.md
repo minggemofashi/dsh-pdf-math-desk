@@ -6,7 +6,7 @@
 
 **默认只存档，不发版。** 只有用户**明确说**「发布 / 发版 / 更新 / 推送」时，才做版本号、tag、push、GitHub Release 这一套。日常修复和功能**不升版本、不打 tag、不 push、不发 Release**，也**不要每轮追问“要不要发布”**——用户会说。
 
-发布渠道：**GitHub Release + npm（`dsh-pdf-workbench`）**；插件市场通过 `awesome-dsh-plugin` 列表提交。旧 npm 包 `dsh-pdf-math-desk` 已弃用。
+发布渠道：**GitHub Release + npm（`dsh-pdf-workbench`）**；插件市场通过 `awesome-dsh-plugin` 列表提交。旧 npm 包 `dsh-pdf-math-desk` 已从 npm 删除。
 
 ### 日常改动（每次）
 
