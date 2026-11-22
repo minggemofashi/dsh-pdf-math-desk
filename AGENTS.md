@@ -22,16 +22,22 @@
 - 回复保持短：改了什么、怎么验证、需要用户做什么；不重复贴大段背景。
 - 连续的小修复攒着，等用户说“发布”再一起升版本、写 CHANGELOG、发 Release。
 
-### 发版（用户明确说“该更新了”之后）
+### 发版（固定流程）
 
-**GitHub Release + npm（`dsh-pdf-workbench`）；插件市场通过 `awesome-dsh-plugin` 列表提交。**
+**用户说「更新 / 发版 / 发布」时，严格按 [`docs/RELEASE.md`](docs/RELEASE.md) 执行，不要重新设计流程。**
 
-1. 汇总日常提交，升 `package.json` 版本（修复/文档 +补丁位，新功能 +次版本位）；
-2. 更新 `CHANGELOG.md`、README（必要时 `安装与分发.md`）；
-3. `git tag vX.Y.Z` + `git push origin main && git push --tags origin`；
-4. `powershell -ExecutionPolicy Bypass -File .\build-dist.ps1` 构建 `dist/dsh-pdf-workbench-X.Y.Z.zip`，建 GitHub Release 并上传附件；
-5. npm：`npm stage publish` + 2FA / 网页批准（首次新包）；确认 `dsh-pdf-workbench@X.Y.Z` 可装；
-6. 市场条目只更新版本/描述（如需要）；一致性检查（tag / Release / npm / zip 内版本 / 远程 main）。
+固定顺序：
+
+1. 改版本 + CHANGELOG + README/截图；
+2. 跑全部检查；
+3. 构建 zip、提交、tag、push；
+4. GitHub Release 上传 zip（可选 tgz）；
+5. 从 **干净 worktree** `npm stage publish`，网页/CLI 批准 2FA；
+6. 验证 npm 版本；
+7. 市场不需要为新版本提 PR（npm 自动映射）；只有改仓库/包名/分类/描述或回退 tarball 时才改条目；
+8. 一致性检查（package / tag / GitHub / npm / README / market）。
+
+详细命令见 `docs/RELEASE.md`。
 
 ### 检查（日常与发版都跑）
 
