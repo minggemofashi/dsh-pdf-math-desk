@@ -104,6 +104,13 @@ window.__ModuleLoader__.load({
       libraries: '书库',
       librariesTitle: '书库',
       librariesHint: '单击切换书库，双击进入书架。库根里按「分片 / 整本」放 PDF 即可。',
+      heroEyebrow: 'PDF 阅读 · 随时问答',
+      heroTitle: '欢迎使用阅读器',
+      heroLead: '按章阅读、随手标注、随时提问。书库与阅读进度都在本地，打开就能接着读。',
+      heroMeta: '{n} 个书库 · 数据在本地',
+      heroEmpty: '还没有书库？导入一个包含「分片」或「整本」的目录即可开始。',
+      homeTools: '工具箱',
+      homeToolsHint: '左右滑动，全部工具都在这里',
       libraryActive: '当前',
       libraryUse: '切换',
       libraryRemove: '移除',
@@ -565,6 +572,13 @@ window.__ModuleLoader__.load({
       libraries: 'Libraries',
       librariesTitle: 'Libraries',
       librariesHint: 'Click to switch libraries, double-click to open the shelf. Keep PDFs under 分片/ or 整本/.',
+      heroEyebrow: 'PDF reading · ask as you read',
+      heroTitle: 'Welcome to your reader',
+      heroLead: 'Read chapter by chapter, mark the page, ask whenever you need. Libraries and progress stay local.',
+      heroMeta: '{n} libraries · data stays local',
+      heroEmpty: 'No library yet. Import a folder that contains 分片/ or 整本/ to start.',
+      homeTools: 'Toolbox',
+      homeToolsHint: 'Swipe sideways; every tool lives here',
       libraryActive: 'Active',
       libraryUse: 'Switch',
       libraryRemove: 'Remove',
@@ -2880,6 +2894,35 @@ window.__ModuleLoader__.load({
      * @param {{ libraries: object[], activeId: string, busy: boolean, error: string, libraryDir: string, sample: object | null, sampleBusy: boolean, onUse: Function, onRemove: Function, onAdd: Function, onPick: Function, onSplit: Function, onLoadSample: Function }} props - libraries and handlers.
      * @returns {import('react').ReactElement} the page.
      */
+    /**
+     * The pixel whale in the library hero. A few blocky cells are enough to read
+     * as the DeepSeek whale; it drifts slowly and never takes pointer events.
+     * @returns {import('react').ReactElement} the background whale.
+     */
+    function PixelWhale() {
+      const cells = [
+        [4, 8, 2, 3], [6, 7, 3, 5], [9, 6, 9, 6], [18, 6, 4, 5], [22, 7, 2, 4],
+        [24, 8, 2, 2], [26, 5, 2, 5], [28, 3, 2, 4], [28, 12, 2, 3],
+        [6, 4, 1, 2], [5, 2, 1, 2], [7, 3, 1, 1],
+        [12, 12, 4, 1], [14, 13, 2, 1],
+        [2, 14, 1, 1], [9, 15, 1, 1], [20, 15, 1, 1], [27, 15, 1, 1],
+      ]
+      return h('svg', {
+        className: 'md-hero-whale',
+        viewBox: '0 0 32 18',
+        'aria-hidden': 'true',
+        focusable: 'false',
+      },
+        h('g', { fill: 'currentColor' },
+          cells.map((cell, index) => h('rect', {
+            key: index,
+            x: cell[0],
+            y: cell[1],
+            width: cell[2] ?? 1,
+            height: cell[3] ?? 1,
+          }))))
+    }
+
     function LibrariesPage(props) {
       const envTools = props.envTools ?? { python: false, tex: false }
       const [dir, setDir] = useState('')
@@ -2888,6 +2931,28 @@ window.__ModuleLoader__.load({
       const [showLocalPath, setShowLocalPath] = useState(false)
       const clickTimer = useRef(null)
       const busy = props.busy
+      const sectionRef = useRef(null)
+      const addRef = useRef(null)
+      const manualRef = useRef(null)
+      const [stuck, setStuck] = useState(false)
+      const [manualOpen, setManualOpen] = useState(false)
+      useEffect(() => {
+        const section = sectionRef.current
+        const scroller = section === null ? null : section.closest('.md-body')
+        if (scroller === null) return undefined
+        const onScroll = () => setStuck(scroller.scrollTop > 140)
+        scroller.addEventListener('scroll', onScroll, { passive: true })
+        onScroll()
+        return () => scroller.removeEventListener('scroll', onScroll)
+      }, [])
+      const scrollToAdd = () => {
+        setManualOpen(false)
+        addRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      const scrollToManual = () => {
+        setManualOpen(true)
+        window.setTimeout(() => manualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30)
+      }
       // A single click switches the library; a double click enters its shelf. The
       // switch waits briefly so the second click can cancel it instead of racing it.
       const scheduleSwitch = id => {
@@ -2909,7 +2974,37 @@ window.__ModuleLoader__.load({
       useEffect(() => () => {
         if (clickTimer.current !== null) window.clearTimeout(clickTimer.current)
       }, [])
-      return h('section', { className: 'md-libraries', 'aria-label': format('librariesTitle') },
+      return h('section', { className: 'md-libraries md-home', ref: sectionRef, 'aria-label': format('librariesTitle') },
+        h(PixelWhale),
+        h('div', { className: `md-home-toolbar${stuck ? ' is-stuck' : ''}` },
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small md-btn-primary', disabled: busy,
+            onClick: scrollToAdd,
+          }, format('libraryAddTitle')),
+          h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: scrollToManual }, format('manualTitle')),
+          h('span', { className: 'md-home-toolbar-count' }, format('heroMeta', { n: props.libraries.length }))
+        ),
+        h('header', { className: 'md-hero' },
+          h('p', { className: 'md-hero-eyebrow' }, format('heroEyebrow')),
+          h('h1', { className: 'md-hero-title' }, format('heroTitle')),
+          h('p', { className: 'md-hero-lead' }, format('heroLead')),
+          h('div', { className: 'md-hero-actions' },
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-primary', disabled: busy,
+              onClick: scrollToAdd,
+            }, format('libraryAddTitle')),
+            h('button', {
+              type: 'button', className: 'md-btn',
+              disabled: props.sampleBusy || busy || props.sample?.book == null,
+              onClick: props.onLoadSample,
+            }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad')),
+            h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: scrollToManual }, format('manualTitle'))
+          ),
+          h('p', { className: 'md-hero-meta' }, props.libraries.length === 0
+            ? format('heroEmpty')
+            : format('heroMeta', { n: props.libraries.length }))
+        ),
+        h('div', { className: 'md-home-divider' }),
         h('div', { className: 'md-shelf-head' },
           h('h2', { className: 'md-heading' }, format('librariesTitle')),
           h('p', { className: 'md-shelf-sub' }, format('librariesHint'))
@@ -2946,7 +3041,7 @@ window.__ModuleLoader__.load({
               )
             ))
           ),
-        h('div', { className: 'md-library-add' },
+        h('div', { className: 'md-library-add', ref: addRef },
           h('h3', { className: 'md-subheading' }, format('libraryAddTitle')),
           h('p', { className: 'md-shelf-sub' }, format('libraryAddHint')),
           h('div', { className: 'md-library-form' },
@@ -2983,7 +3078,11 @@ window.__ModuleLoader__.load({
         props.error === '' ? null : h('div', { className: 'md-alert', role: 'alert' },
           h('span', { className: 'md-alert-text' }, props.error)
         ),
-        h('details', { className: 'md-details', style: { order: 4 } },
+        h('details', {
+          className: 'md-details md-manual', ref: manualRef, open: manualOpen,
+          onToggle: event => setManualOpen(event.currentTarget.open),
+          style: { order: 7 },
+        },
           h('summary', { className: 'md-details-summary' }, format('manualTitle')),
           h('p', { className: 'md-shelf-sub' }, format('manualWhy')),
           h('p', { className: 'md-shelf-sub' }, format('manualStructure', { root: props.libraryDir })),
@@ -3015,6 +3114,10 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-manual-label' }, format('libraryPath')),
             h('code', { className: 'md-path' }, props.libraryDir)
           )
+        ),
+        h('div', { className: 'md-home-tools-head' },
+          h('h2', { className: 'md-heading' }, format('homeTools')),
+          h('p', { className: 'md-shelf-sub' }, format('homeToolsHint'))
         ),
         h('div', { className: 'md-library-toolcell' },
         h('div', {
@@ -8241,6 +8344,51 @@ window.__ModuleLoader__.load({
 .md-manual-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .md-library-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .md-library-add { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
+/* Library landing: generous whitespace, a pixel whale in the hero, and a sticky
+   action bar that only appears once the hero has scrolled away. */
+.md-home { position: relative; display: flex; flex-direction: column; gap: 0; max-width: 1120px; margin: 0 auto; padding: 0 28px 72px; box-sizing: border-box; }
+.md-home > .md-shelf-head { order: 2; margin: 4px 0 18px; }
+.md-home > .md-library-list, .md-home > .md-alert, .md-home > p { order: 3; }
+.md-home > .md-library-add { order: 4; margin-top: 32px; }
+.md-home > .md-home-tools-head { order: 5; margin-top: 44px; }
+.md-home > .md-library-toolcell { order: 5; }
+.md-home > .md-details { order: 7; margin-top: 48px; }
+.md-home > .md-home-divider { order: 1; border-top: 1px solid var(--dsw-alias-border-l2); margin: 8px 0 32px; }
+.md-home-toolbar { position: sticky; top: 0; z-index: 20; height: 48px; box-sizing: border-box; margin: 0 -28px -48px; padding: 0 28px; display: flex; align-items: center; gap: 8px; opacity: 0; visibility: hidden; transform: translateY(-6px); pointer-events: none; transition: opacity .18s ease, transform .18s ease, background .18s ease, visibility .18s; background: color-mix(in srgb, var(--dsw-alias-bg-base) 86%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid transparent; }
+.md-home-toolbar.is-stuck { opacity: 1; visibility: visible; transform: none; pointer-events: auto; border-bottom-color: var(--dsw-alias-border-l2); }
+.md-home-toolbar-count { margin-left: auto; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-hero { position: relative; order: 0; padding: 68px 0 8px; max-width: 740px; }
+.md-hero-eyebrow { margin: 0; font-size: 11px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; color: var(--dsw-alias-brand-primary); }
+.md-hero-title { margin: 16px 0 18px; font-size: 40px; line-height: 1.12; letter-spacing: -.035em; font-weight: 650; color: var(--dsw-alias-label-primary); }
+.md-hero-lead { margin: 0; max-width: 560px; font-size: 15px; line-height: 1.85; color: var(--dsw-alias-label-secondary); }
+.md-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+.md-hero-meta { margin: 22px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
+.md-hero-whale { position: absolute; top: 30px; right: 12px; width: 340px; height: auto; color: var(--dsw-alias-brand-primary); opacity: .1; pointer-events: none; animation: md-whale 16s ease-in-out infinite alternate; }
+@keyframes md-whale { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-20px, 10px, 0); } }
+.md-btn-primary { color: var(--dsw-alias-label-inverse, #fff); background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
+.md-btn-primary:hover { filter: brightness(1.06); }
+.md-home .md-shelf-head .md-heading { font-size: 18px; }
+.md-home .md-library-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.md-home .md-library-list:empty { display: none; }
+.md-home .md-library { position: relative; padding: 20px 22px 18px; border-radius: 16px; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.md-home .md-library:hover { transform: translateY(-1px); border-color: var(--dsw-alias-border-l4); box-shadow: 0 10px 28px rgba(0, 0, 0, .06); }
+.md-home .md-library-active { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 5%, var(--dsw-alias-card-fill)); }
+.md-home .md-library-name { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; }
+.md-home .md-library .md-path { margin-top: 10px; font-size: 12px; }
+.md-home .md-library-actions { position: absolute; top: 14px; right: 14px; opacity: 0; transition: opacity .16s ease; }
+.md-home .md-library:hover .md-library-actions, .md-home .md-library:focus-within .md-library-actions { opacity: 1; }
+.md-home .md-library-add { max-width: 760px; padding: 22px 24px; border-radius: 16px; gap: 10px; }
+.md-home .md-library-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.md-home .md-library-form .md-field { min-width: 0; }
+.md-home .md-library-form .md-btn { align-self: end; }
+.md-home-tools-head { display: flex; flex-direction: column; gap: 4px; }
+.md-home .md-library-toolcell { position: static; height: auto; }
+.md-home .md-library-toolscroll { position: static; display: flex; flex-direction: row; gap: 14px; overflow-x: auto; padding: 2px 2px 14px; scroll-snap-type: x mandatory; }
+.md-home .md-library-toolscroll > .md-subheading { display: none; }
+.md-home .md-tool-card { flex: 0 0 268px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-card-fill); }
+.md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
+.md-home .md-manual { border-radius: 16px; padding: 18px 22px; }
+.md-home .md-manual .md-shelf-sub { max-width: 860px; }
 .md-book-head { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 16px; }
 .md-book-title { margin: 0; font-size: 18px; font-weight: 600; }
 .md-book-title:focus-visible { outline-offset: 4px; }
