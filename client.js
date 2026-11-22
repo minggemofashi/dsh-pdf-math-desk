@@ -4074,6 +4074,30 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * The context line every new conversation starts with: which book, chapter
+     * and PDF it belongs to, and where the reader is. Pure, so the absolute
+     * paths P5 adds do not have to be threaded through the reader.
+     * @param {{ title: string }} bookRow - catalog book row.
+     * @param {{ code: string, title: string, file: string }} chapter - catalog chapter row.
+     * @param {{ pdf: string, page: number, mode: string } | null} position - the open reader when it is this chapter.
+     * @returns {string} the header line.
+     */
+    function sessionSeedText(bookRow, chapter, position) {
+      const pdf = position === null
+        ? (chapter.file === '' ? '' : `${chapter.file}.pdf`)
+        : position.pdf
+      const parts = [
+        `〔数学工作台〕本章：${bookRow.title}`,
+        `${chapter.code} ${chapter.title}`,
+      ]
+      if (pdf !== '') parts.push(`PDF：${pdf}`)
+      const suffix = position === null
+        ? ''
+        : ` · 阅读位置：第 ${position.page} 页（${position.mode === 'continuous' ? '连续' : '单页'}）`
+      return `${parts.join(' · ')}${suffix}`
+    }
+
     const MASK_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
     /**
@@ -10373,18 +10397,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const seedFor = useCallback((bookRow, chapter) => {
         const shown = readerRef.current
         const sameChapter = shown !== null && shown.bookId === bookRow.id && shown.code === chapter.code
-        const pdf = sameChapter
-          ? (shown.name === '' ? `${shown.fileName}.pdf` : shown.name)
-          : (chapter.file === '' ? '' : `${chapter.file}.pdf`)
         const position = sameChapter
-          ? ` · 阅读位置：第 ${shown.page} 页（${shown.mode === 'continuous' ? '连续' : '单页'}）`
-          : ''
-        const parts = [
-          `〔数学工作台〕本章：${bookRow.title}`,
-          `${chapter.code} ${chapter.title}`,
-        ]
-        if (pdf !== '') parts.push(`PDF：${pdf}`)
-        return `${parts.join(' · ')}${position}`
+          ? {
+            pdf: shown.name === '' ? `${shown.fileName}.pdf` : shown.name,
+            page: shown.page,
+            mode: shown.mode,
+          }
+          : null
+        return sessionSeedText(bookRow, chapter, position)
       }, [])
 
       /**
