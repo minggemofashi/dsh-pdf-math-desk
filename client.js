@@ -5723,8 +5723,18 @@ window.__ModuleLoader__.load({
       // also opens it by position.
       const [railOpen, setRailOpen] = useState(false)
       const [railPanel, setRailPanel] = useState(false)
+      // Vertical centre of the tool button that opened the panel, so the panel
+      // sits beside that icon instead of at the middle of the page.
+      const [railAnchor, setRailAnchor] = useState(null)
       const railPanelTimer = useRef(null)
-      const enterRail = () => {
+      const beginRailPanel = element => {
+        const wrap = element.closest('.md-rail-wrap')
+        if (wrap !== null) {
+          const button = element.getBoundingClientRect()
+          const box = wrap.getBoundingClientRect()
+          setRailAnchor(button.top - box.top + button.height / 2)
+        }
+        if (railPanel) return
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
         railPanelTimer.current = setTimeout(() => setRailPanel(true), 550)
       }
@@ -6337,6 +6347,7 @@ window.__ModuleLoader__.load({
         'aria-pressed': annotTool === id ? 'true' : 'false',
         title: format(labelKey),
         'aria-label': format(labelKey),
+        onPointerEnter: event => beginRailPanel(event.currentTarget),
         onClick: () => setAnnotTool(value => (value === id ? '' : id)),
       }, annotIcon(path))
       const erasing = useRef(false)
@@ -7204,6 +7215,7 @@ window.__ModuleLoader__.load({
         'aria-label': `${format('openPdf')}：${label}`,
         'data-phase': reader.phase,
         'data-mode': reader.mode,
+        'data-rail': railSide,
         tabIndex: -1,
         ref: props.paneRef,
         onPointerMove: onRailPointer,
@@ -7599,7 +7611,6 @@ window.__ModuleLoader__.load({
         h('div', {
           className: 'md-rail-wrap',
           'data-side': railSide,
-          onPointerEnter: enterRail,
           onPointerLeave: leaveRail,
         },
           h('div', { className: 'md-rail', 'data-open': railOpen ? 'true' : undefined, role: 'toolbar', 'aria-label': format('annotTools') },
@@ -7633,7 +7644,7 @@ window.__ModuleLoader__.load({
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'))
           ),
           railPanel && selection === null
-            ? h('div', { className: 'md-rail-panel', 'data-side': railSide },
+            ? h('div', { className: 'md-rail-panel', 'data-side': railSide, style: railAnchor === null ? undefined : { top: `${railAnchor}px` } },
               h('div', { className: 'md-rail-panel-title' }, format('toolSettings')),
               annotTool === 'text'
                 ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
@@ -8378,10 +8389,12 @@ window.__ModuleLoader__.load({
 .md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
 .md-selection-delete { align-self: flex-start; color: var(--dsw-alias-label-error, #c0392b); }
 .md-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 240px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); z-index: 42; pointer-events: auto; }
+.md-reader[data-rail="right"] .md-reader-stage { padding-right: 58px; }
+.md-reader[data-rail="left"] .md-reader-stage { padding-left: 58px; }
+.md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 260px; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, .16); z-index: 42; pointer-events: auto; }
 .md-rail-panel[data-side="right"] { right: 44px; }
 .md-rail-panel[data-side="left"] { left: 44px; }
-.md-rail-panel-title { font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-rail-panel-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); padding-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 /* The right-side preview gets the same edge rail, but only its core tools. */
 .md-side-rail-wrap { top: 44px; bottom: 0; }
 .md-side-rail-tab { top: calc(50% + 22px); }
@@ -8532,6 +8545,7 @@ window.__ModuleLoader__.load({
    SidePdfView's measurement; the stable gutter keeps that measurement from
    moving when the page grows a scrollbar. */
 .md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
+.md-side .md-side-body > .md-reader-stage { padding-right: 40px; }
 /* The developer readout (Ctrl+Alt+D): one small overlay, never takes a click. */
 .md-hud { position: absolute; left: 8px; bottom: 8px; z-index: 60; margin: 0; padding: 6px 8px; max-width: calc(100% - 16px); overflow: hidden; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-card-fill, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; pointer-events: none; opacity: 0.94; }
 /* The preview's action list when the shared context menu service is absent. */
