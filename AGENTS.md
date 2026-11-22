@@ -18,7 +18,7 @@
    - `git commit -m "vX.Y.Z: <一句话摘要>"`
    - `git tag vX.Y.Z`
    - `git push && git push --tags`
-5. **要对外分发时**：重新打 `dist/dsh-pdf-math-desk-<version>.zip`（说明见下），挂到 GitHub Releases，不要提交 `dist/`。
+5. **要对外分发时**：重新打 `dist/dsh-pdf-math-desk-<version>.zip`（说明见下），挂到 GitHub Releases，不要提交 `dist/`。完整发布流程（GitHub Release / npm staged 2FA / 市场索引顺序 / 隐私要求）见 `docs/RELEASE.md`。
 
 提交信息风格：`v0.13.2: 修复整本库没有分片目录时报错`，一行说清“改了什么、为什么”。
 
