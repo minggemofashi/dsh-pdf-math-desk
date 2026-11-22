@@ -3003,7 +3003,20 @@ window.__ModuleLoader__.load({
               if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
             },
           }, format('workflowOff')),
-        h('div', { className: 'md-workflow-base' },
+        h('div', {
+          className: 'md-workflow-base',
+          'data-active': props.activeWorkflow === '' ? 'true' : 'false',
+          role: 'button',
+          tabIndex: 0,
+          onClick: () => {
+            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
+          },
+          onKeyDown: event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
+          },
+        },
           h('span', { className: 'md-mode-pill', 'data-mode': 'general' }, format('workflowGeneral')),
           h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc'))
         ),
@@ -8556,7 +8569,8 @@ window.__ModuleLoader__.load({
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-mode-pill { display: inline-flex; align-items: center; align-self: flex-start; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-l1); }
 .md-mode-pill[data-mode='math'] { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
-.md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
+.md-workflow-base[data-active='true'] { border-color: var(--dsw-alias-brand-primary); }
 .md-workflow-base .md-mode-pill { margin-top: 0; }
 .md-workflow-card { display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
 .md-workflow-card[data-active='true'] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-l1); }
