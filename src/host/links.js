@@ -33,7 +33,7 @@ const BOOK_ID = /^[^\\/:*?"<>|]{1,200}$/
 const CODE = /^c\d{2,3}$/
 
 /** Modes a chapter groups its sessions by. */
-const MODES = new Set(['extract', 'qa', 'exercise'])
+const MODES = new Set(['general', 'extract', 'qa', 'exercise'])
 
 /**
  * Keep one link if it is usable.

@@ -32,9 +32,28 @@ window.__ModuleLoader__.load({
 
     /** Session modes, in the order the chapter shows them. */
     const MODES = ['extract', 'qa', 'exercise']
+    /** The always-available, purpose-free session type. */
+    const GENERAL_MODE = 'general'
+    const ALL_MODES = [GENERAL_MODE, ...MODES]
+    /** Types shown in the session panel; general is always present. */
+    const SESSION_TYPES = Object.freeze([
+      { id: GENERAL_MODE, workflow: '' },
+      { id: 'extract', workflow: 'math' },
+      { id: 'qa', workflow: 'math' },
+      { id: 'exercise', workflow: 'math' },
+    ])
+
+    /**
+     * Session types available for one workflow.
+     * @param {string} workflow - active workflow id, or '' for general.
+     * @returns {string[]} type ids.
+     */
+    function sessionModesFor(workflow) {
+      return SESSION_TYPES.filter(item => item.workflow === '' || item.workflow === workflow).map(item => item.id)
+    }
 
     /** The mode word written into a session title (data, not UI copy). */
-    const TITLE_MODE = { extract: '提取', qa: '答疑', exercise: '习题' }
+    const TITLE_MODE = { general: '会话', extract: '提取', qa: '答疑', exercise: '习题' }
     const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-workbench'
     const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
     const PYTHON_URL = 'https://www.python.org/downloads/windows/'
@@ -130,9 +149,11 @@ window.__ModuleLoader__.load({
 
     /** Mode word (Chinese canonical, English alias) → mode key; tolerant of a suffix such as `答疑（续）`. */
     const MODE_OF = [
+      ['会话', 'general'],
       ['提取', 'extract'],
       ['答疑', 'qa'],
       ['习题', 'exercise'],
+      ['general', 'general'],
       ['extract', 'extract'],
       ['qa', 'qa'],
       ['exercise', 'exercise'],
@@ -589,6 +610,7 @@ window.__ModuleLoader__.load({
       sessionTarget: '会话建在：{dir}',
       titleLegend: '书 id（会话标题与产物目录共用）：{pairs}',
       running: '运行中',
+      'mode.general': '通用',
       'mode.extract': '提取',
       'mode.qa': '答疑',
       'mode.exercise': '习题',
@@ -1110,6 +1132,7 @@ window.__ModuleLoader__.load({
       sessionTarget: 'Sessions are created in: {dir}',
       titleLegend: 'Book ids (shared by session titles and produced-file folders): {pairs}',
       running: 'Running',
+      'mode.general': 'General',
       'mode.extract': 'Extract',
       'mode.qa': 'Q&A',
       'mode.exercise': 'Exercises',
@@ -1711,7 +1734,7 @@ window.__ModuleLoader__.load({
           return
         }
         const key = `${book.id}|${code}`
-        const groups = byChapter.get(key) ?? { extract: [], qa: [], exercise: [] }
+        const groups = byChapter.get(key) ?? { general: [], extract: [], qa: [], exercise: [] }
         groups[mode].push(row)
         byChapter.set(key, groups)
         placed.add(marker(book.id, code, row.id))
@@ -1769,7 +1792,7 @@ window.__ModuleLoader__.load({
           if (book === undefined || !Array.isArray(book.chapters)) continue
           const chapter = book.chapters.find(item => item.code === entry.code)
           if (chapter === undefined) continue
-          if (!MODES.includes(entry.mode)) continue
+          if (!ALL_MODES.includes(entry.mode)) continue
           if (placed.has(marker(book.id, chapter.code, id))) continue
           push(book, chapter.code, entry.mode, {
             id,
@@ -1802,7 +1825,7 @@ window.__ModuleLoader__.load({
         if (book === undefined || !Array.isArray(book.chapters)) continue
         const chapter = book.chapters.find(item => item.code === entry.code)
         if (chapter === undefined) continue
-        if (!MODES.includes(entry.mode)) continue
+        if (!ALL_MODES.includes(entry.mode)) continue
         push(book, entry.code, entry.mode, {
           id,
           title: entry.title,
@@ -1817,7 +1840,7 @@ window.__ModuleLoader__.load({
         seen.add(id)
       }
       for (const groups of byChapter.values()) {
-        for (const mode of MODES) groups[mode].sort((left, right) => right.updatedAt - left.updatedAt)
+        for (const mode of ALL_MODES) groups[mode].sort((left, right) => right.updatedAt - left.updatedAt)
       }
       return { byChapter, byArtifact, unresolved, loaded: true, pendingCount }
     }
@@ -1829,7 +1852,7 @@ window.__ModuleLoader__.load({
      */
     function sessionCount(groups) {
       if (groups === undefined) return 0
-      return MODES.reduce((sum, mode) => sum + (Array.isArray(groups[mode]) ? groups[mode].length : 0), 0)
+      return ALL_MODES.reduce((sum, mode) => sum + (Array.isArray(groups[mode]) ? groups[mode].length : 0), 0)
     }
 
     /**
@@ -8381,7 +8404,7 @@ window.__ModuleLoader__.load({
             open: sessionsOpen,
             onToggle: () => setSessionsOpen(value => !value),
             chapter,
-            modes: props.mathMode === true ? MODES : [],
+            modes: sessionModesFor(typeof props.workflow === 'string' ? props.workflow : (props.mathMode === true ? 'math' : '')),
             groups: props.groups,
             creatingMode: props.creatingMode,
             loaded: props.loaded,
@@ -12505,31 +12528,45 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 ? `${catalog.artifactDir}\\${book.id}\\${chapter.code}\\`
                 : '',
             }
-          // The Q&A persona is part of the same initial prompt as the paths: one
-          // block the model reads before the user's question, gated by Settings.
           let persona = ''
           let personaFailed = false
-          if (mode === 'qa' && socraticEnabled()) {
-            try {
-              const payload = await request('GET', 'qa-persona')
-              persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
-            } catch {
-              personaFailed = true
-            }
-          }
-          const parts = [seedFor(book, chapter, paths, persona)]
-          if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
           let hasOutline = false
-          if (continuation >= 2) {
-            const outline = await loadOutline(book.id, chapter.code)
-            if (outline !== '') {
-              parts.push(outline)
-              hasOutline = true
+          let draft
+          if (mode === GENERAL_MODE) {
+            // The universal session carries only addresses: no persona, no
+            // outline, no question lead and no purpose prompt.
+            const bookDir = paths !== null && typeof paths.bookDir === 'string' ? paths.bookDir : ''
+            const pdfPath = paths !== null && typeof paths.pdfPath === 'string' ? paths.pdfPath : ''
+            draft = [
+              `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
+              `${format('generalSeedLibrary')}：${paths === null ? '' : paths.libraryDir}`,
+              bookDir === '' ? '' : `${format('generalSeedBookDir')}：${bookDir}`,
+              pdfPath === '' ? '' : `${format('generalSeedPdf')}：${pdfPath}`,
+            ].filter(Boolean).join('\n')
+          } else {
+            // The Q&A persona is part of the same initial prompt as the paths:
+            // one block the model reads before the user's question, gated by Settings.
+            if (mode === 'qa' && socraticEnabled()) {
+              try {
+                const payload = await request('GET', 'qa-persona')
+                persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
+              } catch {
+                personaFailed = true
+              }
             }
+            const parts = [seedFor(book, chapter, paths, persona)]
+            if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
+            if (continuation >= 2) {
+              const outline = await loadOutline(book.id, chapter.code)
+              if (outline !== '') {
+                parts.push(outline)
+                hasOutline = true
+              }
+            }
+            // End every preset prompt with a lead-in: some hosts mishandle a prompt
+            // that ends without a separator, and this line gives the user a cursor.
+            draft = `${parts.join('\n\n')}\n\n${format('sessionQuestionLead')}`
           }
-          // End every preset prompt with a lead-in: some hosts mishandle a prompt
-          // that ends without a separator, and this line gives the user a cursor.
-          const draft = `${parts.join('\n\n')}\n\n${format('sessionQuestionLead')}`
           let draftReference = null
           const prefill = await beginPrefill(sessionId, draft)
           if (prefill.applied) {
@@ -12568,64 +12605,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
       createSessionRef.current = createSession
-
-      /**
-       * A general conversation: only the book address, no mode, persona, outline
-       * or purpose prompt. It is deliberately not registered as a chapter session.
-       * @returns {Promise<void>} completion.
-       */
-      const openGeneralSession = useCallback(async () => {
-        if (book === null || catalog === null || reader === null || creatingRef.current) return
-        const target = catalog.target
-        if (target.workspaceId === null && target.cwd === '') {
-          showNotice(format('targetMissing'))
-          return
-        }
-        const chapter = Array.isArray(book.chapters)
-          ? book.chapters.find(item => item !== null && typeof item === 'object' && item.code === reader.code)
-          : null
-        const bookDir = typeof catalog.fragmentDir === 'string' && catalog.fragmentDir !== ''
-          && typeof book.dir === 'string' && book.dir !== ''
-          ? `${catalog.fragmentDir}\\${book.dir}`
-          : ''
-        const pdfPath = chapter !== null && typeof chapter.pdfPath === 'string' ? chapter.pdfPath : ''
-        creatingRef.current = true
-        try {
-          const reuseId = findReusableBlank()
-          await settlePending(reuseId)
-          const base = target.workspaceId !== null ? { workspaceId: target.workspaceId } : { cwd: target.cwd }
-          let sessionId
-          try {
-            sessionId = await createSessionId(reuseId === null ? base : { ...base, sessionId: reuseId })
-          } catch (error) {
-            if (reuseId === null) {
-              showNotice(`${format('sessionCreateFailed')} (${errorText(error)})`)
-              return
-            }
-            try {
-              sessionId = await createSessionId(base)
-            } catch (fallbackError) {
-              showNotice(`${format('sessionCreateFailed')} (${errorText(fallbackError)})`)
-              return
-            }
-          }
-          const seed = [
-            `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
-            `${format('generalSeedLibrary')}：${catalog.libraryDir}`,
-            bookDir === '' ? '' : `${format('generalSeedBookDir')}：${bookDir}`,
-            pdfPath === '' ? '' : `${format('generalSeedPdf')}：${pdfPath}`,
-          ].filter(Boolean).join('\n')
-          const prefill = await beginPrefill(sessionId, seed)
-          await flushSave()
-          openHostSession(sessionId)
-          if (prefill.reference !== null) {
-            try { prefill.reference.release() } catch { /* already released */ }
-          }
-        } finally {
-          creatingRef.current = false
-        }
-      }, [beginPrefill, book, catalog, createSessionId, findReusableBlank, flushSave, openHostSession, reader, settlePending, showNotice])
-
 
       /** The reader's three New buttons: create the session, leave for it. */
       /**
@@ -12685,6 +12664,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           continuation: nextContinuation(book.id, chapter.code, mode),
         })
       }, [book, catalog, createSession, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
+
+      /**
+       * The toolbar's universal session: a tracked chapter session of the
+       * general type, carrying only the book address.
+       * @returns {Promise<void>} completion.
+       */
+      const openGeneralSession = useCallback(async () => {
+        if (book === null || reader === null || creatingRef.current) return
+        const chapter = Array.isArray(book.chapters)
+          ? book.chapters.find(item => item !== null && typeof item === 'object' && item.code === reader.code)
+          : null
+        if (chapter === undefined) {
+          showNotice(format('targetMissing'))
+          return
+        }
+        await resumeOrCreate(chapter, GENERAL_MODE, { jumpOnCreate: true })
+      }, [book, reader, resumeOrCreate, showNotice])
 
       // A 提取/答疑/习题 request from the right column: switch the page to that
       // book first, then let this effect run again with the chapter list in hand.
@@ -13293,6 +13289,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           sessionIndex,
           sessionAvailable,
           mathMode,
+          workflow: activeWorkflow,
           onEnvRequired: setEnvPrompt,
           artifacts,
           libraryDir: catalog.libraryDir,

@@ -25,7 +25,7 @@ const SESSION_ID = /^[\w-]{1,80}$/
 const CODE = /^c\d{2,3}$/
 
 /** Modes the workbench creates. */
-const MODES = new Set(['extract', 'qa', 'exercise'])
+const MODES = new Set(['general', 'extract', 'qa', 'exercise'])
 
 /**
  * Keep one entry if it is usable.
