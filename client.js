@@ -414,6 +414,7 @@ window.__ModuleLoader__.load({
       readerNewHint: '接着本章该分组的会话；快满时另起续会话；右侧同时开 PDF',
       readerInSessionFailed: '会话建好了，但右侧 PDF 没打开（可能不在库工作区）',
       sessionsTitle: '会话',
+      sessionsNoModes: '通用模式没有预设会话类型；用工具栏「会话」开始一个只带书籍地址的会话。',
       newSession: '新建',
       newSessionOf: '新建{mode}会话',
       newSessionHint: '优先接着本章该分组的会话，快满时另起续会话',
@@ -933,6 +934,7 @@ window.__ModuleLoader__.load({
       readerNewHint: 'Continues this chapter’s group conversation; starts a continuation when it fills up; opens the PDF on the right',
       readerInSessionFailed: 'The session was created, but the PDF could not open on its right side',
       sessionsTitle: 'Sessions',
+      sessionsNoModes: 'General mode has no preset session types; use the toolbar’s Session button to start one that only carries the book address.',
       newSession: 'New',
       newSessionOf: 'New {mode} session',
       newSessionHint: 'Continues this chapter’s group conversation; starts a continuation when it fills up',
@@ -3676,6 +3678,7 @@ window.__ModuleLoader__.load({
      */
     function ChapterSessions(props) {
       const busy = props.creatingMode !== ''
+      const modes = Array.isArray(props.modes) ? props.modes : MODES
       const renaming = props.renaming
       const row = item => {
         const label = item.title === '' ? item.displayTitle : item.title
@@ -3792,7 +3795,9 @@ window.__ModuleLoader__.load({
             onClick: props.onRetryRename,
           }, format('retryRename'))
         ),
-        MODES.map(mode => {
+        modes.length === 0
+          ? h('p', { className: 'md-session-state' }, format('sessionsNoModes'))
+          : modes.map(mode => {
           const items = props.groups !== undefined && Array.isArray(props.groups[mode]) ? props.groups[mode] : []
           return h('div', { key: mode, className: 'md-session-group' },
             h('div', { className: 'md-session-group-head' },
@@ -8369,13 +8374,14 @@ window.__ModuleLoader__.load({
               },
             }, format('translatedDelete'))
           ),
-          props.mathMode === true ? h('div', {
+          h('div', {
             className: 'md-sessions-wrap',
             'data-collapsed': sessionsOpen ? 'false' : 'true',
           }, h(ChapterSessions, {
             open: sessionsOpen,
             onToggle: () => setSessionsOpen(value => !value),
             chapter,
+            modes: props.mathMode === true ? MODES : [],
             groups: props.groups,
             creatingMode: props.creatingMode,
             loaded: props.loaded,
@@ -8394,7 +8400,7 @@ window.__ModuleLoader__.load({
             onRenameInput: props.onRenameInput,
             onCommitRename: props.onCommitRename,
             onCancelRename: props.onCancelRename,
-          })) : null,
+          })),
           h(ChapterArtifacts, {
             bookId: props.bookId,
             bookTitle: props.bookTitle,
