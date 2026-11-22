@@ -1799,7 +1799,7 @@ window.__ModuleLoader__.load({
         return
       }
       if (persona === '') return
-      const block = `答疑人格（本会话生效）：\n${persona}`
+      const block = personaPrompt(persona)
       const prefill = await beginPrefill(sessionId, `${block}\n\n${format('sessionQuestionLead')}`)
       if (!prefill.applied) {
         if (prefill.reference !== null) {
@@ -3788,7 +3788,7 @@ window.__ModuleLoader__.load({
 
     /** The font families a note can use, mapped to system stacks for now. */
     const NOTE_FONTS = {
-      hand: '"Excalifont", "KaiTi", "STKaiti", "Kaiti SC", "Segoe Print", "Comic Sans MS", cursive',
+      hand: '"Excalifont", "Xiaolai", "KaiTi", "STKaiti", "Kaiti SC", "Segoe Print", "Comic Sans MS", cursive',
       normal: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
       mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       song: '"SimSun", "Songti SC", "Noto Serif SC", serif',
@@ -3898,17 +3898,88 @@ window.__ModuleLoader__.load({
 
 
     /**
-     * In-place editor for a text note. The text tool used to call
-     * `window.prompt`, which DSH Desktop (Electron) does not implement: the
-     * click did nothing at all. The note is typed on the page instead — Enter
+     * The text style controls (size slider, font family, colour). They live in
+     * the top toolbar's nested menu, not in the in-place editor.
+     * @param {{ style: object, onChange: (patch: object) => void }} props - current style and the setter.
+     * @returns {import('react').ReactElement} the control rows.
+     */
+    function NoteStyleControls(props) {
+      const style = props.style
+      const size = Number.isFinite(style.fontSize) ? style.fontSize : NOTE_SIZES[0]
+      const family = typeof style.fontFamily === 'string' && NOTE_FONTS[style.fontFamily] !== undefined ? style.fontFamily : 'normal'
+      const color = typeof style.color === 'string' && style.color !== '' ? style.color : NOTE_COLORS[0]
+      return h(React.Fragment, null,
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('annotFontSize')),
+          h('input', {
+            type: 'range',
+            className: 'md-note-size-range',
+            min: 12, max: 48, step: 1,
+            value: size,
+            'aria-label': format('annotFontSize'),
+            onChange: event => props.onChange({ fontSize: Number(event.target.value) }),
+          }),
+          h('span', { className: 'md-note-size-value' }, `${size}px`)
+        ),
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('annotFontFamily')),
+          Object.keys(NOTE_FONTS).map(key => h('button', {
+            key,
+            type: 'button',
+            className: 'md-note-style-btn',
+            'data-on': family === key ? 'true' : undefined,
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onChange({ fontFamily: key }),
+          }, format(`annotFont.${key}`)))
+        ),
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('annotColor')),
+          NOTE_COLORS.map(value => h('button', {
+            key: value,
+            type: 'button',
+            className: 'md-note-color',
+            style: { background: value },
+            'data-on': color === value ? 'true' : undefined,
+            'aria-label': format('annotColor'),
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onChange({ color: value }),
+          }))
+        )
+      )
+    }
+
+    /**
+     * The top toolbar's "text parameters" menu: a toolbar button that opens the
+     * size/family/colour rows, so the in-place editor stays a bare textarea.
+     * @param {{ style: object, onChange: (patch: object) => void }} props - the style to edit.
+     * @returns {import('react').ReactElement} the nested menu.
+     */
+    function NoteStyleMenu(props) {
+      const [open, setOpen] = useState(false)
+      return h('span', { className: 'md-note-style-wrap' },
+        h('button', {
+          type: 'button',
+          className: 'md-btn md-btn-small md-note-style-trigger',
+          'aria-haspopup': 'menu',
+          'aria-expanded': open ? 'true' : 'false',
+          title: format('annotTextHint'),
+          onMouseDown: event => event.preventDefault(),
+          onClick: () => setOpen(value => !value),
+        }, `${format('annotText')} ▾`),
+        open
+          ? h('div', { className: 'md-note-style-popover', role: 'menu' },
+            h(NoteStyleControls, { style: props.style, onChange: props.onChange }))
+          : null
+      )
+    }
+
+    /**
+     * In-place editor for a text note. The note is typed on the page: Enter
      * saves, Shift+Enter breaks the line, Esc throws the draft away, and a blur
-     * saves what is there (so clicking a toolbar button never loses a note).
-     * The typed text lives here, not in the page's state: one keystroke must not
-     * re-render a whole chapter of pages. The owner reads it back through
-     * `onChange` into a ref it saves from. Size, family and colour live in the
-     * draft, so the style row can change them without closing the editor.
+     * saves what is there. The style controls live in the toolbar now, so the
+     * editor is only the transparent textarea with a dashed position outline.
      * @param {{ draft: { text: string, color?: string, fontSize?: number, fontFamily?: string },
-     *   onChange: (text: string) => void, onStyle: (patch: object) => void,
+     *   onChange: (text: string) => void,
      *   onSave: () => void, onCancel: () => void }} props - the open draft.
      * @returns {import('react').ReactElement} the editor.
      */
@@ -3940,49 +4011,6 @@ window.__ModuleLoader__.load({
       // The editor sits on the PDF page: keep the box inside the page even when
       // the click lands near the right edge (the note itself stays at its point).
       const left = Math.min(0.66, Math.max(0, draft.x)) * 100
-      const keepFocus = event => event.preventDefault()
-      const styleControls = [
-        h('input', {
-          key: 'size',
-          type: 'range',
-          className: 'md-note-size-range',
-          min: 12, max: 48, step: 1,
-          value: size,
-          'aria-label': format('annotFontSize'),
-          title: format('annotFontSize'),
-          onChange: event => props.onStyle({ fontSize: Number(event.target.value) }),
-          // The slider is the one control that takes focus; hand it back to the
-          // textarea after the drag so typing can continue without a click.
-          onPointerUp: () => { if (areaRef.current !== null) areaRef.current.focus() },
-        }),
-        h('span', { key: 'size-value', className: 'md-note-size-value' }, `${size}px`),
-        h('span', { key: 'sep-font', className: 'md-note-style-sep', 'aria-hidden': true }),
-      ]
-      for (const key of Object.keys(NOTE_FONTS)) {
-        styleControls.push(h('button', {
-          key: `font-${key}`,
-          type: 'button',
-          className: 'md-note-style-btn md-note-font',
-          'data-on': family === key ? 'true' : undefined,
-          title: format('annotFontFamily'),
-          onMouseDown: keepFocus,
-          onClick: () => props.onStyle({ fontFamily: key }),
-        }, format(`annotFont.${key}`)))
-      }
-      styleControls.push(h('span', { key: 'sep-color', className: 'md-note-style-sep', 'aria-hidden': true }))
-      for (const value of NOTE_COLORS) {
-        styleControls.push(h('button', {
-          key: `color-${value}`,
-          type: 'button',
-          className: 'md-note-color',
-          style: { background: value },
-          'data-on': color === value ? 'true' : undefined,
-          title: format('annotColor'),
-          'aria-label': format('annotColor'),
-          onMouseDown: keepFocus,
-          onClick: () => props.onStyle({ color: value }),
-        }))
-      }
       return h('div', {
         className: 'md-note-editor',
         ref: editorRef,
@@ -3994,13 +4022,6 @@ window.__ModuleLoader__.load({
         // rather than leave a menu whose rows cannot be clicked.
         onContextMenu: event => { event.preventDefault(); event.stopPropagation() },
       },
-        // Buttons keep the textarea focused (a blur would save mid-edit); the
-        // size slider is the one control that may take focus, and the blur
-        // guard below keeps the editor open for it.
-        h('div', {
-          className: 'md-note-style',
-          onPointerDown: event => event.stopPropagation(),
-        }, styleControls),
         h('textarea', {
           ref: areaRef,
           className: 'md-note-input',
@@ -4039,11 +4060,12 @@ window.__ModuleLoader__.load({
           },
           onBlur: event => {
             const next = event.relatedTarget
-            if (next !== null && next !== undefined && editorRef.current !== null && editorRef.current.contains(next)) return
+            if (next !== null && next !== undefined
+              && (editorRef.current !== null && editorRef.current.contains(next)
+                || (typeof next.closest === 'function' && next.closest('.md-note-style-popover, .md-note-style-trigger') !== null))) return
             finish(true)
           },
-        }),
-        h('span', { className: 'md-note-hint', 'aria-hidden': true }, format('annotTextEditorHint'))
+        })
       )
     }
 
@@ -4268,6 +4290,21 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Wrap the local persona in an explicit, user-owned instruction block. The
+     * workspace's default answer format outranks a bare quoted personality, so
+     * the block names the user's override and its scope.
+     * @param {string} persona - the qa-persona.md text.
+     * @returns {string} the prompt block.
+     */
+    function personaPrompt(persona) {
+      return [
+        '【本会话答疑模式：苏格拉底式（用户明确要求，优先于工作区默认的答疑格式）】',
+        '以下规则对本会话的每一次回答生效，直到我说「结束引导」：',
+        persona,
+      ].join('\n')
+    }
+
+    /**
      * The context line every new conversation starts with: which book, chapter
      * and PDF it belongs to, and where the reader is. With `paths`, it also names
      * the library, the chapter's folder and the exact PDF, so the model never
@@ -4304,10 +4341,7 @@ window.__ModuleLoader__.load({
         if (paths.pdfPath !== '') lines.push(`本章 PDF：${paths.pdfPath}`)
         if (paths.artifactDir !== '') lines.push(`产物目录：${paths.artifactDir}`)
       }
-      if (hasPersona) {
-        lines.push('答疑人格（本会话生效）：')
-        lines.push(persona)
-      }
+      if (hasPersona) lines.push(personaPrompt(persona))
       return lines.join('\n')
     }
 
@@ -4668,11 +4702,6 @@ window.__ModuleLoader__.load({
           fontFamily: entry === null || typeof entry.fontFamily !== 'string' ? 'normal' : entry.fontFamily,
         })
       }
-      const changeNoteStyle = patch => {
-        const current = noteRef.current
-        if (current === null) return
-        setNoteBoth({ ...current, ...patch })
-      }
       const saveNote = id => {
         const current = noteRef.current
         if (current === null || current.id !== id) return
@@ -4802,7 +4831,6 @@ window.__ModuleLoader__.load({
           key: `note-${note.id}`,
           draft: note,
           onChange: value => { noteText.current = value },
-          onStyle: changeNoteStyle,
           onSave: () => saveNote(note.id),
           onCancel: cancelNote,
         })
@@ -5390,6 +5418,9 @@ window.__ModuleLoader__.load({
       // for one that does not exist yet. `id` keeps a stale save (a blur that
       // lands after the draft was replaced) from touching the next note.
       const [noteEdit, setNoteEdit] = useState(null)
+      // Defaults for the next note; the toolbar's text menu edits this, or the
+      // open draft when there is one.
+      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -5899,15 +5930,16 @@ window.__ModuleLoader__.load({
           x: point[0],
           y: point[1],
           text: '',
-          color: annotColor,
-          fontSize: NOTE_SIZES[0],
-          fontFamily: 'normal',
+          color: noteStyle.color,
+          fontSize: noteStyle.fontSize,
+          fontFamily: noteStyle.fontFamily,
         })
       }
       const changeNote = text => {
         noteText.current = text
       }
       const changeNoteStyle = patch => {
+        setNoteStyle(current => ({ ...current, ...patch }))
         setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
       const cancelNote = () => setNoteEdit(null)
@@ -6545,7 +6577,6 @@ window.__ModuleLoader__.load({
             key: `note-${noteEdit.id}`,
             draft: noteEdit,
             onChange: changeNote,
-            onStyle: changeNoteStyle,
             onSave: () => saveNote(noteEdit.id),
             onCancel: cancelNote,
           })
@@ -6763,6 +6794,7 @@ window.__ModuleLoader__.load({
               title: format('annotTextHint'), 'aria-label': format('annotText'),
               onClick: () => setAnnotTool(value => (value === 'text' ? '' : 'text')),
             }, annotIcon('M4 6h16M12 6v13M9 19h6')),
+            h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
             ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
               key: color,
               type: 'button',
@@ -7329,6 +7361,7 @@ window.__ModuleLoader__.load({
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
+@font-face { font-family: 'Xiaolai'; src: url('/pdfdesk/vendor/fonts/zhhand/Xiaolai-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 .md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: pdfdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
 .md-inner { height: 100%; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 clamp(18px, 4cqw, 40px); box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; }
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
@@ -7573,7 +7606,7 @@ window.__ModuleLoader__.load({
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
 .md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
-.md-reader-single { display: flex; justify-content: safe center; }
+.md-reader-single { display: flex; justify-content: safe center; flex: 0 0 auto; width: max-content; margin: 0 auto; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 /* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
    row from the page. It now takes no layout height at all: the note floats as an
@@ -7620,6 +7653,11 @@ window.__ModuleLoader__.load({
    The style row never takes focus, so changing a font cannot blur-save. */
 .md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; padding: 2px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); border-radius: 6px; pointer-events: auto; }
 .md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 0; background: transparent; box-shadow: none; }
+/* Text parameters now live in the toolbar: a nested menu, not a box on the page. */
+.md-note-style-wrap { position: relative; display: inline-flex; align-items: center; }
+.md-note-style-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: min(280px, 82vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.md-note-style-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.md-note-style-label { min-width: 34px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .md-note-style-btn { min-width: 20px; height: 20px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
 .md-note-style-btn:hover { background: color-mix(in srgb, var(--dsw-alias-bg-base) 70%, transparent); }
 .md-note-style-btn[data-on="true"] { color: var(--dsw-alias-label-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
@@ -7902,6 +7940,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // or -1 for one that does not exist yet. The text itself stays inside the
       // editor until saved (`noteText` is what a save reads).
       const [noteEdit, setNoteEdit] = useState(null)
+      // Defaults for the next note; the toolbar's text menu edits this, or the
+      // open draft when there is one.
+      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -8182,15 +8223,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           x: point[0],
           y: point[1],
           text: '',
-          color: '#1f1f1f',
-          fontSize: NOTE_SIZES[0],
-          fontFamily: 'normal',
+          color: noteStyle.color,
+          fontSize: noteStyle.fontSize,
+          fontFamily: noteStyle.fontFamily,
         })
       }
       const changeNote = text => {
         noteText.current = text
       }
       const changeNoteStyle = patch => {
+        setNoteStyle(current => ({ ...current, ...patch }))
         setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
       const cancelNote = () => setNoteEdit(null)
@@ -8667,7 +8709,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               key: `note-${noteEdit.id}`,
               draft: noteEdit,
               onChange: changeNote,
-              onStyle: changeNoteStyle,
               onSave: () => saveNote(noteEdit.id),
               onCancel: cancelNote,
             }))
@@ -8985,11 +9026,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small',
+            title: format('readerZoomOut'),
+            'aria-label': format('readerZoomOut'),
+            disabled: phase !== 'ready',
+            onClick: () => zoomTo(renderScale / 1.2),
+          }, '−'),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
             title: format('readerFit'),
             'aria-label': format('readerFit'),
             disabled: phase !== 'ready',
             onClick: () => fitToColumn(),
           }, '⤢'),
+          h('button', {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerZoomIn'),
+            'aria-label': format('readerZoomIn'),
+            disabled: phase !== 'ready',
+            onClick: () => zoomTo(renderScale * 1.2),
+          }, '+'),
           h('span', { className: 'md-side-gap' }),
           h('button', {
             type: 'button',
@@ -9015,6 +9072,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('annotText'),
             onClick: () => toggleTool('text'),
           }, annotIcon('M4 6h16M12 6v13M9 19h6')),
+          h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
           h('button', {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',

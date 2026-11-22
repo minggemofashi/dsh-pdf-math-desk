@@ -52,6 +52,8 @@ function vendorContentType(name) {
   // The hand-drawn text face, split into upstream's unicode-range subsets.
   if (/^fonts\/excalifont\/Excalifont-Regular-[a-f0-9]+\.woff2$/.test(name)) return 'font/woff2'
   if (name === 'fonts/excalifont/OFL.txt') return 'text/plain; charset=utf-8'
+  if (name === 'fonts/zhhand/Xiaolai-Regular.ttf') return 'font/ttf'
+  if (name === 'fonts/zhhand/OFL.txt') return 'text/plain; charset=utf-8'
   return null
 }
 
@@ -279,9 +281,9 @@ async function activeLibrary() {
         // plugin: `~/.dsh/pdfdesk/qa-persona.md`. A missing file is simply empty.
         try {
           const raw = await readFile(join(config.dataDir, 'qa-persona.md'), 'utf8')
-          sendJson(response, 200, { persona: raw })
+          sendJson(response, 200, { ok: true, persona: raw })
         } catch {
-          sendJson(response, 200, { persona: '' })
+          sendJson(response, 200, { ok: true, persona: '' })
         }
         return
       }
