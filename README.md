@@ -129,7 +129,7 @@
 
 ### GitHub Release（推荐）
 
-1. 打开 [Releases](https://github.com/minggemofashi/dsh-pdf-workbench/releases)，下载 `dsh-pdf-workbench-1.0.0.zip`；
+1. 打开 [Releases](https://github.com/minggemofashi/dsh-pdf-workbench/releases)，下载最新的 `dsh-pdf-workbench-<版本>.zip`；
 2. 解压到任意目录（不要在压缩包里直接运行）；
 3. DSH → Plugins → Add plugin → 选择解压后的插件目录；
 4. 重启 DSH（Host 路由与侧栏图标在启动时注册）。

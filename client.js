@@ -2673,6 +2673,14 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onNonPdf,
             }, props.allowNonPdfDelete ? format('previewOn') : format('previewOff'))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('socraticHint') }, format('socraticToggle')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('socraticHint'),
+              onClick: props.onSocratic,
+            }, props.socratic ? format('previewOn') : format('previewOff'))
           )
         ),
         h('div', { className: 'md-settings-section' },
@@ -2827,9 +2835,6 @@ window.__ModuleLoader__.load({
           h('h2', { className: 'md-heading' }, format('librariesTitle')),
           h('p', { className: 'md-shelf-sub' }, format('librariesHint'))
         ),
-        // The current root is useful even when it cannot be read: it is the path
-        // the user has to fix or replace.
-        props.libraryDir === '' ? null : h('p', { className: 'md-shelf-sub' }, format('libraryAt', { dir: props.libraryDir })),
         props.libraries.length === 0
           ? h('p', { className: 'md-shelf-sub' }, format('librariesHint'))
           : h('ul', { className: 'md-library-list' },
@@ -7331,10 +7336,7 @@ window.__ModuleLoader__.load({
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-head-actions { display: flex; align-items: center; gap: 8px; }
 .md-settings { position: relative; }
-.md-settings-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 190px; padding: 6px; display: flex; flex-direction: column; gap: 4px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
 .md-settings-version { padding: 4px 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
-.md-settings-item { padding: 6px 8px; text-align: left; font: inherit; font-size: 12.5px; color: var(--dsw-alias-label-primary); background: none; border: 0; border-radius: 6px; cursor: pointer; }
-.md-settings-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .md-settings-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
@@ -11775,80 +11777,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               h('div', { className: 'md-settings' },
                 h('button', {
                   type: 'button', className: 'md-btn md-btn-ghost',
-                  'aria-haspopup': 'menu', 'aria-expanded': settingsOpen ? 'true' : 'false',
+                  'aria-haspopup': 'dialog', 'aria-expanded': settingsOpen ? 'true' : 'false',
                   onClick: () => setSettingsOpen(value => !value),
-                }, `⚙ ${format('settings')}`),
-                settingsOpen
-                  ? h('div', { className: 'md-settings-menu', role: 'menu' },
-                    h('div', { className: 'md-settings-version' }, `${format('version')} ${catalog === null ? '' : catalog.version}`),
-                    h('button', {
-                      type: 'button', className: 'md-settings-item',
-                      onClick: () => {
-                        try {
-                          window.open(GITHUB_URL, '_blank', 'noopener')
-                        } catch {
-                          // popup blocked: ignore
-                        }
-                      },
-                    }, format('githubRepo')),
-                    h('button', {
-                      type: 'button', className: 'md-settings-item',
-                      onClick: () => {
-                        backToLibraries()
-                        window.setTimeout(() => {
-                          const node = document.getElementById('md-env-card')
-                          if (node !== null) node.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                        }, 150)
-                      },
-                    }, `${format('envTitle')}：${envTools.python && envTools.tex ? format('envOn') : format('envOff')}`),
-                    h('button', {
-                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
-                      'aria-checked': previewPdf ? 'true' : 'false',
-                      onClick: () => {
-                        setPreviewPdf(value => {
-                          const next = !value
-                          try {
-                            window.localStorage.setItem('pdfdesk:preview-pdf', next ? '1' : '0')
-                          } catch {
-                            // storage unavailable
-                          }
-                          return next
-                        })
-                      },
-                    }, `${format('previewPdf')}：${previewPdf ? format('previewOn') : format('previewOff')}`),
-                    h('button', {
-                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
-                      'aria-checked': allowNonPdfDelete ? 'true' : 'false',
-                      onClick: () => {
-                        setAllowNonPdfDelete(value => {
-                          const next = !value
-                          try {
-                            window.localStorage.setItem('pdfdesk:delete-non-pdf', next ? '1' : '0')
-                          } catch {
-                            // storage unavailable
-                          }
-                          return next
-                        })
-                      },
-                    }, `${format('deleteNonPdf')}：${allowNonPdfDelete ? format('previewOn') : format('previewOff')}`),
-                    h('button', {
-                      type: 'button', className: 'md-settings-item', role: 'menuitemcheckbox',
-                      'aria-checked': socratic ? 'true' : 'false',
-                      title: format('socraticHint'),
-                      onClick: () => {
-                        setSocratic(value => {
-                          const next = !value
-                          try {
-                            window.localStorage.setItem('pdfdesk:socratic', next ? '1' : '0')
-                          } catch {
-                            // storage unavailable
-                          }
-                          return next
-                        })
-                      },
-                    }, `${format('socraticToggle')}：${socratic ? format('previewOn') : format('previewOff')}`)
-                  )
-                  : null
+                }, `⚙ ${format('settings')}`)
               ),
               h('button', {
                 type: 'button', className: 'md-btn', disabled: busy || creatingKey !== '',
@@ -11947,6 +11878,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onCheckUpdate: checkUpdates,
             previewPdf,
             allowNonPdfDelete,
+            socratic,
+            onSocratic: () => setSocratic(value => {
+              const next = !value
+              try {
+                window.localStorage.setItem('pdfdesk:socratic', next ? '1' : '0')
+              } catch {
+                // storage unavailable
+              }
+              return next
+            }),
             onPreview: () => setPreviewPdf(value => {
               const next = !value
               try {

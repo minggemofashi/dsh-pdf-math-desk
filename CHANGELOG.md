@@ -2,6 +2,11 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v1.0.1
+
+- **修复书库页多余的「库目录」行**：它和第一个书库卡片重叠；书库卡片本身已显示各自路径，这行去掉。
+- **设置只保留一个界面**：移除标题栏的旧下拉菜单（它和设置对话框同时弹出，盖在对话框上）；「答疑苏格拉底人格」开关移入 **设置 → 阅读 → 特殊功能**。
+
 ## v1.0.0
 
 - **改名**：仓库/包名 `dsh-pdf-math-desk` → `dsh-pdf-workbench`；显示名「PDF 阅读 · 随时问答」，侧栏「PDF阅读」；内部命名空间 `mathdesk` → `pdfdesk`（路由 `/pdfdesk/*`、`~/.dsh/pdfdesk`、`<库根>\.pdfdesk\annotations`、localStorage `pdfdesk:*`、`dsh-resource://pdfdesk/...`）。
