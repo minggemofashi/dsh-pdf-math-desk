@@ -2052,7 +2052,7 @@ window.__ModuleLoader__.load({
      * @param {string} text - the outline Markdown.
      * @returns {Promise<{ applied: boolean, reference: object | null }>} the result and the held retention.
      */
-    async function beginPrefill(sessionId, text) {
+    async function beginPrefill(sessionId, text, whenDraftExists = 'append') {
       const sessions = sessionService()
       const conversation = clientContext === null ? null : clientContext.get('conversation')
       if (sessions === null || sessions === undefined || conversation === null || conversation === undefined) {
@@ -2068,9 +2068,9 @@ window.__ModuleLoader__.load({
         const binding = await reference.ready
         const result = conversation.input.requestDraftInitialization(binding, {
           prompt: text,
-          // Append rather than replace: a reused blank may already hold the user's
-          // own draft, and losing that would be worse than an extra header line.
-          whenDraftExists: 'append',
+          // New sessions append, because a reused blank may hold the user's
+          // draft; resuming uses keep so an existing draft is never duplicated.
+          whenDraftExists,
         })
         return { applied: result === 'applied', reference }
       } catch {
@@ -12462,7 +12462,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const summary = sessionList === null || sessionList.byId === undefined ? undefined : sessionList.byId[id]
           if (summary !== undefined && summary.blank !== true) continue
           if (archivedIds.has(id)) continue
-          return { id, pending: true }
+          return { id, pending: true, blank: true }
         }
         if (sessionList === null || sessionList === undefined || sessionList.phase !== 'ready' || !Array.isArray(sessionList.ids)) return null
         let best = null
@@ -12475,9 +12475,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             ?? books.find(item => item.title === parsed.bookKey)
           if (book === undefined || book.id !== bookId) continue
           const updatedAt = typeof summary.updatedAt === 'number' ? summary.updatedAt : 0
-          if (best === null || updatedAt > best.updatedAt) best = { id, updatedAt }
+          if (best === null || updatedAt > best.updatedAt) best = { id, updatedAt, blank: summary.blank === true }
         }
-        return best === null ? null : { id: best.id, pending: false }
+        return best === null ? null : { id: best.id, pending: false, blank: best.blank }
       }, [archivedIds, books, sessionList])
 
       /**
@@ -12539,6 +12539,53 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : null
         return sessionSeedText(bookRow, chapter, position, paths ?? null, typeof persona === 'string' ? persona : '')
       }, [])
+
+      /**
+       * Restore the address seed when a blank session's draft is empty, without
+       * appending it to a draft the user is already editing.
+       * @param {string} sessionId - the session about to open.
+       * @param {object} chapter - catalog chapter row.
+       * @param {string} mode - session type.
+       * @returns {Promise<void>} completion (best effort).
+       */
+      const seedExistingSession = useCallback(async (sessionId, chapter, mode) => {
+        if (book === null || catalog === null) return
+        const paths = {
+          libraryDir: typeof catalog.libraryDir === 'string' ? catalog.libraryDir : '',
+          bookDir: typeof catalog.fragmentDir === 'string' && catalog.fragmentDir !== ''
+            && typeof book.dir === 'string' && book.dir !== ''
+            ? `${catalog.fragmentDir}\\${book.dir}`
+            : '',
+          pdfPath: typeof chapter.pdfPath === 'string' ? chapter.pdfPath : '',
+          artifactDir: typeof catalog.artifactDir === 'string' && catalog.artifactDir !== ''
+            ? `${catalog.artifactDir}\\${book.id}\\${chapter.code}\\`
+            : '',
+        }
+        let persona = ''
+        if (mode === 'qa' && socraticEnabled()) {
+          try {
+            const payload = await request('GET', 'qa-persona')
+            persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
+          } catch {
+            // The context seed is still useful without the optional persona.
+          }
+        }
+        const draft = mode === GENERAL_MODE
+          ? [
+            `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
+            `${format('generalSeedLibrary')}：${paths.libraryDir}`,
+            paths.bookDir === '' ? '' : `${format('generalSeedBookDir')}：${paths.bookDir}`,
+            paths.pdfPath === '' ? '' : `${format('generalSeedPdf')}：${paths.pdfPath}`,
+          ].filter(Boolean).join('\n')
+          : `${seedFor(book, chapter, paths, persona)}\n\n${format('sessionQuestionLead')}`
+        const prefill = await beginPrefill(sessionId, draft, 'keep')
+        if (prefill.applied && persona !== '') {
+          try { window.localStorage.setItem(`pdfdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
+        }
+        if (prefill.reference !== null) {
+          try { prefill.reference.release() } catch { /* already released */ }
+        }
+      }, [beginPrefill, book, catalog, seedFor])
 
       /**
        * Whether the right column would open our own chapter tab. An address no
@@ -12873,8 +12920,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }
           }
           if (ratio < limit) {
+            // A blank session whose draft was deleted gets its address block back.
+            // A non-empty draft is preserved because beginPrefill uses `keep`.
+            if (current.pending === true || current.blank === true) {
+              await seedExistingSession(current.id, chapter, mode)
+            }
             await flushSave()
-            if (mode === 'qa') await seedQaPersona(current.id)
             openHostSession(current.id)
             if (previewPdf) void openPdfInSession(current.id)
             showNotice(format('sessionResumed', {
@@ -12906,7 +12957,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         } finally {
           inFlightSessions.current.delete(key)
         }
-      }, [book, catalog, createSession, ensureWorkspaceTarget, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
+      }, [book, catalog, createSession, ensureWorkspaceTarget, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, seedExistingSession, showNotice])
 
       /**
        * The toolbar's universal session: a tracked chapter session of the
