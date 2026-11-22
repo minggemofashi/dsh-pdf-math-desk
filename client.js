@@ -8443,7 +8443,7 @@ window.__ModuleLoader__.load({
 .md-btn-primary { color: var(--dsw-alias-label-inverse, #fff); background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
 .md-btn-primary:hover { filter: brightness(1.06); }
 .md-home .md-shelf-head .md-heading { font-size: 18px; }
-.md-home .md-library-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.md-home .md-library-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .md-home .md-library-list:empty { display: none; }
 .md-home .md-library { position: relative; padding: 20px 22px 18px; border-radius: 16px; background: var(--dsw-alias-card-fill); border: 1px solid var(--dsw-alias-border-l2); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .md-home .md-library:hover { transform: translateY(-1px); border-color: var(--dsw-alias-border-l4); box-shadow: 0 10px 28px rgba(0, 0, 0, .06); }
