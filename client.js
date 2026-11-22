@@ -3009,31 +3009,36 @@ window.__ModuleLoader__.load({
         h('p', { className: 'md-shelf-sub' }, format('workflowHint')),
         h('div', {
           className: 'md-workflow-base',
-          'data-active': props.activeWorkflow === '' ? 'true' : 'false',
         },
           h('span', { className: 'md-mode-pill', 'data-mode': 'general' }, format('workflowGeneral')),
           h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc')),
           h('span', { className: 'md-workflow-always' }, format('workflowGeneralAlways'))
         ),
-        WORKFLOWS.map(item => h('label', {
+        WORKFLOWS.map(item => h('div', {
           key: item.id,
           className: 'md-workflow-card',
           'data-active': props.activeWorkflow === item.id ? 'true' : 'false',
+          role: 'switch',
+          tabIndex: 0,
+          'aria-checked': props.activeWorkflow === item.id ? 'true' : 'false',
           title: props.activeWorkflow === item.id ? format('workflowActiveHint') : undefined,
+          onClick: () => {
+            if (typeof props.onWorkflowChange === 'function') {
+              props.onWorkflowChange(props.activeWorkflow === item.id ? '' : item.id)
+            }
+          },
+          onKeyDown: event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            if (typeof props.onWorkflowChange === 'function') {
+              props.onWorkflowChange(props.activeWorkflow === item.id ? '' : item.id)
+            }
+          },
         },
-          h('input', {
-            type: 'radio',
-            name: 'pdfdesk-workflow',
-            checked: props.activeWorkflow === item.id,
-            onClick: event => {
-              if (props.activeWorkflow === item.id) {
-                event.preventDefault()
-                if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
-              }
-            },
-            onChange: () => {
-              if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange(item.id)
-            },
+          h('span', {
+            className: 'md-workflow-dot',
+            'data-on': props.activeWorkflow === item.id ? 'true' : 'false',
+            'aria-hidden': 'true',
           }),
           h('span', { className: 'md-workflow-text' },
             h('strong', null, format(item.labelKey)),
@@ -7728,14 +7733,6 @@ window.__ModuleLoader__.load({
             h('span', { className: `md-reader-scale${dual ? ' md-hidden' : ''}`, 'aria-hidden': true }, `${Math.round((reader.scale ?? 1) * 100)}%`)
           ),
           h('button', {
-            type: 'button', className: 'md-btn md-btn-small',
-            disabled: props.busy,
-            title: format('generalSessionHint'),
-            onClick: () => {
-              if (typeof props.onGeneralSession === 'function') props.onGeneralSession()
-            },
-          }, format('generalSession')),
-          h('button', {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('toolsToggle'), title: format('toolsToggle'),
             onClick: () => setToolsOpen(value => !value),
@@ -7747,6 +7744,15 @@ window.__ModuleLoader__.load({
           }, '×')
         ),
         h('div', { className: 'md-reader-subbar', style: toolsOpen ? undefined : { display: 'none' } },
+          h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            disabled: props.busy,
+            title: format('generalSessionHint'),
+            onClick: () => {
+              if (typeof props.onGeneralSession === 'function') props.onGeneralSession()
+            },
+          }, format('generalSession')),
+          h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('single') ? 'true' : 'false',
@@ -8574,12 +8580,12 @@ window.__ModuleLoader__.load({
 .md-mode-pill { display: inline-flex; align-items: center; align-self: flex-start; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-l1); }
 .md-mode-pill[data-mode='math'] { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
 .md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
-.md-workflow-base[data-active='true'] { border-color: var(--dsw-alias-brand-primary); }
 .md-workflow-always { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .md-workflow-base .md-mode-pill { margin-top: 0; }
 .md-workflow-card { display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
-.md-workflow-card[data-active='true'] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-l1); }
-.md-workflow-card input { margin-top: 2px; accent-color: var(--dsw-alias-brand-primary); }
+.md-workflow-card:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.md-workflow-dot { flex: 0 0 auto; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .45; }
+.md-workflow-dot[data-on='true'] { background: #2f9e44; opacity: 1; }
 .md-workflow-text { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-workflow-text strong { font-size: 13px; color: var(--dsw-alias-label-primary); }
 .md-env-backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .28); }
