@@ -1739,6 +1739,45 @@ window.__ModuleLoader__.load({
       return true
     }
 
+    /**
+     * Put the local Socratic persona into a Q&A session that is being opened
+     * again. The persona is pre-filled only when a session is created, so a
+     * resumed conversation would otherwise never see it; once per session is
+     * enough, and the text stays visible and editable in the input.
+     * @param {string} sessionId - the Q&A session about to open.
+     * @returns {Promise<void>} completion (best effort).
+     */
+    async function seedQaPersona(sessionId) {
+      if (typeof sessionId !== 'string' || sessionId === '') return
+      const key = `mathdesk:qa-persona:${sessionId}`
+      try {
+        if (window.localStorage.getItem(key) === '1') return
+      } catch {
+        // storage unavailable: still seed this time
+      }
+      let persona = ''
+      try {
+        const payload = await request('GET', 'qa-persona')
+        persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
+      } catch {
+        return
+      }
+      if (persona === '') return
+      const prefill = await beginPrefill(sessionId, `${persona}\n\n${format('sessionQuestionLead')}`)
+      if (!prefill.applied) {
+        if (prefill.reference !== null) {
+          try { prefill.reference.release() } catch { /* already released */ }
+        }
+        return
+      }
+      try { window.localStorage.setItem(key, '1') } catch { /* storage unavailable */ }
+      if (prefill.reference !== null) {
+        window.setTimeout(() => {
+          try { prefill.reference.release() } catch { /* already released */ }
+        }, 500)
+      }
+    }
+
     /* ------------------------------------------------------------ elements -- */
 
     const viewerBus = { token: 0, listeners: new Set() }
@@ -8494,6 +8533,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 label: `${found === null ? '＋ ' : ''}${format(`mode.${mode}`)}`,
                 run: () => {
                   if (found !== null) {
+                    if (mode === 'qa') void seedQaPersona(found)
                     if (!openHostSession(found)) notifySide(format('sessionUnavailable'))
                     return
                   }
@@ -10069,11 +10109,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const openSessionRow = useCallback(id => {
         const outline = pendingDrafts.current.get(id)
         if (outline === undefined) {
+          // A resumed Q&A session never saw the Socratic persona (it is only
+          // pre-filled at creation); put it back before the host conversation
+          // opens, once per session.
+          const summary = sessionList === null || sessionList.byId === undefined ? undefined : sessionList.byId[id]
+          const parsed = summary === undefined ? null : parseSessionTitle(summary.title)
+          if (parsed !== null && parsed.mode === 'qa') void seedQaPersona(id)
           if (!openHostSession(id)) showNotice(format('sessionUnavailable'))
           return
         }
         // A continuation created from the chapter page carries its outline only as
         // a remembered string; apply it now, while the session is about to open.
+        // (It was already seeded with the persona at creation, if it is a Q&A one.)
         pendingDrafts.current.delete(id)
         void (async () => {
           const prefill = await beginPrefill(id, outline)
@@ -10085,7 +10132,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }, 500)
           }
         })()
-      }, [showNotice])
+      }, [sessionList, showNotice])
 
       const refreshSessions = useCallback(() => {
         const sessions = sessionService()
@@ -10588,11 +10635,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }
           const parts = [seedFor(book, chapter, paths)]
           // The Socratic persona is a local-only workflow file, used for Q&A only.
+          let personaInDraft = false
           if (mode === 'qa') {
             try {
               const payload = await request('GET', 'qa-persona')
               const persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
-              if (persona !== '') parts.unshift(persona)
+              if (persona !== '') {
+                parts.unshift(persona)
+                personaInDraft = true
+              }
             } catch {
               // no local persona file (or offline): the session works as before
             }
@@ -10613,6 +10664,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const prefill = await beginPrefill(sessionId, draft)
           if (prefill.applied) {
             showNotice(format(hasOutline ? 'sessionWithOutline' : 'sessionWithContext'))
+            if (personaInDraft) {
+              // Mark it: opening this session again must not append the persona
+              // a second time.
+              try { window.localStorage.setItem(`mathdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
+            }
           }
           if (options !== undefined && options.jump === true) {
             draftReference = prefill.reference
@@ -10677,6 +10733,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }
           if (ratio < limit) {
             await flushSave()
+            if (mode === 'qa') await seedQaPersona(current.id)
             openHostSession(current.id)
             if (previewPdf) void openPdfInSession(current.id)
             showNotice(format('sessionResumed', {
