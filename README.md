@@ -133,7 +133,7 @@
 ### npm
 
 ```bash
-dsh plugin add dsh-pdf-math-desk@0.72.12
+dsh plugin add dsh-pdf-math-desk@0.72.13
 ```
 
 ### 本地目录
