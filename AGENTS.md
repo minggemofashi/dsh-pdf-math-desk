@@ -6,13 +6,13 @@
 
 **默认只存档，不发版。** 只有用户**明确说**「发布 / 发版 / 更新 / 推送」时，才做版本号、tag、push、GitHub Release 这一套。日常修复和功能**不升版本、不打 tag、不 push、不发 Release**，也**不要每轮追问“要不要发布”**——用户会说。
 
-发布渠道：**GitHub Release 是默认渠道**；npm / 插件市场只在用户明确要求时处理（目前市场暂停，准备上架时要单独确认版本、仓库地址和包来源）。
+发布渠道：**GitHub Release 是默认渠道**；插件市场通过 `awesome-dsh-plugin` 列表提交；**不发布 npm**（旧 npm 包已弃用）。
 
 ### 日常改动（每次）
 
 1. 跑检查（见下）；
 2. **本地提交**存档：`git add -A && git commit -m "<type>: <一句话>"`（`feat:`/`fix:`/`docs:`/`wip:` 均可，不要求版本号）；
-3. 不修改 `package.json` 的 `version`，不打 tag，不 push，不发 npm / GitHub Release / 市场索引；
+3. 不修改 `package.json` 的 `version`，不打 tag，不 push，不发 npm / GitHub Release / 市场条目；
 4. 需要远程协作/备份时先问用户，不要自动推送。
 
 ### 交互与省 token
@@ -24,7 +24,7 @@
 
 ### 发版（用户明确说“该更新了”之后）
 
-**GitHub Release 是默认渠道；npm / 插件市场只在用户明确要求时处理**（市场准备上架时另行确认版本与包来源）。
+**GitHub Release 是默认渠道；插件市场通过 `awesome-dsh-plugin` 列表提交；不发布 npm。**
 
 1. 汇总日常提交，升 `package.json` 版本（修复/文档 +补丁位，新功能 +次版本位）；
 2. 更新 `CHANGELOG.md`、README（必要时 `安装与分发.md`）；
