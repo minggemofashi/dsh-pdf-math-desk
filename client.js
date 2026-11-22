@@ -3724,6 +3724,77 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Where a pointer event lands on a page-sized layer, in page coordinates
+     * (0..1). Every annotation layer is exactly the page box, so the same
+     * numbers work at any zoom and in any column.
+     * @param {{ clientX: number, clientY: number }} event - the pointer event.
+     * @param {Element | null} node - the page-sized element.
+     * @returns {[number, number] | null} the point, or null when the box has no area.
+     */
+    function inkPointOf(event, node) {
+      if (node === null || node === undefined || typeof node.getBoundingClientRect !== 'function') return null
+      const rect = node.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return null
+      return [
+        Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+        Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+      ]
+    }
+
+    /**
+     * How far a hit test reaches at one box width: ~8px of slack plus half the
+     * stroke's own width, in page units.
+     * @param {number} widthPx - the stroke's width in pixels.
+     * @param {number} boxWidth - the page box's width in pixels.
+     * @returns {number} the reach in page units.
+     */
+    function inkReach(widthPx, boxWidth) {
+      return (8 + widthPx / 2) / Math.max(1, boxWidth)
+    }
+
+    /**
+     * Whether a point touches one stroke: the nearest point on any segment.
+     * @param {object} stroke - a stored stroke.
+     * @param {[number, number]} point - the pointer in page coordinates.
+     * @param {number} reach - the tolerance in page units.
+     * @returns {boolean} true when the point is within reach of the line.
+     */
+    function inkStrokeHits(stroke, point, reach) {
+      const points = Array.isArray(stroke.points) ? stroke.points : []
+      for (let index = 1; index < points.length; index += 1) {
+        const [x1, y1] = points[index - 1]
+        const [x2, y2] = points[index]
+        const dx = x2 - x1
+        const dy = y2 - y1
+        const length = dx * dx + dy * dy
+        const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
+        const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
+        if (dist < reach) return true
+      }
+      return false
+    }
+
+    /**
+     * Whether a point touches one mark: a text note's rough box, or a stroke.
+     * The reach comes in as a function of stroke width, so each column keeps its
+     * own eraser size while the math stays in one place.
+     * @param {object} entry - a stored mark (text or stroke).
+     * @param {[number, number]} point - the pointer in page coordinates.
+     * @param {(widthPx: number) => number} reachForWidth - pixel width to page units.
+     * @returns {boolean} true when the point hits the mark.
+     */
+    function inkHit(entry, point, reachForWidth) {
+      if (entry.kind === 'text') {
+        const reach = reachForWidth(2)
+        const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
+        return point[0] >= entry.x - reach && point[0] <= entry.x + width + reach
+          && point[1] >= entry.y - 0.02 - reach && point[1] <= entry.y + 0.035 + reach
+      }
+      return inkStrokeHits(entry, point, reachForWidth(Number(entry.width) || 2))
+    }
+
+
+    /**
      * In-place editor for a text note. The text tool used to call
      * `window.prompt`, which DSH Desktop (Electron) does not implement: the
      * click did nothing at all. The note is typed on the page instead — Enter
@@ -4168,33 +4239,16 @@ window.__ModuleLoader__.load({
       const api = useRef({})
       const HIT = 0.012
 
-      const pointOf = event => {
-        const rect = event.currentTarget.getBoundingClientRect()
-        if (rect.width === 0 || rect.height === 0) return null
-        return [
-          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-        ]
-      }
+      const pointOf = event => inkPointOf(event, event.currentTarget)
       const within = (entry, point) => {
         if (entry.kind === 'text') {
           const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
           return point[0] >= entry.x - HIT && point[0] <= entry.x + width + HIT
             && point[1] >= entry.y - 0.02 - HIT && point[1] <= entry.y + 0.035 + HIT
         }
-        const points = Array.isArray(entry.points) ? entry.points : []
-        for (let index = 1; index < points.length; index += 1) {
-          const a = points[index - 1]
-          const b = points[index]
-          const dx = b[0] - a[0]
-          const dy = b[1] - a[1]
-          const length = dx * dx + dy * dy
-          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / length))
-          const x = a[0] + t * dx
-          const y = a[1] + t * dy
-          if (Math.hypot(point[0] - x, point[1] - y) <= HIT + (entry.width ?? 2) / 1000) return true
-        }
-        return false
+        // This column keeps its fixed page-unit eraser: the shared segment test
+        // only needs the reach this column has always used.
+        return inkStrokeHits(entry, point, HIT + (Number(entry.width) || 2) / 1000)
       }
       const persist = () => {
         try {
@@ -5496,43 +5550,18 @@ window.__ModuleLoader__.load({
       // eraser can turn its pixel tolerance into page units.
       const annotBox = useRef({ width: 400, height: 600 })
       const annotPoint = event => {
+        const point = inkPointOf(event, event.currentTarget)
+        if (point === null) return null
         const rect = event.currentTarget.getBoundingClientRect()
-        if (rect.width === 0 || rect.height === 0) return null
         annotBox.current = { width: rect.width, height: rect.height }
-        return [
-          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-        ]
+        return point
       }
       // Tolerance in page units: ~8px of slack plus half the stroke's own width,
       // so a thick line is as easy to hit as it looks.
-      const toleranceFor = widthPx => (8 + widthPx / 2) / Math.max(1, annotBox.current.width)
-      const strokeHits = (stroke, point) => {
-        const points = stroke.points ?? []
-        const reach = toleranceFor(Number(stroke.width) || 2)
-        for (let index = 1; index < points.length; index += 1) {
-          const [x1, y1] = points[index - 1]
-          const [x2, y2] = points[index]
-          const dx = x2 - x1
-          const dy = y2 - y1
-          const length = dx * dx + dy * dy
-          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
-          const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
-          if (dist < reach) return true
-        }
-        return false
-      }
-      // A text note is hit inside its rough box: its left/top is the anchor, so
-      // the box grows with the number of characters, plus the same slack.
-      const annotHit = (entry, point) => {
-        if (entry.kind === 'text') {
-          const slack = toleranceFor(2)
-          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
-          return point[0] >= entry.x - slack && point[0] <= entry.x + width + slack
-            && point[1] >= entry.y - 0.02 - slack && point[1] <= entry.y + 0.035 + slack
-        }
-        return strokeHits(entry, point)
-      }
+      const toleranceFor = widthPx => inkReach(widthPx, annotBox.current.width)
+      // A text note is hit inside its rough box; a stroke inside its reach. The
+      // shared hit test keeps the reader and the other columns on one rule.
+      const annotHit = (entry, point) => inkHit(entry, point, toleranceFor)
       // Notes are edited where they sit. Text that already exists under the
       // pointer is opened for editing instead of stacking a second note on top.
       // `side` says which layer opened the draft, so the editor renders in that
@@ -7797,40 +7826,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // the eraser's pixel tolerance can become page units.
       const pointOf = event => {
         const node = boxRef.current
-        if (node === null) return null
+        const point = inkPointOf(event, node)
+        if (point === null) return null
         const rect = node.getBoundingClientRect()
-        if (rect.width === 0 || rect.height === 0) return null
         boxSize.current = { width: rect.width, height: rect.height }
-        return [
-          Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-          Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-        ]
+        return point
       }
-      const toleranceFor = widthPx => (8 + widthPx / 2) / Math.max(1, boxSize.current.width)
-      const strokeHits = (stroke, point) => {
-        const points = stroke.points ?? []
-        const reach = toleranceFor(Number(stroke.width) || 2)
-        for (let index = 1; index < points.length; index += 1) {
-          const [x1, y1] = points[index - 1]
-          const [x2, y2] = points[index]
-          const dx = x2 - x1
-          const dy = y2 - y1
-          const length = dx * dx + dy * dy
-          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x1) * dx + (point[1] - y1) * dy) / length))
-          const dist = Math.hypot(point[0] - (x1 + t * dx), point[1] - (y1 + t * dy))
-          if (dist < reach) return true
-        }
-        return false
-      }
-      const hitTest = (entry, point) => {
-        if (entry.kind === 'text') {
-          const slack = toleranceFor(2)
-          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
-          return point[0] >= entry.x - slack && point[0] <= entry.x + width + slack
-            && point[1] >= entry.y - 0.02 - slack && point[1] <= entry.y + 0.035 + slack
-        }
-        return strokeHits(entry, point)
-      }
+      const toleranceFor = widthPx => inkReach(widthPx, boxSize.current.width)
+      const hitTest = (entry, point) => inkHit(entry, point, toleranceFor)
       const eraseAt = point => {
         const next = strokesRef.current.filter(entry => !hitTest(entry, point))
         if (next.length !== strokesRef.current.length) commitStrokes(next)
