@@ -229,6 +229,14 @@ window.__ModuleLoader__.load({
       annotDualHint: '两栏各自独立：原文栏记在本页公共笔记上，译文栏自己保存一份；两栏可以停在不同页',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
+      annotColor: '文字颜色',
+      annotFontSize: '字号',
+      annotFontFamily: '字体',
+      'annotFont.hand': '手写',
+      'annotFont.normal': '正常',
+      'annotFont.mono': '等宽',
+      'annotFont.song': '宋体',
+      'annotFont.hei': '黑体',
       exportPage: '导出本页',
       exportHint: '导出本页：原文 + 框内译文 + 标注，存到本章产物',
       exporting: '正在导出本页…',
@@ -647,6 +655,14 @@ window.__ModuleLoader__.load({
       annotDualHint: 'Each column keeps its own notes: the original column writes the page\'s shared notes, the translated column saves its own; they may sit on different pages',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
+      annotColor: 'Text colour',
+      annotFontSize: 'Font size',
+      annotFontFamily: 'Font',
+      'annotFont.hand': 'Hand',
+      'annotFont.normal': 'Normal',
+      'annotFont.mono': 'Mono',
+      'annotFont.song': 'Serif',
+      'annotFont.hei': 'Sans',
       exportPage: 'Export page',
       exportHint: 'Export this page: original + revealed translation + ink, into the chapter artifacts',
       exporting: 'Exporting this page…',
@@ -3741,25 +3757,43 @@ window.__ModuleLoader__.load({
       }, h('path', { d }))
     }
 
+    /** The font families a note can use, mapped to system stacks for now. */
+    const NOTE_FONTS = {
+      hand: '"KaiTi", "STKaiti", "Kaiti SC", "Segoe Print", "Comic Sans MS", cursive',
+      normal: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
+      mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      song: '"SimSun", "Songti SC", "Noto Serif SC", serif',
+      hei: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+    }
+    /** The four text sizes, in screen pixels (the note keeps its size at any zoom). */
+    const NOTE_SIZES = [14, 18, 22, 28]
+    /** The note colours offered in the in-place editor. */
+    const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
+
     /**
      * Apply one saved note to a page's annotation list. Shared by the reader and
      * the side preview so both ends store a note the same way: an empty save on
      * an existing note deletes it, surrounding whitespace is dropped, and inner
-     * line breaks stay.
+     * line breaks stay. The draft's colour/size/family are written only when it
+     * names them, so older notes keep their exact stored shape.
      * @param {Array<object>} list - the page's annotations.
-     * @param {{ index: number, x: number, y: number, color: string }} draft - the edited note.
+     * @param {{ index: number, x: number, y: number, color?: string, fontSize?: number, fontFamily?: string }} draft - the edited note.
      * @param {string} raw - what the editor holds.
      * @returns {Array<object>} the new list (a copy; the input is untouched).
      */
     function applyNote(list, draft, raw) {
       const value = String(raw ?? '').replace(/^\s+|\s+$/g, '')
       const next = Array.isArray(list) ? [...list] : []
+      const style = {}
+      if (draft.color !== undefined) style.color = draft.color
+      if (typeof draft.fontSize === 'number' && Number.isFinite(draft.fontSize)) style.fontSize = draft.fontSize
+      if (typeof draft.fontFamily === 'string' && draft.fontFamily !== '') style.fontFamily = draft.fontFamily
       if (draft.index >= 0 && draft.index < next.length) {
         if (value === '') next.splice(draft.index, 1)
-        else next[draft.index] = { ...next[draft.index], text: value }
+        else next[draft.index] = { ...next[draft.index], text: value, ...style }
         return next
       }
-      if (value !== '') next.push({ kind: 'text', x: draft.x, y: draft.y, text: value, color: draft.color })
+      if (value !== '') next.push({ kind: 'text', x: draft.x, y: draft.y, text: value, ...style })
       return next
     }
 
@@ -3842,13 +3876,18 @@ window.__ModuleLoader__.load({
      * saves what is there (so clicking a toolbar button never loses a note).
      * The typed text lives here, not in the page's state: one keystroke must not
      * re-render a whole chapter of pages. The owner reads it back through
-     * `onChange` into a ref it saves from.
-     * @param {{ draft: { text: string }, onChange: (text: string) => void,
+     * `onChange` into a ref it saves from. Size, family and colour live in the
+     * draft, so the style row can change them without closing the editor.
+     * @param {{ draft: { text: string, color?: string, fontSize?: number, fontFamily?: string },
+     *   onChange: (text: string) => void, onStyle: (patch: object) => void,
      *   onSave: () => void, onCancel: () => void }} props - the open draft.
      * @returns {import('react').ReactElement} the editor.
      */
     function NoteEditor(props) {
       const draft = props.draft
+      const size = Number.isFinite(draft.fontSize) ? draft.fontSize : NOTE_SIZES[0]
+      const family = typeof draft.fontFamily === 'string' && NOTE_FONTS[draft.fontFamily] !== undefined ? draft.fontFamily : 'normal'
+      const color = typeof draft.color === 'string' && draft.color !== '' ? draft.color : NOTE_COLORS[0]
       const [value, setValue] = useState(String(draft.text ?? ''))
       const areaRef = useRef(null)
       const closed = useRef(false)
@@ -3871,6 +3910,43 @@ window.__ModuleLoader__.load({
       // The editor sits on the PDF page: keep the box inside the page even when
       // the click lands near the right edge (the note itself stays at its point).
       const left = Math.min(0.66, Math.max(0, draft.x)) * 100
+      const styleButtons = []
+      const sizeLabels = ['S', 'M', 'L', 'XL']
+      for (let index = 0; index < NOTE_SIZES.length; index += 1) {
+        const sizeValue = NOTE_SIZES[index]
+        styleButtons.push(h('button', {
+          key: `size-${sizeValue}`,
+          type: 'button',
+          className: 'md-note-style-btn md-note-size',
+          'data-on': size === sizeValue ? 'true' : undefined,
+          title: format('annotFontSize'),
+          onClick: () => props.onStyle({ fontSize: sizeValue }),
+        }, sizeLabels[index] ?? String(sizeValue)))
+      }
+      styleButtons.push(h('span', { key: 'sep-font', className: 'md-note-style-sep', 'aria-hidden': true }))
+      for (const key of Object.keys(NOTE_FONTS)) {
+        styleButtons.push(h('button', {
+          key: `font-${key}`,
+          type: 'button',
+          className: 'md-note-style-btn md-note-font',
+          'data-on': family === key ? 'true' : undefined,
+          title: format('annotFontFamily'),
+          onClick: () => props.onStyle({ fontFamily: key }),
+        }, format(`annotFont.${key}`)))
+      }
+      styleButtons.push(h('span', { key: 'sep-color', className: 'md-note-style-sep', 'aria-hidden': true }))
+      for (const value of NOTE_COLORS) {
+        styleButtons.push(h('button', {
+          key: `color-${value}`,
+          type: 'button',
+          className: 'md-note-color',
+          style: { background: value },
+          'data-on': color === value ? 'true' : undefined,
+          title: format('annotColor'),
+          'aria-label': format('annotColor'),
+          onClick: () => props.onStyle({ color: value }),
+        }))
+      }
       return h('div', {
         className: 'md-note-editor',
         style: { left: `${left}%`, top: `${Math.max(0, draft.y) * 100}%`, maxWidth: `calc(100% - ${left}% - 6px)` },
@@ -3879,6 +3955,13 @@ window.__ModuleLoader__.load({
         onDoubleClick: event => event.stopPropagation(),
         onContextMenu: event => event.stopPropagation(),
       },
+        // The style row must not take focus: a focus change would blur the
+        // textarea and save the note mid-edit.
+        h('div', {
+          className: 'md-note-style',
+          onMouseDown: event => { event.preventDefault(); event.stopPropagation() },
+          onPointerDown: event => event.stopPropagation(),
+        }, styleButtons),
         h('textarea', {
           ref: areaRef,
           className: 'md-note-input',
@@ -3887,6 +3970,11 @@ window.__ModuleLoader__.load({
           spellCheck: false,
           placeholder: format('annotTextPlaceholder'),
           'aria-label': format('annotTextPrompt'),
+          style: {
+            fontSize: `${size}px`,
+            fontFamily: NOTE_FONTS[family],
+            color,
+          },
           onChange: event => {
             setValue(event.target.value)
             props.onChange(event.target.value)
@@ -4499,7 +4587,14 @@ window.__ModuleLoader__.load({
           y: entry === null ? point[1] : entry.y,
           text: noteText.current,
           color: entry === null ? props.color : (entry.color ?? props.color),
+          fontSize: entry === null || !Number.isFinite(entry.fontSize) ? NOTE_SIZES[0] : entry.fontSize,
+          fontFamily: entry === null || typeof entry.fontFamily !== 'string' ? 'normal' : entry.fontFamily,
         })
+      }
+      const changeNoteStyle = patch => {
+        const current = noteRef.current
+        if (current === null) return
+        setNoteBoth({ ...current, ...patch })
       }
       const saveNote = id => {
         const current = noteRef.current
@@ -4599,7 +4694,13 @@ window.__ModuleLoader__.load({
           key: `note-${index}`,
           className: 'md-annot-text',
           title: props.tool === '' ? format('annotTextEditHint') : undefined,
-          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+          style: {
+            left: `${entry.x * 100}%`,
+            top: `${entry.y * 100}%`,
+            color: entry.color ?? '#e0554a',
+            fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+            fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+          },
           onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
           onDoubleClick: props.tool === ''
             ? event => {
@@ -4614,6 +4715,8 @@ window.__ModuleLoader__.load({
                 y: entry.y,
                 text: noteText.current,
                 color: entry.color ?? props.color,
+                fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
               })
             }
             : undefined,
@@ -4622,6 +4725,7 @@ window.__ModuleLoader__.load({
           key: `note-${note.id}`,
           draft: note,
           onChange: value => { noteText.current = value },
+          onStyle: changeNoteStyle,
           onSave: () => saveNote(note.id),
           onCancel: cancelNote,
         })
@@ -5697,14 +5801,37 @@ window.__ModuleLoader__.load({
         if (found >= 0) {
           const entry = list[found]
           noteText.current = String(entry.text ?? '')
-          setNoteEdit({ id: noteSeq.current, side, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? annotColor })
+          setNoteEdit({
+            id: noteSeq.current,
+            side,
+            index: found,
+            x: entry.x,
+            y: entry.y,
+            text: noteText.current,
+            color: entry.color ?? annotColor,
+            fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+            fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+          })
           return
         }
         noteText.current = ''
-        setNoteEdit({ id: noteSeq.current, side, index: -1, x: point[0], y: point[1], text: '', color: annotColor })
+        setNoteEdit({
+          id: noteSeq.current,
+          side,
+          index: -1,
+          x: point[0],
+          y: point[1],
+          text: '',
+          color: annotColor,
+          fontSize: NOTE_SIZES[0],
+          fontFamily: 'normal',
+        })
       }
       const changeNote = text => {
         noteText.current = text
+      }
+      const changeNoteStyle = patch => {
+        setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
       const cancelNote = () => setNoteEdit(null)
       const saveNote = id => {
@@ -6306,7 +6433,13 @@ window.__ModuleLoader__.load({
             key: `text-${index}`,
             className: 'md-annot-text',
             title: annotTool === '' ? format('annotTextEditHint') : undefined,
-            style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+            style: {
+              left: `${entry.x * 100}%`,
+              top: `${entry.y * 100}%`,
+              color: entry.color ?? '#e0554a',
+              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+            },
             onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
             onDoubleClick: annotTool === ''
               ? event => {
@@ -6322,6 +6455,8 @@ window.__ModuleLoader__.load({
                   y: entry.y,
                   text: noteText.current,
                   color: entry.color ?? annotColor,
+                  fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                  fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
                 })
               }
               : undefined,
@@ -6333,6 +6468,7 @@ window.__ModuleLoader__.load({
             key: `note-${noteEdit.id}`,
             draft: noteEdit,
             onChange: changeNote,
+            onStyle: changeNoteStyle,
             onSave: () => saveNote(noteEdit.id),
             onCancel: cancelNote,
           })
@@ -7391,18 +7527,27 @@ window.__ModuleLoader__.load({
 .md-annot[data-tool="text"] { cursor: text; }
 .md-annot[data-tool="erase"] { cursor: cell; }
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-/* A text note sits on the white PDF page, so it needs its own backing: the chip
-   follows the theme (light or dark) and keeps any ink colour readable. */
-.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-border-l3) 55%, transparent); }
+/* A text note is transparent: it sits straight on the page, and a faint outline
+   appears only on hover, when it can be double-clicked for editing. */
+.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; padding: 0 2px; border-radius: 4px; }
 /* With no tool picked, a note is clickable so a double-click can edit it. */
 .md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; }
-.md-annot[data-tool=""] .md-annot-text:hover { box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary); }
-/* The in-place note editor: opaque enough to read over any page, and never
-   wider than the page box it sits in. */
-.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 3px; width: 240px; min-width: 140px; pointer-events: auto; }
-.md-note-input { box-sizing: border-box; width: 100%; min-height: 34px; max-height: 240px; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.4; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); box-shadow: 0 4px 14px color-mix(in srgb, #000 22%, transparent); outline: none; }
-.md-note-input::placeholder { color: var(--dsw-alias-label-secondary); }
-.md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 1px 6px; border-radius: 5px; color: var(--dsw-alias-label-secondary); background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent); }
+.md-annot[data-tool=""] .md-annot-text:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
+/* The in-place editor is transparent too: only the text and the caret show.
+   The style row never takes focus, so changing a font cannot blur-save. */
+.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; pointer-events: auto; }
+.md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px; border-radius: 6px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-border-l3) 55%, transparent); }
+.md-note-style-btn { min-width: 20px; height: 20px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.md-note-style-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.md-note-style-btn[data-on="true"] { color: var(--dsw-alias-label-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
+.md-note-style-sep { width: 1px; height: 14px; margin: 0 2px; background: var(--dsw-alias-border-l3); }
+.md-note-color { width: 14px; height: 14px; padding: 0; border: 1px solid color-mix(in srgb, #000 25%, transparent); border-radius: 50%; cursor: pointer; }
+.md-note-color[data-on="true"] { box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3px var(--dsw-alias-brand-primary); }
+.md-note-input { box-sizing: border-box; width: 100%; min-height: 28px; max-height: 240px; resize: vertical; line-height: 1.35; padding: 2px; border-radius: 4px; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; }
+.md-note-input::placeholder { color: var(--dsw-alias-label-secondary); opacity: 0.85; }
+/* A faint ring is the only chrome: it shows where typing goes, without a box. */
+.md-note-editor:focus-within .md-note-input { box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent); }
+.md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 0 2px; color: var(--dsw-alias-label-secondary); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 /* A picked tool must look picked: these are icon-only buttons outside the
    mode group, and without this the text tool read as a dead click. */
@@ -7935,14 +8080,35 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (found >= 0) {
           const entry = list[found]
           noteText.current = String(entry.text ?? '')
-          setNoteEdit({ id: noteSeq.current, index: found, x: entry.x, y: entry.y, text: noteText.current, color: entry.color ?? '#1f1f1f' })
+          setNoteEdit({
+            id: noteSeq.current,
+            index: found,
+            x: entry.x,
+            y: entry.y,
+            text: noteText.current,
+            color: entry.color ?? '#1f1f1f',
+            fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+            fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+          })
           return
         }
         noteText.current = ''
-        setNoteEdit({ id: noteSeq.current, index: -1, x: point[0], y: point[1], text: '', color: '#1f1f1f' })
+        setNoteEdit({
+          id: noteSeq.current,
+          index: -1,
+          x: point[0],
+          y: point[1],
+          text: '',
+          color: '#1f1f1f',
+          fontSize: NOTE_SIZES[0],
+          fontFamily: 'normal',
+        })
       }
       const changeNote = text => {
         noteText.current = text
+      }
+      const changeNoteStyle = patch => {
+        setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
       const cancelNote = () => setNoteEdit(null)
       const saveNote = id => {
@@ -8319,7 +8485,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         notes.map((entry, index) => h('div', {
           key: `text-${index}`,
           className: 'md-annot-text',
-          style: { left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, color: entry.color ?? '#e0554a' },
+          style: {
+            left: `${entry.x * 100}%`,
+            top: `${entry.y * 100}%`,
+            color: entry.color ?? '#e0554a',
+            fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+            fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+          },
         }, entry.text)))
 
       // The boxes: each one clips the translated page to its own region, exactly
@@ -8412,6 +8584,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               key: `note-${noteEdit.id}`,
               draft: noteEdit,
               onChange: changeNote,
+              onStyle: changeNoteStyle,
               onSave: () => saveNote(noteEdit.id),
               onCancel: cancelNote,
             }))
