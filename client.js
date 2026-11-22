@@ -3170,7 +3170,7 @@ window.__ModuleLoader__.load({
       // host Button's inline-flex chrome would flatten their internal grid, so
       // those stay on the native button while ordinary action buttons use the
       // host control.
-      const nativeOnly = /(?:^|\s)(md-card|md-collection|md-row|md-picker-row|md-file|md-note-style-btn|md-crumb|md-crumb-current|md-btn-ghost)(?:\s|$)/.test(className)
+      const nativeOnly = /(?:^|\s)(md-card|md-collection|md-row|md-picker-row|md-file|md-note-style-btn|md-note-color|md-rail-btn|md-icon-btn|md-crumb|md-crumb-current|md-btn-ghost)(?:\s|$)/.test(className)
       const { variant: _variant, size: _size, hostClassName: _hostClassName, className: _className, children, ...rest } = props
       const HostButton = ui !== null && ui !== undefined && ui.Button !== undefined
         && ui.Button !== null
@@ -4849,6 +4849,21 @@ window.__ModuleLoader__.load({
       return out
     }
     /**
+     * The page-fraction box of a text note. Notes saved before boxes existed
+     * only carry x/y, so they get a stable size derived from their text; the
+     * first resize writes explicit w/h without touching the text or style.
+     * @param {object} entry - a stored text note.
+     * @returns {{ x: number, y: number, w: number, h: number }} the box.
+     */
+    function noteBox(entry) {
+      const text = String(entry.text ?? '')
+      const fallbackWidth = Math.min(0.7, Math.max(0.18, text.length * 0.018))
+      const w = Number.isFinite(entry.w) && entry.w > 0 ? entry.w : fallbackWidth
+      const h = Number.isFinite(entry.h) && entry.h > 0 ? entry.h : 0.09
+      return { x: entry.x, y: entry.y, w, h }
+    }
+
+    /**
      * Translate one mark, used while dragging a selection.
      * @param {object} entry - the stored mark.
      * @param {number} dx - horizontal page delta.
@@ -4927,7 +4942,7 @@ window.__ModuleLoader__.load({
      * line breaks stay. The draft's colour/size/family are written only when it
      * names them, so older notes keep their exact stored shape.
      * @param {Array<object>} list - the page's annotations.
-     * @param {{ index: number, x: number, y: number, color?: string, fontSize?: number, fontFamily?: string }} draft - the edited note.
+     * @param {{ index: number, x: number, y: number, w?: number, h?: number, color?: string, fontSize?: number, fontFamily?: string, textAlign?: string }} draft - the edited note.
      * @param {string} raw - what the editor holds.
      * @returns {Array<object>} the new list (a copy; the input is untouched).
      */
@@ -4939,6 +4954,8 @@ window.__ModuleLoader__.load({
       if (typeof draft.fontSize === 'number' && Number.isFinite(draft.fontSize)) style.fontSize = draft.fontSize
       if (typeof draft.fontFamily === 'string' && draft.fontFamily !== '') style.fontFamily = draft.fontFamily
       if (typeof draft.textAlign === 'string' && draft.textAlign !== '') style.textAlign = draft.textAlign
+      if (Number.isFinite(draft.w) && draft.w > 0) style.w = draft.w
+      if (Number.isFinite(draft.h) && draft.h > 0) style.h = draft.h
       if (draft.index >= 0 && draft.index < next.length) {
         if (value === '') next.splice(draft.index, 1)
         else next[draft.index] = { ...next[draft.index], text: value, ...style }
@@ -5011,9 +5028,9 @@ window.__ModuleLoader__.load({
     function inkHit(entry, point, reachForWidth) {
       if (entry.kind === 'text') {
         const reach = reachForWidth(2)
-        const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
-        return point[0] >= entry.x - reach && point[0] <= entry.x + width + reach
-          && point[1] >= entry.y - 0.02 - reach && point[1] <= entry.y + 0.035 + reach
+        const box = noteBox(entry)
+        return point[0] >= box.x - reach && point[0] <= box.x + box.w + reach
+          && point[1] >= box.y - reach && point[1] <= box.y + box.h + reach
       }
       if (entry.kind === 'shape') {
         const reach = reachForWidth(Number(entry.width) || 2) + 0.012
@@ -5233,13 +5250,16 @@ window.__ModuleLoader__.load({
         if (save) props.onSave()
         else props.onCancel()
       }
-      // The editor sits on the PDF page: keep the box inside the page even when
-      // the click lands near the right edge (the note itself stays at its point).
-      const left = Math.min(0.66, Math.max(0, draft.x)) * 100
+      // The editor is the note box itself: drag-created boxes open at their
+      // exact size, and older point notes fall back to a small default box.
+      const left = Math.min(1, Math.max(0, draft.x))
+      const top = Math.min(1, Math.max(0, draft.y))
+      const width = Math.min(1 - left, Math.max(0.04, Number.isFinite(draft.w) ? draft.w : 0.38))
+      const height = Math.min(1 - top, Math.max(0.035, Number.isFinite(draft.h) ? draft.h : 0.09))
       return h('div', {
         className: 'md-note-editor',
         ref: editorRef,
-        style: { left: `${left}%`, top: `${Math.max(0, draft.y) * 100}%`, maxWidth: `calc(100% - ${left}% - 6px)` },
+        style: { left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` },
         onPointerDown: event => event.stopPropagation(),
         onPointerMove: event => event.stopPropagation(),
         onDoubleClick: event => event.stopPropagation(),
@@ -5810,6 +5830,7 @@ window.__ModuleLoader__.load({
       const storageKey = `pdfdesk:annots:${props.bookId}:${props.code}:${props.page}:${props.store}`
       const [strokes, setStrokes] = useState([])
       const [draft, setDraft] = useState(null)
+      const [textDraft, setTextDraft] = useState(null)
       const [note, setNote] = useState(null)
       const strokesRef = useRef([])
       const draftRef = useRef(null)
@@ -5824,9 +5845,9 @@ window.__ModuleLoader__.load({
       const pointOf = event => inkPointOf(event, event.currentTarget)
       const within = (entry, point) => {
         if (entry.kind === 'text') {
-          const width = Math.min(0.9, Math.max(0.08, String(entry.text ?? '').length * 0.018))
-          return point[0] >= entry.x - HIT && point[0] <= entry.x + width + HIT
-            && point[1] >= entry.y - 0.02 - HIT && point[1] <= entry.y + 0.035 + HIT
+          const box = noteBox(entry)
+          return point[0] >= box.x - HIT && point[0] <= box.x + box.w + HIT
+            && point[1] >= box.y - HIT && point[1] <= box.y + box.h + HIT
         }
         // This column keeps its fixed page-unit eraser: the shared segment test
         // only needs the reach this column has always used.
@@ -5897,6 +5918,7 @@ window.__ModuleLoader__.load({
         draftRef.current = null
         setDraft(null)
         setNote(null)
+        setTextDraft(null)
         noteText.current = ''
         undoStack.current = []
         redoStack.current = []
@@ -5913,17 +5935,25 @@ window.__ModuleLoader__.load({
         noteRef.current = value
         setNote(value)
       }
-      const openNote = point => {
+      const openNote = (point, box) => {
         const list = strokesRef.current
-        const index = list.findIndex(entry => entry.kind === 'text' && within(entry, point))
+        const index = box === undefined ? list.findIndex(entry => entry.kind === 'text' && within(entry, point)) : -1
         noteSeq.current += 1
         const entry = index >= 0 ? list[index] : null
         noteText.current = entry === null ? '' : String(entry.text ?? '')
+        const bounds = entry === null ? null : noteBox(entry)
+        const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
+        const x = box === undefined ? Math.min(point[0], Math.max(0, 1 - fallbackWidth - 0.02)) : Math.max(0, Math.min(1 - 0.02, box.x))
+        const y = box === undefined ? Math.min(point[1], 0.96) : Math.max(0, Math.min(1 - 0.02, box.y))
+        const w = bounds === null ? (box === undefined ? fallbackWidth : Math.max(0.04, Math.min(1 - x, box.w))) : bounds.w
+        const h = bounds === null ? (box === undefined ? 0.09 : Math.max(0.035, Math.min(1 - y, box.h))) : bounds.h
         setNoteBoth({
           id: noteSeq.current,
           index,
-          x: entry === null ? point[0] : entry.x,
-          y: entry === null ? point[1] : entry.y,
+          x: bounds === null ? x : bounds.x,
+          y: bounds === null ? y : bounds.y,
+          w,
+          h,
           text: noteText.current,
           color: entry === null ? props.color : (entry.color ?? props.color),
           fontSize: entry === null || !Number.isFinite(entry.fontSize) ? NOTE_SIZES[0] : entry.fontSize,
@@ -5957,10 +5987,9 @@ window.__ModuleLoader__.load({
           return
         }
         if (props.tool === 'text') {
-          // A click always starts a note where it lands: an editor left open is
-          // saved first, so a page can hold as many notes as the reader places.
+          // Press-drag draws a box; a click still opens a default box on release.
           if (noteRef.current !== null) saveNote(noteRef.current.id)
-          openNote(point)
+          setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
           return
         }
         setDraftBoth({ kind: 'stroke', points: [point], color: props.color, width: props.width })
@@ -5971,6 +6000,13 @@ window.__ModuleLoader__.load({
           if (point === null) return
           event.preventDefault()
           commit(strokesRef.current.filter(entry => !within(entry, point)))
+          return
+        }
+        if (textDraft !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          setTextDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
           return
         }
         const current = draftRef.current
@@ -5984,6 +6020,17 @@ window.__ModuleLoader__.load({
       }
       const up = () => {
         erasing.current = false
+        if (textDraft !== null) {
+          const box = textDraft
+          setTextDraft(null)
+          const x = Math.min(box.x0, box.x1)
+          const y = Math.min(box.y0, box.y1)
+          const w = Math.abs(box.x1 - box.x0)
+          const h = Math.abs(box.y1 - box.y0)
+          if (w > 0.012 && h > 0.012) openNote([x, y], { x, y, w, h })
+          else openNote([box.x0, box.y0])
+          return
+        }
         const current = draftRef.current
         if (current === null) return
         setDraftBoth(null)
@@ -6022,39 +6069,57 @@ window.__ModuleLoader__.load({
             vectorEffect: 'non-scaling-stroke',
             strokeLinecap: 'round',
             strokeLinejoin: 'round',
+          }),
+          textDraft === null ? null : h('rect', {
+            x: Math.min(textDraft.x0, textDraft.x1),
+            y: Math.min(textDraft.y0, textDraft.y1),
+            width: Math.abs(textDraft.x1 - textDraft.x0),
+            height: Math.abs(textDraft.y1 - textDraft.y0),
+            fill: 'none',
+            stroke: '#2f6df6',
+            strokeWidth: 1.5,
+            strokeDasharray: '5 4',
+            vectorEffect: 'non-scaling-stroke',
           })
         ),
-        notes.map((entry, index) => h('div', {
-          key: `note-${index}`,
-          className: 'md-annot-text',
-          title: props.tool === '' ? format('annotTextEditHint') : undefined,
-          style: {
-            left: `${entry.x * 100}%`,
-            top: `${entry.y * 100}%`,
-            color: entry.color ?? '#e0554a',
-            fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-            fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-          },
-          onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
-          onDoubleClick: props.tool === ''
-            ? event => {
-              event.preventDefault()
-              event.stopPropagation()
-              noteSeq.current += 1
-              noteText.current = String(entry.text ?? '')
-              setNoteBoth({
-                id: noteSeq.current,
-                index: strokesRef.current.indexOf(entry),
-                x: entry.x,
-                y: entry.y,
-                text: noteText.current,
-                color: entry.color ?? props.color,
-                fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
-                fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
-              })
-            }
-            : undefined,
-        }, entry.text)),
+        notes.map((entry, index) => {
+          const bounds = noteBox(entry)
+          const hasBox = Number.isFinite(entry.w) && entry.w > 0 && Number.isFinite(entry.h) && entry.h > 0
+          return h('div', {
+            key: `note-${index}`,
+            className: 'md-annot-text',
+            title: props.tool === '' ? format('annotTextEditHint') : undefined,
+            style: {
+              left: `${bounds.x * 100}%`,
+              top: `${bounds.y * 100}%`,
+              ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
+              color: entry.color ?? '#e0554a',
+              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+            },
+            onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
+            onDoubleClick: props.tool === ''
+              ? event => {
+                event.preventDefault()
+                event.stopPropagation()
+                noteSeq.current += 1
+                noteText.current = String(entry.text ?? '')
+                setNoteBoth({
+                  id: noteSeq.current,
+                  index: strokesRef.current.indexOf(entry),
+                  x: bounds.x,
+                  y: bounds.y,
+                  w: bounds.w,
+                  h: bounds.h,
+                  text: noteText.current,
+                  color: entry.color ?? props.color,
+                  fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                  fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+                })
+              }
+              : undefined,
+          }, entry.text)
+        }),
         note === null ? null : h(NoteEditor, {
           key: `note-${note.id}`,
           draft: note,
@@ -6654,6 +6719,8 @@ window.__ModuleLoader__.load({
       const [selection, setSelection] = useState(null)
       // A shape being dragged out, and a selected mark being moved.
       const [shapeDraft, setShapeDraft] = useState(null)
+      // A text box being dragged out before the editor opens.
+      const [textDraft, setTextDraft] = useState(null)
       const [drag, setDrag] = useState(null)
       const [resize, setResize] = useState(null)
       const [resizeEntry, setResizeEntry] = useState(null)
@@ -7165,6 +7232,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         setNoteEdit(null)
         setDraftStroke(null)
+        setTextDraft(null)
         setSelection(null)
         setDrag(null)
         setResize(null)
@@ -7200,19 +7268,24 @@ window.__ModuleLoader__.load({
       // pointer is opened for editing instead of stacking a second note on top.
       // `side` says which layer opened the draft, so the editor renders in that
       // column and never in the other one.
-      const openNote = (point, side) => {
+      const openNote = (point, side, box) => {
         const list = strokesRef.current
-        const found = list.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+        const found = box === undefined
+          ? list.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+          : -1
         noteSeq.current += 1
         if (found >= 0) {
           const entry = list[found]
+          const bounds = noteBox(entry)
           noteText.current = String(entry.text ?? '')
           setNoteEdit({
             id: noteSeq.current,
             side,
             index: found,
-            x: entry.x,
-            y: entry.y,
+            x: bounds.x,
+            y: bounds.y,
+            w: bounds.w,
+            h: bounds.h,
             text: noteText.current,
             color: entry.color ?? annotColor,
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
@@ -7221,13 +7294,22 @@ window.__ModuleLoader__.load({
           })
           return
         }
+        const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
+        const x = box === undefined
+          ? Math.min(point[0], Math.max(0, 1 - fallbackWidth - 0.02))
+          : Math.max(0, Math.min(1 - 0.02, box.x))
+        const y = box === undefined ? Math.min(point[1], 1 - 0.04) : Math.max(0, Math.min(1 - 0.02, box.y))
+        const w = box === undefined ? fallbackWidth : Math.max(0.04, Math.min(1 - x, box.w))
+        const h = box === undefined ? 0.09 : Math.max(0.035, Math.min(1 - y, box.h))
         noteText.current = ''
         setNoteEdit({
           id: noteSeq.current,
           side,
           index: -1,
-          x: point[0],
-          y: point[1],
+          x,
+          y,
+          w,
+          h,
           text: '',
           color: noteStyle.color,
           fontSize: noteStyle.fontSize,
@@ -7334,10 +7416,10 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'text') {
-          // A click always starts a note where it lands: an open editor is saved
-          // first, so a page can hold as many notes as the reader places.
+          // A press-drag draws the box; a simple click still opens a default
+          // box on release, so both PPT-style and point-style placement work.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          openNote(point, side)
+          setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1], side })
           return
         }
         setDraftStroke({ kind: 'stroke', points: [[point[0], point[1], strokePressure(event)]], color: annotColor, width: annotWidth })
@@ -7350,6 +7432,13 @@ window.__ModuleLoader__.load({
           if (point === null) return
           event.preventDefault()
           savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
+          return
+        }
+        if (textDraft !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setTextDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
           return
         }
         if (resize !== null) {
@@ -7404,6 +7493,17 @@ window.__ModuleLoader__.load({
       }
       const annotUp = () => {
         erasing.current = false
+        if (textDraft !== null) {
+          const draft = textDraft
+          setTextDraft(null)
+          const x = Math.min(draft.x0, draft.x1)
+          const y = Math.min(draft.y0, draft.y1)
+          const w = Math.abs(draft.x1 - draft.x0)
+          const h = Math.abs(draft.y1 - draft.y0)
+          if (w > 0.012 && h > 0.012) openNote([x, y], draft.side, { x, y, w, h })
+          else openNote([draft.x0, draft.y0], draft.side)
+          return
+        }
         if (resizeEntry !== null && resize !== null) {
           savePageAnnots(strokesRef.current.map((entry, index) => (index === resize.index ? resizeEntry : entry)))
           setResize(null)
@@ -7998,6 +8098,19 @@ window.__ModuleLoader__.load({
               vectorEffect: 'non-scaling-stroke',
             })
             : null,
+          textDraft !== null
+            ? h('rect', {
+              x: Math.min(textDraft.x0, textDraft.x1),
+              y: Math.min(textDraft.y0, textDraft.y1),
+              width: Math.abs(textDraft.x1 - textDraft.x0),
+              height: Math.abs(textDraft.y1 - textDraft.y0),
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: 1.5,
+              strokeDasharray: '5 4',
+              vectorEffect: 'non-scaling-stroke',
+            })
+            : null,
           strokes.map((stroke, index) => {
             if (stroke.kind === 'text' || stroke.kind === 'shape') return null
             const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
@@ -8071,67 +8184,80 @@ window.__ModuleLoader__.load({
         // Iterating `strokes` (not the filtered notes) keeps the index aligned
         // with the stored list, so a double-click edits the right entry.
         strokes.map((entry, index) => (entry.kind === 'text'
-          ? h('div', {
-            key: `text-${index}`,
-            className: selection !== null && selection.index === index ? 'md-annot-text md-annot-selected' : 'md-annot-text',
-            title: annotTool === '' ? format('annotTextEditHint') : undefined,
-            style: {
-              left: `${entry.x * 100}%`,
-              top: `${entry.y * 100}%`,
-              color: entry.color ?? '#e0554a',
-              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-              opacity: entry.opacity ?? 1,
-              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-            },
-            onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
-            onDoubleClick: annotTool === ''
-              ? event => {
-                event.preventDefault()
-                event.stopPropagation()
-                noteSeq.current += 1
-                noteText.current = String(entry.text ?? '')
-                setNoteEdit({
-                  id: noteSeq.current,
-                  side,
-                  index,
-                  x: entry.x,
-                  y: entry.y,
-                  text: noteText.current,
-                  color: entry.color ?? annotColor,
-                  fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
-                  fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
-                })
-              }
-              : undefined,
-          }, entry.text)
-          : null)),
-        selection !== null && selectedEntry !== undefined && selectedEntry.kind === 'shape' && annotTool === 'select'
-          ? h('div', { className: 'md-shape-handles' },
-            (selectedEntry.shape === 'line' || selectedEntry.shape === 'arrow'
-              ? [['start', selectedEntry.x0, selectedEntry.y0], ['end', selectedEntry.x1, selectedEntry.y1]]
-              : [
-                ['nw', selectedEntry.x, selectedEntry.y],
-                ['ne', selectedEntry.x + selectedEntry.w, selectedEntry.y],
-                ['sw', selectedEntry.x, selectedEntry.y + selectedEntry.h],
-                ['se', selectedEntry.x + selectedEntry.w, selectedEntry.y + selectedEntry.h],
-              ]).map(item => h('div', {
-              key: item[0],
-              className: 'md-shape-handle',
-              style: { left: `${item[1] * 100}%`, top: `${item[2] * 100}%` },
-              onPointerDown: event => {
-                event.preventDefault()
-                event.stopPropagation()
-                const box = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
-                if (box === undefined || box === null) return
-                const point = [
-                  Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)),
-                  Math.min(1, Math.max(0, (event.clientY - box.top) / box.height)),
-                ]
-                setResize({ index: selection.index, corner: item[0], start: point, original: selectedEntry })
-                setResizeEntry(selectedEntry)
+          ? (() => {
+            const shown = drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry
+            const bounds = noteBox(shown)
+            const hasBox = Number.isFinite(shown.w) && shown.w > 0 && Number.isFinite(shown.h) && shown.h > 0
+            return h('div', {
+              key: `text-${index}`,
+              className: selection !== null && selection.index === index ? 'md-annot-text md-annot-selected' : 'md-annot-text',
+              title: annotTool === '' ? format('annotTextEditHint') : undefined,
+              style: {
+                left: `${bounds.x * 100}%`,
+                top: `${bounds.y * 100}%`,
+                ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
+                color: entry.color ?? '#e0554a',
+                fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+                fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+                opacity: entry.opacity ?? 1,
+                textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
               },
-            })))
+              onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
+              onDoubleClick: annotTool === ''
+                ? event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  noteSeq.current += 1
+                  noteText.current = String(entry.text ?? '')
+                  setNoteEdit({
+                    id: noteSeq.current,
+                    side,
+                    index,
+                    x: bounds.x,
+                    y: bounds.y,
+                    w: bounds.w,
+                    h: bounds.h,
+                    text: noteText.current,
+                    color: entry.color ?? annotColor,
+                    fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                    fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+                    textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+                  })
+                }
+                : undefined,
+            }, entry.text)
+          })()
+          : null)),
+        selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text') && annotTool === 'select'
+          ? (() => {
+            const box = selectedEntry.kind === 'text' ? noteBox(selectedEntry) : selectedEntry
+            return h('div', { className: 'md-shape-handles' },
+              (selectedEntry.kind === 'shape' && (selectedEntry.shape === 'line' || selectedEntry.shape === 'arrow')
+                ? [['start', box.x0, box.y0], ['end', box.x1, box.y1]]
+                : [
+                  ['nw', box.x, box.y],
+                  ['ne', box.x + box.w, box.y],
+                  ['sw', box.x, box.y + box.h],
+                  ['se', box.x + box.w, box.y + box.h],
+                ]).map(item => h('div', {
+                key: item[0],
+                className: 'md-shape-handle',
+                style: { left: `${item[1] * 100}%`, top: `${item[2] * 100}%` },
+                onPointerDown: event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const annot = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
+                  if (annot === undefined || annot === null) return
+                  const point = [
+                    Math.min(1, Math.max(0, (event.clientX - annot.left) / annot.width)),
+                    Math.min(1, Math.max(0, (event.clientY - annot.top) / annot.height)),
+                  ]
+                  const original = selectedEntry.kind === 'text' ? { ...selectedEntry, ...box } : box
+                  setResize({ index: selection.index, corner: item[0], start: point, original })
+                  setResizeEntry(original)
+                },
+              })))
+          })()
           : null,
         noteEdit === null || noteEdit.side !== side
           ? null
@@ -9483,7 +9609,8 @@ window.__ModuleLoader__.load({
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
 .md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
-.md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; border-radius: 3px; }
+.md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: 0; }
+.md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
 .md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
@@ -9519,18 +9646,18 @@ window.__ModuleLoader__.load({
 .md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
 .md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid var(--dsw-alias-brand-primary); border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
-.md-annot[data-tool="text"] { cursor: text; }
+.md-annot[data-tool="text"] { cursor: crosshair; }
 .md-annot[data-tool="erase"] { cursor: cell; }
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 /* A text note is transparent: it sits straight on the page, and a faint outline
    appears only on hover, when it can be double-clicked for editing. */
-.md-annot-text { position: absolute; max-width: 70%; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; pointer-events: none; padding: 0 2px; border-radius: 4px; }
+.md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; }
 /* With no tool picked, a note is clickable so a double-click can edit it. */
 .md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; }
-.md-annot[data-tool=""] .md-annot-text:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
+.md-annot[data-tool=""] .md-annot-text:hover { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 /* The in-place editor is transparent too: only the text and the caret show.
    The style row never takes focus, so changing a font cannot blur-save. */
-.md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; padding: 2px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); border-radius: 6px; pointer-events: auto; }
+.md-note-editor { position: absolute; z-index: 8; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 1px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); border-radius: 0; pointer-events: auto; }
 .md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 0; background: transparent; box-shadow: none; }
 /* Text parameters now live in the toolbar: a nested menu, not a box on the page. */
 .md-note-style-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -9545,7 +9672,7 @@ window.__ModuleLoader__.load({
 .md-note-style-sep { width: 1px; height: 14px; margin: 0 2px; background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
 .md-note-color { width: 14px; height: 14px; padding: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 50%; cursor: pointer; }
 .md-note-color[data-on="true"] { box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3px var(--dsw-alias-brand-primary); }
-.md-note-input { box-sizing: border-box; width: 100%; min-height: 28px; max-height: 240px; overflow: auto; line-height: 1.35; padding: 2px; border-radius: 4px; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; }
+.md-note-input { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; max-height: none; overflow: auto; line-height: 1.35; padding: 2px; border-radius: 0; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; resize: none; }
 .md-note-input::placeholder { color: var(--dsw-alias-label-secondary); opacity: 0.85; }
 .md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 0 2px; color: var(--dsw-alias-label-secondary); text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
