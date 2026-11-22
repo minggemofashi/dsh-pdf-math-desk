@@ -1,0 +1,235 @@
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Button.module.css */
+.Button_button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  padding: 0 14px;
+}
+.Button_button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.Button_md {
+  height: 36px;
+}
+.Button_sm {
+  height: 28px;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 0 10px;
+  border-radius: var(--dsw-radius-sm);
+}
+.Button_primary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+@media (hover: hover) {
+  .Button_primary:hover:not(:disabled) {
+    background: var(--dsw-alias-button-primary-hover);
+  }
+  .Button_ghost:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+.Button_ghost:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.Button_outline {
+  border: 0.5px solid transparent;
+  background: transparent;
+  box-shadow: inset 0 0 0 var(--dsh-hairline-width, 0.5px) var(--dsh-button-outline-color, var(--dsw-alias-border-l3));
+}
+@media (hover: hover) {
+  .Button_outline:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+.Button_toolbar {
+  background: var(--dsw-alias-button-tool-bar-fill);
+}
+@media (hover: hover) {
+  .Button_toolbar:hover:not(:disabled) {
+    background: var(--dsw-alias-button-tool-bar-hover);
+  }
+}
+.Button_icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Input.module.css */
+.Input_wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.Input_wrap:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+.Input_icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+.Input_input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+.Input_input::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Modal.module.css */
+.Modal_root {
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, var(--dsh-frame-overlay-top, 24px)) 24px;
+}
+.Modal_mask {
+  position: absolute;
+  inset: var(--dsh-frame-chrome-top, 0px) 0 0;
+  backdrop-filter: var(--dsw-mask-blur);
+}
+.Modal_mask::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+  animation: Modal_modalEnter var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+.Modal_dialog {
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(380px, 100%);
+  padding: 0 0 24px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--dsw-radius-panel);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-prominent);
+  animation: Modal_modalEnter var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+@keyframes Modal_modalEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .Modal_mask::after,
+  .Modal_dialog {
+    animation: none;
+  }
+}
+.Modal_dialog:focus {
+  outline: none;
+}
+.Modal_content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.Modal_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 22px 14px 12px 24px;
+}
+.Modal_title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.Modal_warning .Modal_title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.Modal_warningIcon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+.Modal_warning .Modal_body {
+  margin-top: 0;
+}
+.Modal_close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+@media (hover: hover) {
+  .Modal_close:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+.Modal_description {
+  margin: 0;
+  padding: 0 24px;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-primary);
+}
+.Modal_body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 20px;
+  padding: 0 24px;
+}
+.Modal_footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 24px;
+}

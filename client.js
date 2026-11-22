@@ -23,6 +23,84 @@ window.__ModuleLoader__.load({
     const useMemo = React.useMemo
     const useRef = React.useRef
 
+    // Official host primitives are build-time source in DSH. The build script
+    // compiles the subset we use into one CJS file; load it with this instance's
+    // require so React and React DOM are the host's copies, never a duplicate.
+    let hostUi = null
+    let hostUiPromise = null
+    const hostUiWaiters = new Set()
+
+    function hostComponent(name) {
+      if (hostUi === null) return null
+      const value = hostUi[name]
+      if (typeof value === 'function') return value
+      if (value !== null && value !== undefined && typeof value === 'object' && value.$$typeof) return value
+      return null
+    }
+
+    function notifyHostUi() {
+      for (const waiter of hostUiWaiters) {
+        try { waiter() } catch { /* a stale component */ }
+      }
+    }
+
+    async function loadHostUi() {
+      if (hostUi !== null) return hostUi
+      if (hostUiPromise !== null) return await hostUiPromise
+      hostUiPromise = (async () => {
+        try {
+          const [codeResponse, cssResponse] = await Promise.all([
+            window.fetch('/pdfdesk/vendor/host-ui.cjs', { credentials: 'same-origin' }),
+            window.fetch('/pdfdesk/vendor/host-ui.css', { credentials: 'same-origin' }),
+          ])
+          if (!codeResponse.ok) return null
+          const code = await codeResponse.text()
+          const module = { exports: {} }
+          // esbuild emitted a CJS bundle. React and React DOM stay external and
+          // resolve through the host module table.
+          const execute = new Function('require', 'module', 'exports', 'process', code)
+          execute(require, module, module.exports, { env: {} })
+          if (cssResponse.ok) {
+            const css = await cssResponse.text()
+            if (css !== '') {
+              const style = document.createElement('style')
+              style.id = 'pdfdesk-host-ui'
+              style.textContent = css
+              document.head.appendChild(style)
+            }
+          }
+          hostUi = module.exports
+          notifyHostUi()
+          return hostUi
+        } catch {
+          hostUi = null
+          return null
+        }
+      })()
+      return await hostUiPromise
+    }
+
+    /**
+     * Subscribe a component to the host-primitives load.
+     * @returns {object | null} the loaded primitives, or null while falling back.
+     */
+    function useHostUi() {
+      const [, setTick] = React.useState(0)
+      React.useEffect(() => {
+        let alive = true
+        const bump = () => {
+          if (alive) setTick(value => value + 1)
+        }
+        hostUiWaiters.add(bump)
+        void loadHostUi().then(bump)
+        return () => {
+          alive = false
+          hostUiWaiters.delete(bump)
+        }
+      }, [])
+      return hostUi
+    }
+
     const PANEL_ID = 'pdfdesk'
     const NS = 'pdfDesk'
     const ENDPOINT = 'pdfdesk/'
@@ -648,6 +726,8 @@ window.__ModuleLoader__.load({
       updateMarketFailed: '更新失败：{message}',
       updateRetry: '重试',
       updateDownload: '下载新版本 zip',
+      hostUiLoaded: '界面组件：官方宿主 primitives',
+      hostUiFallback: '界面组件：本地回退（宿主 primitives 未加载）',
       updateNoRelease: '仓库还没有发布版本',
       updateFailed: '检查更新失败（网络或代理问题），可稍后重试',
       pdfPassword: '这个 PDF 有密码或加密，暂时打不开——请先解除保护再放进书库',
@@ -1189,6 +1269,8 @@ window.__ModuleLoader__.load({
       updateMarketFailed: 'Update failed: {message}',
       updateRetry: 'Retry',
       updateDownload: 'Download the new zip',
+      hostUiLoaded: 'UI components: official host primitives',
+      hostUiFallback: 'UI components: local fallback (host primitives not loaded)',
       updateNoRelease: 'The repository has no release yet',
       updateFailed: 'Update check failed (network or proxy) — try again later',
       pdfPassword: 'This PDF is password-protected or encrypted, so it cannot be opened yet — remove the protection first',
@@ -3083,7 +3165,54 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Button adapter: host Button when the primitives bundle is available, the
+     * workbench's own button otherwise. They take the same business props.
+     * @param {object} props - variant, size, className, disabled, title, onClick, children.
+     * @returns {import('react').ReactElement} the button.
+     */
+    function KitButton(props) {
+      const ui = useHostUi()
+      const className = typeof props.className === 'string' ? props.className : ''
+      const variant = props.variant !== undefined
+        ? props.variant
+        : className.includes('md-btn-primary')
+          ? 'primary'
+          : className.includes('md-btn-ghost')
+            ? 'ghost'
+            : 'outline'
+      const size = props.size !== undefined
+        ? props.size
+        : className.includes('md-btn-small')
+          ? 'sm'
+          : 'md'
+      const HostButton = ui !== null && ui !== undefined && typeof ui.Button === 'function' ? ui.Button : null
+      if (HostButton !== null) {
+        return h(HostButton, {
+          variant,
+          size,
+          className: props.hostClassName,
+          disabled: props.disabled === true,
+          title: props.title,
+          type: props.type === undefined ? 'button' : props.type,
+          'aria-label': props['aria-label'],
+          'aria-pressed': props['aria-pressed'],
+          onClick: props.onClick,
+        }, props.children)
+      }
+      return h('button', {
+        type: props.type === undefined ? 'button' : props.type,
+        className: props.className,
+        disabled: props.disabled === true,
+        title: props.title,
+        'aria-label': props['aria-label'],
+        'aria-pressed': props['aria-pressed'],
+        onClick: props.onClick,
+      }, props.children)
+    }
+
     function SettingsDialog(props) {
+      const hostUi = useHostUi()
       const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       // The dialog is paged: reading switches, the keyboard table, the toolchain
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
@@ -3310,8 +3439,8 @@ window.__ModuleLoader__.load({
           type: 'button', className: 'md-btn md-btn-small',
           onClick: () => openLink(GITHUB_URL),
         }, format('githubRepo')),
-        h('button', {
-          type: 'button', className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
+        h(KitButton, {
+          className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
           title: format('updateHint'),
           onClick: props.onCheckUpdate,
         }, props.updateBusy === true ? format('updateChecking') : format('updateCheck')),
@@ -3321,8 +3450,8 @@ window.__ModuleLoader__.load({
             h('p', { className: 'md-shelf-sub' },
               `v${props.updateInfo.current} → v${props.updateInfo.version}`),
             props.marketUpdate !== null
-              ? h('button', {
-                type: 'button', className: 'md-btn md-btn-small',
+              ? h(KitButton, {
+                className: 'md-btn md-btn-small',
                 disabled: props.updateBusy === true,
                 onClick: props.onInstallUpdate,
               }, format('updateNow'))
@@ -3338,7 +3467,8 @@ window.__ModuleLoader__.load({
           ),
         props.updateOperation === null
           ? null
-          : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message)
+          : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message),
+        h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
       )
       return h(React.Fragment, null,
         h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),

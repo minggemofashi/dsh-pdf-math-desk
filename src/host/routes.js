@@ -56,6 +56,8 @@ function vendorContentType(name) {
   if (name === 'fonts/zhhand/OFL.txt') return 'text/plain; charset=utf-8'
   if (/^rough\/[^/]+\.mjs$/.test(name)) return 'text/javascript; charset=utf-8'
   if (name === 'rough/LICENSE') return 'text/plain; charset=utf-8'
+  if (name === 'host-ui.cjs') return 'text/javascript; charset=utf-8'
+  if (name === 'host-ui.css') return 'text/css; charset=utf-8'
   return null
 }
 

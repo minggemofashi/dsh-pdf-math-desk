@@ -10,6 +10,11 @@ if ($Version -eq '') {
 $distRoot = Join-Path (Split-Path -Parent $root) 'dist'
 $pkg = Join-Path $distRoot "dsh-pdf-workbench-$Version"
 Write-Host "packaging $Version -> $pkg"
+foreach ($required in @('vendor\host-ui.cjs', 'vendor\host-ui.css')) {
+    if (-not (Test-Path (Join-Path $root $required))) {
+        throw "缺少 $required；先运行 npm install 和 npm run build:host-ui"
+    }
+}
 if (Test-Path $distRoot) { Remove-Item $distRoot -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $pkg | Out-Null
 Get-ChildItem $root -Force |

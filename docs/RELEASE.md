@@ -28,8 +28,17 @@ node .dsh-scratch\host-test.mjs
 
 ## 1. GitHub Release（默认渠道）
 
+先构建宿主 primitives 产物（构建依赖只在开发时安装，不随插件安装）：
+
 ```powershell
 cd math-desk
+npm install
+npm run build:host-ui
+```
+
+然后构建 zip：
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\build-dist.ps1
 # 产出 ..\dist\dsh-pdf-workbench-X.Y.Z.zip
 

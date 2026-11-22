@@ -47,6 +47,14 @@
   "engines": {
     "dsh": ">=0.2.2-rc.5"
   },
+  "scripts": {
+    "build:host-ui": "node scripts/build-host-ui.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.5",
+    "clsx": "^2.1.1",
+    "esbuild": "^0.25.0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
