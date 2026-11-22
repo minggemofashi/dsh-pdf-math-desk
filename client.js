@@ -244,6 +244,8 @@ window.__ModuleLoader__.load({
       annotClear: '清空标注',
       annotTools: '标注工具',
       toolSettings: '工具设置',
+      toolPanelSelectHint: '点中页面上的元素后，属性和操作显示在这里。',
+      toolPanelMaskHint: '在页面上拖出要显示译文的区域；已有框可以直接拖动或缩放。',
       annotSelect: '选择',
       shapeLine: '直线',
       shapeArrow: '箭头',
@@ -730,6 +732,8 @@ window.__ModuleLoader__.load({
       annotClear: 'Clear',
       annotTools: 'Annotation tools',
       toolSettings: 'Tool settings',
+      toolPanelSelectHint: 'Pick an element on the page; its properties and actions appear here.',
+      toolPanelMaskHint: 'Drag a region on the page to reveal the translation inside it; existing boxes can be moved or resized.',
       annotSelect: 'Select',
       shapeLine: 'Line',
       shapeArrow: 'Arrow',
@@ -4058,6 +4062,19 @@ window.__ModuleLoader__.load({
     const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
     /** The shape tools; each saves one `kind: 'shape'` entry per page. */
     const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse', 'diamond']
+    /** Locale label for each rail tool, used by the hover settings panel. */
+    const TOOL_LABELS = {
+      select: 'annotSelect',
+      pen: 'annotPen',
+      erase: 'annotErase',
+      text: 'annotText',
+      mask: 'overlayToggle',
+      line: 'shapeLine',
+      arrow: 'shapeArrow',
+      rect: 'shapeRect',
+      diamond: 'shapeDiamond',
+      ellipse: 'shapeEllipse',
+    }
     // rough.js draws the shapes with Excalidraw's wobbly hand. It is bundled
     // under vendor/ and imported lazily: a missing file only loses the sketch.
     const ROUGH_VW = 1000
@@ -5905,8 +5922,17 @@ window.__ModuleLoader__.load({
       // Vertical centre of the tool button that opened the panel, so the panel
       // sits beside that icon instead of at the middle of the page.
       const [railAnchor, setRailAnchor] = useState(null)
+      // The tool the pointer is on, not the selected tool: hovering the text
+      // icon must show text controls even while the pen is still selected.
+      const [panelTool, setPanelTool] = useState('')
       const railPanelTimer = useRef(null)
-      const beginRailPanel = element => {
+      const railCloseTimer = useRef(null)
+      const beginRailPanel = (element, toolId) => {
+        if (railCloseTimer.current !== null) {
+          clearTimeout(railCloseTimer.current)
+          railCloseTimer.current = null
+        }
+        setPanelTool(toolId)
         const wrap = element.closest('.md-rail-wrap')
         if (wrap !== null) {
           const button = element.getBoundingClientRect()
@@ -5915,15 +5941,18 @@ window.__ModuleLoader__.load({
         }
         if (railPanel) return
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
-        railPanelTimer.current = setTimeout(() => setRailPanel(true), 550)
+        railPanelTimer.current = setTimeout(() => setRailPanel(true), 400)
       }
       const leaveRail = () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
         railPanelTimer.current = null
-        setRailPanel(false)
+        // Keep the panel long enough to cross the small gap and use a slider.
+        if (railCloseTimer.current !== null) clearTimeout(railCloseTimer.current)
+        railCloseTimer.current = setTimeout(() => setRailPanel(false), 700)
       }
       useEffect(() => () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
+        if (railCloseTimer.current !== null) clearTimeout(railCloseTimer.current)
       }, [])
       const onRailPointer = event => {
         const rect = event.currentTarget.getBoundingClientRect()
@@ -6526,7 +6555,7 @@ window.__ModuleLoader__.load({
         'aria-pressed': annotTool === id ? 'true' : 'false',
         title: format(labelKey),
         'aria-label': format(labelKey),
-        onPointerEnter: event => beginRailPanel(event.currentTarget),
+        onPointerEnter: event => beginRailPanel(event.currentTarget, id),
         onClick: () => setAnnotTool(value => (value === id ? '' : id)),
       }, annotIcon(path))
       const erasing = useRef(false)
@@ -7824,36 +7853,43 @@ window.__ModuleLoader__.load({
               onClick: clearAnnots,
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'))
           ),
-          railPanel && selection === null
+          railPanel && selection === null && panelTool !== ''
             ? h('div', { className: 'md-rail-panel', 'data-side': railSide, style: railAnchor === null ? undefined : { top: `${railAnchor}px` } },
-              h('div', { className: 'md-rail-panel-title' }, format('toolSettings')),
-              annotTool === 'text'
+              h('div', { className: 'md-rail-panel-title' },
+                `${format('toolSettings')} · ${format(TOOL_LABELS[panelTool] ?? 'annotPen')}`),
+              panelTool === 'text'
                 ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
-                : h(React.Fragment, null,
-                  h('div', { className: 'md-note-style-row' },
-                    h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                    ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
-                      key: color,
-                      type: 'button',
-                      className: 'md-note-color',
-                      style: { background: color },
-                      'data-on': annotColor === color ? 'true' : undefined,
-                      'aria-label': color,
-                      onMouseDown: event => event.preventDefault(),
-                      onClick: () => setAnnotColor(color),
-                    }))
-                  ),
-                  h('div', { className: 'md-note-style-row' },
-                    h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
-                    h('input', {
-                      type: 'range', min: 1, max: 10, step: 1,
-                      value: annotWidth,
-                      'aria-label': format('annotWidthHint'),
-                      onChange: event => setAnnotWidth(Number(event.target.value) || 2),
-                    }),
-                    h('span', { className: 'md-note-size-value' }, `${annotWidth}px`)
-                  )
-                )
+                : panelTool === 'select'
+                  ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelSelectHint'))
+                  : panelTool === 'mask'
+                    ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
+                    : panelTool === 'erase'
+                      ? h('p', { className: 'md-rail-panel-hint' }, format('annotEraseHint'))
+                      : h(React.Fragment, null,
+                        h('div', { className: 'md-note-style-row' },
+                          h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                          ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                            key: color,
+                            type: 'button',
+                            className: 'md-note-color',
+                            style: { background: color },
+                            'data-on': annotColor === color ? 'true' : undefined,
+                            'aria-label': color,
+                            onMouseDown: event => event.preventDefault(),
+                            onClick: () => setAnnotColor(color),
+                          }))
+                        ),
+                        h('div', { className: 'md-note-style-row' },
+                          h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                          h('input', {
+                            type: 'range', min: 1, max: 10, step: 1,
+                            value: annotWidth,
+                            'aria-label': format('annotWidthHint'),
+                            onChange: event => setAnnotWidth(Number(event.target.value) || 2),
+                          }),
+                          h('span', { className: 'md-note-size-value' }, `${annotWidth}px`)
+                        )
+                      )
             )
             : null
         ),
@@ -8649,10 +8685,11 @@ window.__ModuleLoader__.load({
 .md-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .md-reader[data-rail="right"] .md-reader-stage { padding-right: 58px; }
 .md-reader[data-rail="left"] .md-reader-stage { padding-left: 58px; }
-.md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 260px; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, .16); z-index: 42; pointer-events: auto; }
-.md-rail-panel[data-side="right"] { right: 44px; }
-.md-rail-panel[data-side="left"] { left: 44px; }
+.md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 260px; max-height: calc(100vh - 110px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, .16); z-index: 42; pointer-events: auto; }
+.md-rail-panel[data-side="right"] { right: 28px; }
+.md-rail-panel[data-side="left"] { left: 28px; }
 .md-rail-panel-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); padding-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.md-rail-panel-hint { margin: 0; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
 /* The right-side preview gets the same edge rail, but only its core tools. */
 .md-side-rail-wrap { top: 44px; bottom: 0; }
 .md-side-rail-tab { top: calc(50% + 22px); }
