@@ -8422,7 +8422,7 @@ window.__ModuleLoader__.load({
 .md-library-add { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-card-fill); }
 /* Library landing: generous whitespace, a pixel whale in the hero, and a sticky
    action bar that only appears once the hero has scrolled away. */
-.md-home { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; max-width: 1120px; margin: 0 auto; padding: 0 28px 72px; box-sizing: border-box; }
+.md-home { position: relative; display: flex; flex-direction: column; gap: 0; max-width: 1120px; margin: 0 auto; padding: 0 28px 72px; box-sizing: border-box; }
 .md-home > .md-shelf-head { order: 2; margin: 4px 0 18px; }
 .md-home > .md-library-list, .md-home > .md-alert, .md-home > p { order: 3; }
 .md-home > .md-library-add { order: 4; margin-top: 32px; }
@@ -8452,14 +8452,14 @@ window.__ModuleLoader__.load({
 .md-home .md-library .md-path { margin-top: 10px; font-size: 12px; }
 .md-home .md-library-actions { position: absolute; top: 14px; right: 14px; opacity: 0; transition: opacity .16s ease; }
 .md-home .md-library:hover .md-library-actions, .md-home .md-library:focus-within .md-library-actions { opacity: 1; }
-.md-home .md-library-add { max-width: none; width: auto; justify-self: stretch; padding: 22px 0 0; border: 0; border-top: 1px solid var(--dsw-alias-border-l2); border-radius: 0; background: transparent; gap: 10px; }
+.md-home .md-library-add { max-width: none; width: 100%; padding: 14px 16px; border-radius: 16px; gap: 10px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); }
 .md-add-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .md-add-head .md-subheading { margin: 0; font-size: 14px; font-weight: 600; }
 .md-add-head .md-shelf-sub { font-size: 11.5px; }
 .md-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-add-row .md-input { height: 34px; box-sizing: border-box; font-size: 12.5px; }
 .md-add-path { flex: 1 1 320px; min-width: 200px; }
-.md-add-name { flex: 0 0 160px; width: 160px; }
+.md-add-name { flex: 0 1 150px; width: 150px; }
 .md-add-row .md-btn { height: 34px; }
 .md-add-submit { margin-left: auto; }
 .md-home-tools-head { display: flex; flex-direction: column; gap: 4px; }
