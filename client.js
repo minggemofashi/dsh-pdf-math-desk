@@ -2827,6 +2827,9 @@ window.__ModuleLoader__.load({
           h('h2', { className: 'md-heading' }, format('librariesTitle')),
           h('p', { className: 'md-shelf-sub' }, format('librariesHint'))
         ),
+        // The current root is useful even when it cannot be read: it is the path
+        // the user has to fix or replace.
+        props.libraryDir === '' ? null : h('p', { className: 'md-shelf-sub' }, format('libraryAt', { dir: props.libraryDir })),
         props.libraries.length === 0
           ? h('p', { className: 'md-shelf-sub' }, format('librariesHint'))
           : h('ul', { className: 'md-library-list' },
@@ -11563,7 +11566,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const partialFiles = skippedFiles + unparsedFiles
 
       let body
-      if (blockingError !== '') {
+      if (blockingError !== '' && (catalog === null || work === null)) {
         body = h('div', { className: 'md-state md-state-error', role: 'alert' },
           h('div', { className: 'md-empty-title' }, format('loadFailed')),
           h('p', { className: 'md-state-detail' }, blockingError),
@@ -11573,14 +11576,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         )
       } else if (catalog === null || work === null) {
         body = h('div', { className: 'md-state', role: 'status' }, format('loading'))
-      } else if (work.view === 'libraries') {
+      } else if (work.view === 'libraries' || (problemText !== '' && book === null)) {
+        // An unreadable library is not a dead end: keep the libraries page, show
+        // its path and the reason, and let the user add or pick another root.
         body = h(LibrariesPage, {
           libraries: libs.items,
           activeId: libs.activeId,
           envTools,
           canRender: envTools.python && envTools.tex,
           busy: libBusy,
-          error: libError,
+          error: libError !== '' ? libError : problemText,
           onUse: activateLibrary,
           onRemove: removeLibrary,
           onAdd: addLibrary,
@@ -11594,6 +11599,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onCopyPrompt: copyAiPrompt,
           libraryDir: library === null ? (catalog === null ? '' : catalog.libraryDir) : library.libraryDir,
         })
+      } else if (blockingError !== '') {
+        body = h('div', { className: 'md-state md-state-error', role: 'alert' },
+          h('div', { className: 'md-empty-title' }, format('loadFailed')),
+          h('p', { className: 'md-state-detail' }, blockingError),
+          h('div', { className: 'md-state-actions' },
+            h('button', { type: 'button', className: 'md-btn', onClick: reload }, format('retry'))
+          )
+        )
       } else if (book !== null) {
         body = h(BookSheet, {
           book,
