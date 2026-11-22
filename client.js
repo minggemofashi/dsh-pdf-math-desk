@@ -310,6 +310,7 @@ window.__ModuleLoader__.load({
       sessionUnresolved: '{n} 个会话标题没对上书或章',
       sessionUnavailable: '会话服务不可用',
       sessionCreated: '已新建：{title}',
+      sessionQuestionLead: '下面是我的问题：',
       sessionResumed: '接着「{mode}」会话（上下文 {pct}%）',
       sessionContinued: '上下文已用 {pct}%，已另起续会话',
       sessionCreateFailed: '新建会话失败，检查工作区设置后重试',
@@ -727,6 +728,7 @@ window.__ModuleLoader__.load({
       sessionUnresolved: '{n} session titles matched no book or chapter',
       sessionUnavailable: 'The session service is unavailable',
       sessionCreated: 'Created: {title}',
+      sessionQuestionLead: 'My question:',
       sessionResumed: 'Continuing the "{mode}" conversation (context {pct}%)',
       sessionContinued: 'Context was {pct}% full, so a continuation was started',
       sessionCreateFailed: 'Could not create the session — check the workspace and retry',
@@ -10132,6 +10134,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // Every new conversation starts knowing which book, chapter and PDF it
           // belongs to; a continuation also starts from the chapter outline.
           const parts = [seedFor(book, chapter)]
+          // The Socratic persona is a local-only workflow file, used for Q&A only.
+          if (mode === 'qa') {
+            try {
+              const payload = await request('GET', 'qa-persona')
+              const persona = typeof payload.persona === 'string' ? payload.persona.trim() : ''
+              if (persona !== '') parts.unshift(persona)
+            } catch {
+              // no local persona file (or offline): the session works as before
+            }
+          }
           if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
           if (catalog !== null && typeof catalog.libraryDir === 'string' && catalog.libraryDir !== '') {
             parts.push(`产物目录：${catalog.libraryDir}\\产物\\${book.id}\\${chapter.code}\\`)
@@ -10144,7 +10156,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               hasOutline = true
             }
           }
-          const draft = parts.join('\n\n')
+          // End every preset prompt with a lead-in: some hosts mishandle a prompt
+          // that ends without a separator, and this line gives the user a cursor.
+          const draft = `${parts.join('\n\n')}\n\n${format('sessionQuestionLead')}`
           let draftReference = null
           const prefill = await beginPrefill(sessionId, draft)
           if (prefill.applied) {

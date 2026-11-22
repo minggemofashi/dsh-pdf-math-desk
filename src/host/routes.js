@@ -267,6 +267,22 @@ async function activeLibrary() {
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname.replace(/\/+$/, '')
 
+      if (path === `${PREFIX}/qa-persona`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        // The Socratic persona is a local workflow file, never shipped with the
+        // plugin: `~/.dsh/mathdesk/qa-persona.md`. A missing file is simply empty.
+        try {
+          const raw = await readFile(join(config.dataDir, 'qa-persona.md'), 'utf8')
+          sendJson(response, 200, { persona: raw })
+        } catch {
+          sendJson(response, 200, { persona: '' })
+        }
+        return
+      }
+
       if (path === `${PREFIX}/bootstrap`) {
         if (request.method !== 'GET') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
