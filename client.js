@@ -8699,6 +8699,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [gotoOpen])
       const [draftStroke, setDraftStroke] = useState(null)
+      const [shapeDraft, setShapeDraft] = useState(null)
       const [maskDraft, setMaskDraft] = useState(null)
       // The note being typed in the preview; `index` is its slot in `strokes`,
       // or -1 for one that does not exist yet. The text itself stays inside the
@@ -9036,6 +9037,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           openNote(point)
           return
         }
+        if (SHAPE_TOOLS.includes(tool)) {
+          setShapeDraft({
+            shape: tool,
+            x0: point[0], y0: point[1], x1: point[0], y1: point[1],
+            color: '#1f1f1f',
+            width: 2,
+          })
+          return
+        }
         draftRef.current = { kind: 'stroke', points: [point], color: '#1f1f1f', width: 2 }
         setDraftStroke(draftRef.current)
       }
@@ -9060,6 +9070,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setMaskDraft(maskDraftRef.current)
           return
         }
+        if (shapeDraft !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          setShapeDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          return
+        }
         if (draftRef.current === null) return
         const point = pointOf(event)
         if (point === null) return
@@ -9081,6 +9097,26 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // A drag small enough to be a click draws nothing; boxes are deleted
           // with a right-click now, not by tapping them.
           if (draft.w > 0.02 && draft.h > 0.02) commitMasks([...masksRef.current, draft])
+          return
+        }
+        if (shapeDraft !== null) {
+          const draft = shapeDraft
+          setShapeDraft(null)
+          const x = Math.min(draft.x0, draft.x1)
+          const y = Math.min(draft.y0, draft.y1)
+          const w = Math.abs(draft.x1 - draft.x0)
+          const h = Math.abs(draft.y1 - draft.y0)
+          if (w > 0.008 || h > 0.008) {
+            commitStrokes([...strokesRef.current, {
+              kind: 'shape',
+              shape: draft.shape,
+              x, y, w, h,
+              x0: draft.x0, y0: draft.y0, x1: draft.x1, y1: draft.y1,
+              color: draft.color,
+              width: draft.width,
+              seed: Math.floor(Math.random() * 2147483647),
+            }])
+          }
           return
         }
         const draft = draftRef.current
@@ -9355,7 +9391,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // The reader's annotation layer without its pointer handlers: this side
       // only shows what the workbench holds.
-      const ink = strokes.filter(entry => entry.kind !== 'text')
+      const shapeRoughness = (() => {
+        try {
+          const value = Number(window.localStorage.getItem('pdfdesk:roughness'))
+          return Number.isFinite(value) ? value : 1
+        } catch {
+          return 1
+        }
+      })()
+      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape')
+      const shapes = strokes.filter(entry => entry.kind === 'shape')
       const notes = strokes.filter(entry => entry.kind === 'text')
       const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'aria-hidden': true },
         h('svg', {
@@ -9369,9 +9414,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fill: 'none',
             stroke: stroke.color ?? '#e0554a',
             strokeWidth: stroke.width ?? 2,
+            opacity: stroke.opacity ?? 1,
             vectorEffect: 'non-scaling-stroke',
             strokeLinecap: 'round',
             strokeLinejoin: 'round',
+          })),
+          shapes.map((entry, index) => h(ShapeMark, {
+            key: `shape-${index}`,
+            entry,
+            roughness: shapeRoughness,
           }))),
         notes.map((entry, index) => h('div', {
           key: `text-${index}`,
@@ -9382,6 +9433,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             color: entry.color ?? '#e0554a',
             fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
             fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            opacity: entry.opacity ?? 1,
           },
         }, entry.text)))
 
@@ -9447,6 +9500,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               vectorEffect: 'non-scaling-stroke',
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
+            })),
+          shapeDraft === null
+            ? null
+            : h('svg', {
+              className: 'md-annot-ink',
+              viewBox: '0 0 1 1',
+              preserveAspectRatio: 'none',
+              'aria-hidden': true,
+            }, h(ShapeMark, {
+              entry: {
+                kind: 'shape',
+                ...shapeDraft,
+                x: Math.min(shapeDraft.x0, shapeDraft.x1),
+                y: Math.min(shapeDraft.y0, shapeDraft.y1),
+                w: Math.abs(shapeDraft.x1 - shapeDraft.x0),
+                h: Math.abs(shapeDraft.y1 - shapeDraft.y0),
+              },
+              roughness: shapeRoughness,
             })),
           maskDraft === null
             ? null
@@ -9898,6 +9969,36 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               title: format('annotTextHint'), 'aria-label': format('annotText'),
               onClick: () => toggleTool('text'),
             }, annotIcon('M4 6h16M12 6v13M9 19h6')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'line' ? 'true' : 'false',
+              title: format('shapeLine'), 'aria-label': format('shapeLine'),
+              onClick: () => toggleTool('line'),
+            }, annotIcon('M4 20 20 4')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'arrow' ? 'true' : 'false',
+              title: format('shapeArrow'), 'aria-label': format('shapeArrow'),
+              onClick: () => toggleTool('arrow'),
+            }, annotIcon('M4 20 20 4M10 4h10v10')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'rect' ? 'true' : 'false',
+              title: format('shapeRect'), 'aria-label': format('shapeRect'),
+              onClick: () => toggleTool('rect'),
+            }, annotIcon('M4 5h16v14H4z')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'diamond' ? 'true' : 'false',
+              title: format('shapeDiamond'), 'aria-label': format('shapeDiamond'),
+              onClick: () => toggleTool('diamond'),
+            }, annotIcon('M12 3 21 12 12 21 3 12z')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'ellipse' ? 'true' : 'false',
+              title: format('shapeEllipse'), 'aria-label': format('shapeEllipse'),
+              onClick: () => toggleTool('ellipse'),
+            }, annotIcon('M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z')),
             h('button', {
               type: 'button', className: 'md-rail-btn',
               'aria-pressed': tool === 'mask' ? 'true' : 'false',
