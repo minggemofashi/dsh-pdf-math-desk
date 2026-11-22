@@ -544,7 +544,8 @@ window.__ModuleLoader__.load({
       workflowMath: '数学',
       workflowMathDesc: '提取 / 答疑 / 习题三种会话、数学提示词与 LaTeX 模板。',
       workflowOnlyOne: '同一时间只能启用一个模式；以后会增加其它工作流，结构已经按单选写好。',
-      workflowOff: '只使用通用模式',
+      workflowOff: '关闭当前模式，只使用通用',
+      workflowActiveHint: '已启用；再次点击这张卡片即可关闭。',
       envDownload: '下载 TeX Live（约 5 GB）',
       envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
@@ -1057,7 +1058,8 @@ window.__ModuleLoader__.load({
       workflowMath: 'Math',
       workflowMathDesc: 'Extract / Q&A / exercise sessions, math prompts and LaTeX templates.',
       workflowOnlyOne: 'Only one mode can be active at a time; the single-select structure is ready for more workflows.',
-      workflowOff: 'General only',
+      workflowOff: 'Turn off the current mode, use General only',
+      workflowActiveHint: 'Enabled; click this card again to turn it off.',
       envDownload: 'Download TeX Live (~5 GB)',
       envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
@@ -2993,6 +2995,14 @@ window.__ModuleLoader__.load({
       const workflow = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('workflowTitle')),
         h('p', { className: 'md-shelf-sub' }, format('workflowHint')),
+        props.activeWorkflow === ''
+          ? null
+          : h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            onClick: () => {
+              if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
+            },
+          }, format('workflowOff')),
         h('div', { className: 'md-workflow-base' },
           h('span', { className: 'md-mode-pill', 'data-mode': 'general' }, format('workflowGeneral')),
           h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc'))
@@ -3001,6 +3011,12 @@ window.__ModuleLoader__.load({
           key: item.id,
           className: 'md-workflow-card',
           'data-active': props.activeWorkflow === item.id ? 'true' : 'false',
+          title: props.activeWorkflow === item.id ? format('workflowActiveHint') : undefined,
+          onClick: () => {
+            if (props.activeWorkflow === item.id && typeof props.onWorkflowChange === 'function') {
+              props.onWorkflowChange('')
+            }
+          },
         },
           h('input', {
             type: 'radio',
@@ -3015,13 +3031,6 @@ window.__ModuleLoader__.load({
             h('span', null, format(item.descKey))
           )
         )),
-        h('button', {
-          type: 'button', className: 'md-btn md-btn-small',
-          disabled: props.activeWorkflow === '',
-          onClick: () => {
-            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
-          },
-        }, format('workflowOff')),
         h('p', { className: 'md-shelf-sub' }, format('workflowOnlyOne'))
       )
       const keys = h('div', { className: 'md-settings-section' },
