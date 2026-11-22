@@ -111,6 +111,8 @@ window.__ModuleLoader__.load({
       heroEmpty: '还没有书库？导入一个包含「分片」或「整本」的目录即可开始。',
       homeTools: '工具箱',
       homeToolsHint: '左右滑动，全部工具都在这里',
+      addPathPlaceholder: '书库根目录，例如 D:\\数学书库',
+      addNamePlaceholder: '名称（可选）',
       libraryActive: '当前',
       libraryUse: '切换',
       libraryRemove: '移除',
@@ -579,6 +581,8 @@ window.__ModuleLoader__.load({
       heroEmpty: 'No library yet. Import a folder that contains 分片/ or 整本/ to start.',
       homeTools: 'Toolbox',
       homeToolsHint: 'Swipe sideways; every tool lives here',
+      addPathPlaceholder: 'Library root, e.g. D:\\数学书库',
+      addNamePlaceholder: 'Name (optional)',
       libraryActive: 'Active',
       libraryUse: 'Switch',
       libraryRemove: 'Remove',
@@ -3043,35 +3047,40 @@ window.__ModuleLoader__.load({
             ))
           ),
         h('div', { className: 'md-library-add', ref: addRef },
-          h('h3', { className: 'md-subheading' }, format('libraryAddTitle')),
-          h('p', { className: 'md-shelf-sub' }, format('libraryAddHint')),
-          h('div', { className: 'md-library-form' },
-            h('label', { className: 'md-field' },
-              h('span', null, format('libraryPath')),
-              h('input', {
-                className: 'md-input', value: dir, disabled: busy,
-                placeholder: 'D:\\数学书库',
-                onChange: event => setDir(event.target.value),
-              })
-            ),
+          h('div', { className: 'md-add-head' },
+            h('h3', { className: 'md-subheading' }, format('libraryAddTitle')),
+            h('p', { className: 'md-shelf-sub' }, format('libraryAddHint'))
+          ),
+          h('div', { className: 'md-add-row' },
+            h('input', {
+              className: 'md-input md-add-path', value: dir, disabled: busy,
+              placeholder: format('addPathPlaceholder'),
+              'aria-label': format('libraryPath'),
+              onChange: event => setDir(event.target.value),
+            }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', disabled: busy,
               onClick: () => {
                 void props.onPick().then(picked => {
-                  if (typeof picked === 'string' && picked !== '') setDir(picked)
+                  if (typeof picked === 'string' && picked !== '') {
+                    setDir(picked)
+                    if (name.trim() === '') {
+                      const base = picked.split(/[\\/]/).filter(Boolean).pop()
+                      if (base !== undefined) setName(base)
+                    }
+                  }
                 })
               },
             }, format('libraryPick')),
-            h('label', { className: 'md-field' },
-              h('span', null, format('libraryName')),
-              h('input', {
-                className: 'md-input', value: name, disabled: busy,
-                placeholder: '数学',
-                onChange: event => setName(event.target.value),
-              })
-            ),
+            h('input', {
+              className: 'md-input md-add-name', value: name, disabled: busy,
+              placeholder: format('addNamePlaceholder'),
+              'aria-label': format('libraryName'),
+              onChange: event => setName(event.target.value),
+            }),
             h('button', {
-              type: 'button', className: 'md-btn md-btn-small', disabled: busy || dir.trim() === '',
+              type: 'button', className: 'md-btn md-btn-small md-btn-primary md-add-submit',
+              disabled: busy || dir.trim() === '',
               onClick: () => props.onAdd(dir, name),
             }, format('libraryAdd'))
           )
@@ -8377,10 +8386,16 @@ window.__ModuleLoader__.load({
 .md-home .md-library .md-path { margin-top: 10px; font-size: 12px; }
 .md-home .md-library-actions { position: absolute; top: 14px; right: 14px; opacity: 0; transition: opacity .16s ease; }
 .md-home .md-library:hover .md-library-actions, .md-home .md-library:focus-within .md-library-actions { opacity: 1; }
-.md-home .md-library-add { max-width: 760px; padding: 22px 24px; border-radius: 16px; gap: 10px; }
-.md-home .md-library-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
-.md-home .md-library-form .md-field { min-width: 0; }
-.md-home .md-library-form .md-btn { align-self: end; }
+.md-home .md-library-add { max-width: 800px; padding: 14px 16px; border-radius: 16px; gap: 10px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); }
+.md-add-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.md-add-head .md-subheading { margin: 0; font-size: 14px; font-weight: 600; }
+.md-add-head .md-shelf-sub { font-size: 11.5px; }
+.md-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.md-add-row .md-input { height: 34px; box-sizing: border-box; font-size: 12.5px; }
+.md-add-path { flex: 1 1 320px; min-width: 200px; }
+.md-add-name { flex: 0 1 150px; width: 150px; }
+.md-add-row .md-btn { height: 34px; }
+.md-add-submit { margin-left: auto; }
 .md-home-tools-head { display: flex; flex-direction: column; gap: 4px; }
 .md-home .md-library-toolcell { position: static; height: auto; }
 .md-home .md-library-toolscroll { position: static; display: flex; flex-direction: row; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 16px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-border-l4) transparent; }
