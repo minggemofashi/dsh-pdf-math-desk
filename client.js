@@ -9001,6 +9001,49 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
       const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f', textAlign: 'left' })
+      // Tool defaults and the hover settings panel for the side rail.
+      const [sideColor, setSideColor] = useState('#1f1f1f')
+      const [sideWidth, setSideWidth] = useState(2)
+      const [sidePanel, setSidePanel] = useState(false)
+      const [sidePanelTool, setSidePanelTool] = useState('')
+      const [sideAnchor, setSideAnchor] = useState(null)
+      const sidePanelTimer = useRef(null)
+      const sideCloseTimer = useRef(null)
+      const beginSidePanel = (element, toolId) => {
+        if (sideCloseTimer.current !== null) {
+          clearTimeout(sideCloseTimer.current)
+          sideCloseTimer.current = null
+        }
+        setSidePanelTool(toolId)
+        const wrap = element.closest('.md-rail-wrap')
+        if (wrap !== null) {
+          const button = element.getBoundingClientRect()
+          const box = wrap.getBoundingClientRect()
+          setSideAnchor(button.top - box.top + button.height / 2)
+        }
+        if (sidePanel) return
+        if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
+        sidePanelTimer.current = setTimeout(() => setSidePanel(true), 400)
+      }
+      const leaveSidePanel = () => {
+        if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
+        sidePanelTimer.current = null
+        if (sideCloseTimer.current !== null) clearTimeout(sideCloseTimer.current)
+        sideCloseTimer.current = setTimeout(() => setSidePanel(false), 700)
+      }
+      useEffect(() => () => {
+        if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
+        if (sideCloseTimer.current !== null) clearTimeout(sideCloseTimer.current)
+      }, [])
+      const sideRailTool = (id, labelKey, path) => h('button', {
+        type: 'button',
+        className: 'md-rail-btn',
+        'aria-pressed': tool === id ? 'true' : 'false',
+        title: format(labelKey),
+        'aria-label': format(labelKey),
+        onPointerEnter: event => beginSidePanel(event.currentTarget, id),
+        onClick: () => toggleTool(id),
+      }, annotIcon(path))
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -9334,12 +9377,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setShapeDraft({
             shape: tool,
             x0: point[0], y0: point[1], x1: point[0], y1: point[1],
-            color: '#1f1f1f',
-            width: 2,
+            color: sideColor,
+            width: sideWidth,
           })
           return
         }
-        draftRef.current = { kind: 'stroke', points: [point], color: '#1f1f1f', width: 2 }
+        draftRef.current = { kind: 'stroke', points: [point], color: sideColor, width: sideWidth }
         setDraftStroke(draftRef.current)
       }
       const editMove = event => {
@@ -10242,62 +10285,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }, '⋯')),
         h('div', { className: 'md-side-body' }, body),
         h('div', { className: 'md-rail-tab md-side-rail-tab', 'data-side': 'right', 'aria-hidden': true }, '‹'),
-        h('div', { className: 'md-rail-wrap md-side-rail-wrap', 'data-side': 'right' },
+        h('div', {
+          className: 'md-rail-wrap md-side-rail-wrap',
+          'data-side': 'right',
+          onPointerLeave: leaveSidePanel,
+        },
           h('div', { className: 'md-rail md-side-rail' },
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'pen' ? 'true' : 'false',
-              title: format('annotHint'), 'aria-label': format('annotPen'),
-              onClick: () => toggleTool('pen'),
-            }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'erase' ? 'true' : 'false',
-              title: format('annotEraseHint'), 'aria-label': format('annotErase'),
-              onClick: () => toggleTool('erase'),
-            }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'text' ? 'true' : 'false',
-              title: format('annotTextHint'), 'aria-label': format('annotText'),
-              onClick: () => toggleTool('text'),
-            }, annotIcon('M4 6h16M12 6v13M9 19h6')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'line' ? 'true' : 'false',
-              title: format('shapeLine'), 'aria-label': format('shapeLine'),
-              onClick: () => toggleTool('line'),
-            }, annotIcon('M4 20 20 4')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'arrow' ? 'true' : 'false',
-              title: format('shapeArrow'), 'aria-label': format('shapeArrow'),
-              onClick: () => toggleTool('arrow'),
-            }, annotIcon('M4 20 20 4M10 4h10v10')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'rect' ? 'true' : 'false',
-              title: format('shapeRect'), 'aria-label': format('shapeRect'),
-              onClick: () => toggleTool('rect'),
-            }, annotIcon('M4 5h16v14H4z')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'diamond' ? 'true' : 'false',
-              title: format('shapeDiamond'), 'aria-label': format('shapeDiamond'),
-              onClick: () => toggleTool('diamond'),
-            }, annotIcon('M12 3 21 12 12 21 3 12z')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'ellipse' ? 'true' : 'false',
-              title: format('shapeEllipse'), 'aria-label': format('shapeEllipse'),
-              onClick: () => toggleTool('ellipse'),
-            }, annotIcon('M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z')),
-            h('button', {
-              type: 'button', className: 'md-rail-btn',
-              'aria-pressed': tool === 'mask' ? 'true' : 'false',
-              title: format('overlayHint'), 'aria-label': format('overlayToggle'),
-              onClick: () => toggleTool('mask'),
-            }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
+            sideRailTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
+            sideRailTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
+            sideRailTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            sideRailTool('line', 'shapeLine', 'M4 20 20 4'),
+            sideRailTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
+            sideRailTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
+            sideRailTool('diamond', 'shapeDiamond', 'M12 3 21 12 12 21 3 12z'),
+            sideRailTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
+            sideRailTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
             h('button', {
               type: 'button', className: 'md-rail-btn',
@@ -10311,7 +10313,48 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               title: format('redoHint'), 'aria-label': format('redo'),
               onClick: () => redoPage(),
             }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3'))
-          )
+          ),
+          sidePanel && sidePanelTool !== ''
+            ? h('div', {
+              className: 'md-rail-panel',
+              'data-side': 'right',
+              style: sideAnchor === null ? undefined : { top: `${sideAnchor}px` },
+            },
+              h('div', { className: 'md-rail-panel-title' },
+                `${format('toolSettings')} · ${format(TOOL_LABELS[sidePanelTool] ?? 'annotPen')}`),
+              sidePanelTool === 'text'
+                ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
+                : sidePanelTool === 'mask'
+                  ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
+                  : sidePanelTool === 'erase'
+                    ? h('p', { className: 'md-rail-panel-hint' }, format('annotEraseHint'))
+                    : h(React.Fragment, null,
+                      h('div', { className: 'md-note-style-row' },
+                        h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                        ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                          key: color,
+                          type: 'button',
+                          className: 'md-note-color',
+                          style: { background: color },
+                          'data-on': sideColor === color ? 'true' : undefined,
+                          'aria-label': color,
+                          onMouseDown: event => event.preventDefault(),
+                          onClick: () => setSideColor(color),
+                        }))
+                      ),
+                      h('div', { className: 'md-note-style-row' },
+                        h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                        h('input', {
+                          type: 'range', min: 1, max: 10, step: 1,
+                          value: sideWidth,
+                          'aria-label': format('annotWidthHint'),
+                          onChange: event => setSideWidth(Number(event.target.value) || 2),
+                        }),
+                        h('span', { className: 'md-note-size-value' }, `${sideWidth}px`)
+                      )
+                    )
+            )
+            : null
         ),
         diag
           ? h(DiagPanel, {
