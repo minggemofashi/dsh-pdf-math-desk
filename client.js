@@ -12922,6 +12922,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (archivedIds.has(id)) continue
           const summary = list.byId[id]
           if (summary === undefined || summary.blank !== true || summary.origin === 'subagent') continue
+          // A workbench-created pending blank already carries one preset prompt
+          // (or is about to). Reusing it for another mode would append the next
+          // preset to that draft; leave it for cleanup instead.
+          if (id in (pendingRef.current ?? {}) || freshPending.current.has(id)) continue
           if (pendingDrafts.current.has(id)) continue
           if (typeof summary.title === 'string' && summary.title !== '') continue
           if (typeof summary.cwd === 'string' && summary.cwd !== '' && target.cwd !== '' && !sameDirectory(summary.cwd, target.cwd)) continue

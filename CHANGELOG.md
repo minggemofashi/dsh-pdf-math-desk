@@ -2,6 +2,10 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## 未发布
+
+- **提示词嵌套**：答疑/习题/提取新建后退出，再点另一个模式时，不再复用带预设提示词的 pending 空会话；新会话从头生成，避免把上一轮 `〔PDF阅读〕…下面是我的问题：` 追加到下一个提示词。
+
 ## v1.3.2
 
 - **构建链**：esbuild + 官方 `@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.5`，只构建 Button/Input/Modal，生成 `vendor/host-ui.cjs/css`；React/ReactDOM 走宿主 require，CSS Modules 本地编译。
