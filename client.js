@@ -3166,13 +3166,18 @@ window.__ModuleLoader__.load({
       const size = props.size !== undefined ? props.size : 'sm'
       const hostClasses = className.split(/\s+/).filter(name => name !== ''
         && (name === 'md-btn-danger' || !name.startsWith('md-btn'))).join(' ')
+      // Cards, chapter rows and picker/file rows are layout surfaces first. The
+      // host Button's inline-flex chrome would flatten their internal grid, so
+      // those stay on the native button while ordinary action buttons use the
+      // host control.
+      const nativeOnly = /(?:^|\s)(md-card|md-collection|md-row|md-picker-row|md-file|md-note-style-btn|md-crumb|md-crumb-current|md-btn-ghost)(?:\s|$)/.test(className)
       const { variant: _variant, size: _size, hostClassName: _hostClassName, className: _className, children, ...rest } = props
       const HostButton = ui !== null && ui !== undefined && ui.Button !== undefined
         && ui.Button !== null
         && (typeof ui.Button === 'function' || (typeof ui.Button === 'object' && ui.Button.$$typeof))
         ? ui.Button
         : null
-      if (HostButton !== null) {
+      if (HostButton !== null && !nativeOnly) {
         return h(HostButton, {
           ...rest,
           ref,

@@ -11,6 +11,7 @@
 - **宿主菜单**：导出组、翻译语言改用 `KitSelect`（宿主 `Menu` + Button 锚点，fallback 带外部点击/Escape）；宿主 Menu 已加入 primitives bundle。
 - **设置页**：改用宿主 `Modal`（`KitModal`），保留自定义 tabs 和各页内容；标题、关闭、焦点陷阱交给宿主。
 - **全量按钮**：157 处原生 `button` 统一改用 `KitButton` 适配层；工具栏、设置、弹窗、卡片、图标按钮全部走宿主 Button 或本地回退，原生 props/ref 透传。
+- **布局按钮回退**：书卡、合集卡、章节行、选择行、文件行、面包屑和 ghost 链接保留原生 `button`；宿主 Button 的 inline-flex 会压扁这些内部网格，普通操作按钮仍走宿主。
 - **立即更新**：检查发现新版本后，设置 → 关于 出现「立即更新」。如果 dshmarket 的更新 API v1 管理该插件，则走市场的一键更新并轮询进度；否则按钮直接下载新版本 zip，解压后在插件页更新。
 
 ## v1.3.1
