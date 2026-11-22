@@ -385,6 +385,12 @@ window.__ModuleLoader__.load({
       translateResumeHint: '只译还没有缓存的页，按缺失页数花 token',
       translateNeedsEnv: '翻译需要 Python + TeX，并先在 设置 → 环境 配置 DeepSeek API Key。',
       exportNeedsPython: '导出需要 Python；请先安装，并在 设置 → 环境 查看状态。',
+      generalSession: '会话',
+      generalSessionHint: '新建一个只带书籍地址的通用会话，不预设用途',
+      generalSeedBook: '书籍',
+      generalSeedLibrary: '书库',
+      generalSeedBookDir: '书目录',
+      generalSeedPdf: '当前 PDF',
       translatingResume: '正在补译缺失页…',
       translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
@@ -538,14 +544,14 @@ window.__ModuleLoader__.load({
       envPromptDownloadTex: '下载 TeX Live',
       envPromptKey: '配置 API Key',
       workflowTitle: '工作流',
-      workflowHint: '通用模式是基础，始终开启；同一时间只能启用一个可选工作流。目前只有数学。',
+      workflowHint: '通用始终加载，不能被选择；点一个模式开启，再点当前模式退出。以后有多个模式时，点另一个会直接切换。',
       workflowGeneral: '通用',
       workflowGeneralDesc: '阅读、标注、翻译与通用工具；不需要选择，始终作为基础。',
+      workflowGeneralAlways: '始终启用',
       workflowMath: '数学',
       workflowMathDesc: '提取 / 答疑 / 习题三种会话、数学提示词与 LaTeX 模板。',
       workflowOnlyOne: '同一时间只能启用一个模式；以后会增加其它工作流，结构已经按单选写好。',
-      workflowOff: '关闭当前模式，只使用通用',
-      workflowActiveHint: '已启用；再次点击这张卡片即可关闭。',
+      workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
       envDownload: '下载 TeX Live（约 5 GB）',
       envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
@@ -898,6 +904,12 @@ window.__ModuleLoader__.load({
       translateResumeHint: 'Translate only the pages without cached text; pages that already have one are reused, so only the missing pages cost tokens',
       translateNeedsEnv: 'Translation needs Python + TeX and a DeepSeek API key in Settings → Environment.',
       exportNeedsPython: 'Export needs Python; install it and check Settings → Environment.',
+      generalSession: 'Session',
+      generalSessionHint: 'Start a general conversation that only carries the book address, with no preset purpose',
+      generalSeedBook: 'Book',
+      generalSeedLibrary: 'Library',
+      generalSeedBookDir: 'Book folder',
+      generalSeedPdf: 'Current PDF',
       translatingResume: 'Filling in the missing pages…',
       translateCancelled: 'Translation cancelled',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
@@ -1052,14 +1064,14 @@ window.__ModuleLoader__.load({
       envPromptDownloadTex: 'Download TeX Live',
       envPromptKey: 'Configure API key',
       workflowTitle: 'Workflows',
-      workflowHint: 'General is the always-on base; only one optional workflow can be active at a time. Math is the only one for now.',
+      workflowHint: 'General is always loaded and cannot be selected; click a mode to enable it, and click the active mode again to return to General. With more modes, clicking another switches directly.',
       workflowGeneral: 'General',
       workflowGeneralDesc: 'Reading, annotations, translation and general tools; always on, no selection needed.',
+      workflowGeneralAlways: 'Always on',
       workflowMath: 'Math',
       workflowMathDesc: 'Extract / Q&A / exercise sessions, math prompts and LaTeX templates.',
       workflowOnlyOne: 'Only one mode can be active at a time; the single-select structure is ready for more workflows.',
-      workflowOff: 'Turn off the current mode, use General only',
-      workflowActiveHint: 'Enabled; click this card again to turn it off.',
+      workflowActiveHint: 'Enabled; click this card again to return to General.',
       envDownload: 'Download TeX Live (~5 GB)',
       envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
@@ -2995,30 +3007,13 @@ window.__ModuleLoader__.load({
       const workflow = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('workflowTitle')),
         h('p', { className: 'md-shelf-sub' }, format('workflowHint')),
-        props.activeWorkflow === ''
-          ? null
-          : h('button', {
-            type: 'button', className: 'md-btn md-btn-small',
-            onClick: () => {
-              if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
-            },
-          }, format('workflowOff')),
         h('div', {
           className: 'md-workflow-base',
           'data-active': props.activeWorkflow === '' ? 'true' : 'false',
-          role: 'button',
-          tabIndex: 0,
-          onClick: () => {
-            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
-          },
-          onKeyDown: event => {
-            if (event.key !== 'Enter' && event.key !== ' ') return
-            event.preventDefault()
-            if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
-          },
         },
           h('span', { className: 'md-mode-pill', 'data-mode': 'general' }, format('workflowGeneral')),
-          h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc'))
+          h('span', { className: 'md-shelf-sub' }, format('workflowGeneralDesc')),
+          h('span', { className: 'md-workflow-always' }, format('workflowGeneralAlways'))
         ),
         WORKFLOWS.map(item => h('label', {
           key: item.id,
@@ -7732,6 +7727,14 @@ window.__ModuleLoader__.load({
             h('span', { className: `md-reader-scale${dual ? ' md-hidden' : ''}`, 'aria-hidden': true }, `${Math.round((reader.scale ?? 1) * 100)}%`)
           ),
           h('button', {
+            type: 'button', className: 'md-btn md-btn-small',
+            disabled: props.busy,
+            title: format('generalSessionHint'),
+            onClick: () => {
+              if (typeof props.onGeneralSession === 'function') props.onGeneralSession()
+            },
+          }, format('generalSession')),
+          h('button', {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('toolsToggle'), title: format('toolsToggle'),
             onClick: () => setToolsOpen(value => !value),
@@ -8569,8 +8572,9 @@ window.__ModuleLoader__.load({
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-mode-pill { display: inline-flex; align-items: center; align-self: flex-start; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-l1); }
 .md-mode-pill[data-mode='math'] { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
-.md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
+.md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .md-workflow-base[data-active='true'] { border-color: var(--dsw-alias-brand-primary); }
+.md-workflow-always { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .md-workflow-base .md-mode-pill { margin-top: 0; }
 .md-workflow-card { display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
 .md-workflow-card[data-active='true'] { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-bg-l1); }
@@ -12552,6 +12556,64 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
       createSessionRef.current = createSession
 
+      /**
+       * A general conversation: only the book address, no mode, persona, outline
+       * or purpose prompt. It is deliberately not registered as a chapter session.
+       * @returns {Promise<void>} completion.
+       */
+      const openGeneralSession = useCallback(async () => {
+        if (book === null || catalog === null || reader === null || creatingRef.current) return
+        const target = catalog.target
+        if (target.workspaceId === null && target.cwd === '') {
+          showNotice(format('targetMissing'))
+          return
+        }
+        const chapter = Array.isArray(book.chapters)
+          ? book.chapters.find(item => item !== null && typeof item === 'object' && item.code === reader.code)
+          : null
+        const bookDir = typeof catalog.fragmentDir === 'string' && catalog.fragmentDir !== ''
+          && typeof book.dir === 'string' && book.dir !== ''
+          ? `${catalog.fragmentDir}\\${book.dir}`
+          : ''
+        const pdfPath = chapter !== null && typeof chapter.pdfPath === 'string' ? chapter.pdfPath : ''
+        creatingRef.current = true
+        try {
+          const reuseId = findReusableBlank()
+          await settlePending(reuseId)
+          const base = target.workspaceId !== null ? { workspaceId: target.workspaceId } : { cwd: target.cwd }
+          let sessionId
+          try {
+            sessionId = await createSessionId(reuseId === null ? base : { ...base, sessionId: reuseId })
+          } catch (error) {
+            if (reuseId === null) {
+              showNotice(`${format('sessionCreateFailed')} (${errorText(error)})`)
+              return
+            }
+            try {
+              sessionId = await createSessionId(base)
+            } catch (fallbackError) {
+              showNotice(`${format('sessionCreateFailed')} (${errorText(fallbackError)})`)
+              return
+            }
+          }
+          const seed = [
+            `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
+            `${format('generalSeedLibrary')}：${catalog.libraryDir}`,
+            bookDir === '' ? '' : `${format('generalSeedBookDir')}：${bookDir}`,
+            pdfPath === '' ? '' : `${format('generalSeedPdf')}：${pdfPath}`,
+          ].filter(Boolean).join('\n')
+          const prefill = await beginPrefill(sessionId, seed)
+          await flushSave()
+          openHostSession(sessionId)
+          if (prefill.reference !== null) {
+            try { prefill.reference.release() } catch { /* already released */ }
+          }
+        } finally {
+          creatingRef.current = false
+        }
+      }, [beginPrefill, book, catalog, createSessionId, findReusableBlank, flushSave, openHostSession, reader, settlePending, showNotice])
+
+
       /** The reader's three New buttons: create the session, leave for it. */
       /**
        * "New" for one chapter and mode: continue that chapter's existing
@@ -13560,6 +13622,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             canExport,
             mathMode,
             onEnvRequired: setEnvPrompt,
+            onGeneralSession: openGeneralSession,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,
