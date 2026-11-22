@@ -2,25 +2,35 @@
 
 这个仓库是 **DSH 插件 `dsh-pdf-math-desk`**（“数学工作台”）。以下规则适用于本目录；用户明确要求时以用户为准。
 
-## 每次修改插件，必须做一次 git 存档
+## 日常改动与发版节奏
 
-任何一次功能、修复、文档或打包改动，收尾时按顺序做：
+**默认只存档，不发版。** 只有用户明确说「更新 / 发版 / 推送 / 发布」时，才做版本号、tag、push、npm、Release、市场这一套。日常改动**不升版本、不打 tag、不 push、不发 npm/Release/市场**。
 
-1. **跑检查**（在仓库根目录执行，Node 用 DSH 自带运行时或系统 Node）：
-   - `node --check client.js`
-   - `node --check index.js`
-   - 逐个 `node --check src/host/*.js`
-   - 仓库外若有 `.dsh-scratch/host-test.mjs` / `check-deps.mjs` / `check-keys.mjs`，也一并跑；测试失败不得提交。
-2. **升版本号**：改 `package.json` 的 `version`（修复/文档 = 补丁位 +1，新功能 = 次版本位 +1）。
-3. **更新文档**：在 `CHANGELOG.md` 顶部加一条；同步更新 `README.md` 里受影响的说明；`安装与分发.md` 只在安装方式变化时改。
-4. **提交**：
-   - `git add -A`
-   - `git commit -m "vX.Y.Z: <一句话摘要>"`
-   - `git tag vX.Y.Z`
-   - `git push && git push --tags`
-5. **要对外分发时**：重新打 `dist/dsh-pdf-math-desk-<version>.zip`（说明见下），挂到 GitHub Releases，不要提交 `dist/`。
+### 日常改动（每次）
 
-提交信息风格：`v0.13.2: 修复整本库没有分片目录时报错`，一行说清“改了什么、为什么”。
+1. 跑检查（见下）；
+2. **本地提交**存档：`git add -A && git commit -m "<type>: <一句话>"`（`feat:`/`fix:`/`docs:`/`wip:` 均可，不要求版本号）；
+3. 不修改 `package.json` 的 `version`，不打 tag，不 push，不发 npm / GitHub Release / 市场索引；
+4. 需要远程协作/备份时先问用户，不要自动推送。
+
+### 发版（用户明确说“该更新了”之后）
+
+1. 汇总日常提交，升 `package.json` 版本（修复/文档 +补丁位，新功能 +次版本位）；
+2. 更新 `CHANGELOG.md`、README（必要时 `安装与分发.md`）；
+3. `git tag vX.Y.Z` + `git push origin main && git push --tags origin`；
+4. 构建 `dist` zip，建 GitHub Release 并上传附件；
+5. npm：`npm publish`（staged 时 `npm stage publish` + 2FA 批准）；
+6. npm 成功后更新 `market/index.json` 与 README 安装版本；
+7. 三处一致性检查（npm / Release / market / README / 远程 main）。
+
+### 检查（日常与发版都跑）
+
+- `node --check client.js`
+- `node --check index.js`
+- 逐个 `node --check src/host/*.js`
+- 仓库外若有 `.dsh-scratch/host-test.mjs` / `check-deps.mjs` / `check-keys.mjs` 等，一并跑；测试失败不提交。
+
+提交信息风格：`v0.13.2: 修复整本库没有分片目录时报错`（发版提交）；日常可用 `fix: ...` / `feat: ...`。
 
 ## 仓库边界
 
