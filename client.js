@@ -221,6 +221,7 @@ window.__ModuleLoader__.load({
       shapeLine: '直线',
       shapeArrow: '箭头',
       shapeRect: '矩形',
+      shapeDiamond: '菱形',
       shapeEllipse: '椭圆',
       selectionTitle: '已选中',
       fillTitle: '填充',
@@ -233,6 +234,10 @@ window.__ModuleLoader__.load({
       styleDashed: '虚线',
       styleDotted: '点线',
       opacityTitle: '不透明度',
+      alignTitle: '对齐',
+      alignLeft: '左',
+      alignCenter: '中',
+      alignRight: '右',
       duplicateSelection: '复制',
       bringFront: '置顶',
       sendBack: '置底',
@@ -675,6 +680,7 @@ window.__ModuleLoader__.load({
       shapeLine: 'Line',
       shapeArrow: 'Arrow',
       shapeRect: 'Rectangle',
+      shapeDiamond: 'Diamond',
       shapeEllipse: 'Ellipse',
       selectionTitle: 'Selected',
       fillTitle: 'Fill',
@@ -687,6 +693,10 @@ window.__ModuleLoader__.load({
       styleDashed: 'Dashed',
       styleDotted: 'Dotted',
       opacityTitle: 'Opacity',
+      alignTitle: 'Align',
+      alignLeft: 'Left',
+      alignCenter: 'Center',
+      alignRight: 'Right',
       duplicateSelection: 'Duplicate',
       bringFront: 'Bring front',
       sendBack: 'Send back',
@@ -3866,7 +3876,7 @@ window.__ModuleLoader__.load({
     /** The note colours offered in the in-place editor. */
     const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
     /** The shape tools; each saves one `kind: 'shape'` entry per page. */
-    const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse']
+    const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse', 'diamond']
     // rough.js draws the shapes with Excalidraw's wobbly hand. It is bundled
     // under vendor/ and imported lazily: a missing file only loses the sketch.
     const ROUGH_VW = 1000
@@ -3875,6 +3885,28 @@ window.__ModuleLoader__.load({
     const roughReady = import('/pdfdesk/vendor/rough/rough.mjs').then(module => {
       roughLib = module.default ?? module
     }).catch(() => {})
+    /**
+     * A light moving average for freehand strokes: dense pointer samples stay
+     * readable instead of looking like a staircase, while the first and last
+     * points (where the stroke starts and ends) do not move.
+     * @param {Array<[number, number]>} points - sampled points.
+     * @returns {Array<[number, number]>} the smoothed points.
+     */
+    function smoothStroke(points) {
+      if (!Array.isArray(points) || points.length < 3) return points
+      const out = [points[0]]
+      for (let index = 1; index < points.length - 1; index += 1) {
+        const previous = points[index - 1]
+        const current = points[index]
+        const next = points[index + 1]
+        out.push([
+          (previous[0] + current[0] * 2 + next[0]) / 4,
+          (previous[1] + current[1] * 2 + next[1]) / 4,
+        ])
+      }
+      out.push(points[points.length - 1])
+      return out
+    }
     /**
      * Translate one mark, used while dragging a selection.
      * @param {object} entry - the stored mark.
@@ -3922,6 +3954,15 @@ window.__ModuleLoader__.load({
         drawable = generator.line(px(entry.x0), py(entry.y0), px(entry.x1), py(entry.y1), options)
       } else if (entry.shape === 'rect') {
         drawable = generator.rectangle(px(entry.x), py(entry.y), px(entry.w), py(entry.h), options)
+      } else if (entry.shape === 'diamond') {
+        const centerX = entry.x + entry.w / 2
+        const centerY = entry.y + entry.h / 2
+        drawable = generator.polygon([
+          [px(centerX), py(entry.y)],
+          [px(entry.x + entry.w), py(centerY)],
+          [px(centerX), py(entry.y + entry.h)],
+          [px(entry.x), py(centerY)],
+        ], options)
       } else {
         drawable = generator.ellipse(px(entry.x + entry.w / 2), py(entry.y + entry.h / 2), px(entry.w), py(entry.h), options)
       }
@@ -3956,6 +3997,7 @@ window.__ModuleLoader__.load({
       if (draft.color !== undefined) style.color = draft.color
       if (typeof draft.fontSize === 'number' && Number.isFinite(draft.fontSize)) style.fontSize = draft.fontSize
       if (typeof draft.fontFamily === 'string' && draft.fontFamily !== '') style.fontFamily = draft.fontFamily
+      if (typeof draft.textAlign === 'string' && draft.textAlign !== '') style.textAlign = draft.textAlign
       if (draft.index >= 0 && draft.index < next.length) {
         if (value === '') next.splice(draft.index, 1)
         else next[draft.index] = { ...next[draft.index], text: value, ...style }
@@ -4098,6 +4140,17 @@ window.__ModuleLoader__.load({
       }
       if (entry.shape === 'rect') {
         return h('rect', { x: entry.x, y: entry.y, width: entry.w, height: entry.h, ...common })
+      }
+      if (entry.shape === 'diamond') {
+        return h('polygon', {
+          points: [
+            `${entry.x + entry.w / 2},${entry.y}`,
+            `${entry.x + entry.w},${entry.y + entry.h / 2}`,
+            `${entry.x + entry.w / 2},${entry.y + entry.h}`,
+            `${entry.x},${entry.y + entry.h / 2}`,
+          ].join(' '),
+          ...common,
+        })
       }
       if (entry.shape === 'ellipse') {
         return h('ellipse', {
@@ -4265,6 +4318,7 @@ window.__ModuleLoader__.load({
             fontSize: `${size}px`,
             fontFamily: NOTE_FONTS[family],
             color,
+            textAlign: typeof draft.textAlign === 'string' ? draft.textAlign : 'left',
             background: 'transparent',
             border: 'none',
             boxShadow: 'none',
@@ -5652,7 +5706,7 @@ window.__ModuleLoader__.load({
       const [noteEdit, setNoteEdit] = useState(null)
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
+      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f', textAlign: 'left' })
       // Which existing mark the select tool has picked (index into `strokes`).
       const [selection, setSelection] = useState(null)
       // A shape being dragged out, and a selected mark being moved.
@@ -6178,6 +6232,7 @@ window.__ModuleLoader__.load({
             color: entry.color ?? annotColor,
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
             fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
           })
           return
         }
@@ -6192,6 +6247,7 @@ window.__ModuleLoader__.load({
           color: noteStyle.color,
           fontSize: noteStyle.fontSize,
           fontFamily: noteStyle.fontFamily,
+          textAlign: noteStyle.textAlign ?? 'left',
         })
       }
       const changeNote = text => {
@@ -6399,7 +6455,9 @@ window.__ModuleLoader__.load({
           return
         }
         if (draftStroke === null) return
-        if (draftStroke.points.length > 1) savePageAnnots([...strokesRef.current, draftStroke])
+        if (draftStroke.points.length > 1) {
+          savePageAnnots([...strokesRef.current, { ...draftStroke, points: smoothStroke(draftStroke.points) }])
+        }
         setDraftStroke(null)
       }
 
@@ -7006,6 +7064,7 @@ window.__ModuleLoader__.load({
               fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
               fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
               opacity: entry.opacity ?? 1,
+              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
             },
             onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
             onDoubleClick: annotTool === ''
@@ -7527,6 +7586,7 @@ window.__ModuleLoader__.load({
             railTool('line', 'shapeLine', 'M4 20 20 4'),
             railTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
             railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
+            railTool('diamond', 'shapeDiamond', 'M12 3 21 12 12 21 3 12z'),
             railTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
             railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
@@ -7560,7 +7620,19 @@ window.__ModuleLoader__.load({
               }, '×')
             ),
             selectedEntry.kind === 'text'
-              ? h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection })
+              ? h(React.Fragment, null,
+                h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection }),
+                h('div', { className: 'md-note-style-row' },
+                  h('span', { className: 'md-note-style-label' }, format('alignTitle')),
+                  [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']].map(item => h('button', {
+                    key: item[0],
+                    type: 'button',
+                    className: 'md-note-style-btn',
+                    'data-on': (selectedEntry.textAlign ?? 'left') === item[0] ? 'true' : undefined,
+                    onClick: () => patchSelection({ textAlign: item[0] }),
+                  }, format(item[1])))
+                )
+              )
               : h(React.Fragment, null,
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('annotColor')),
@@ -8554,7 +8626,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [noteEdit, setNoteEdit] = useState(null)
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
+      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f', textAlign: 'left' })
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -8825,6 +8897,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             color: entry.color ?? '#1f1f1f',
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
             fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
           })
           return
         }
@@ -8838,6 +8911,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           color: noteStyle.color,
           fontSize: noteStyle.fontSize,
           fontFamily: noteStyle.fontFamily,
+          textAlign: noteStyle.textAlign ?? 'left',
         })
       }
       const changeNote = text => {
