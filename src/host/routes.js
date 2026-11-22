@@ -313,6 +313,19 @@ async function activeLibrary() {
         const libraryList = libraries === undefined || typeof libraries.list !== 'function'
           ? { items: [library], activeId: library.id }
           : await libraries.list()
+        // Every chapter carries its absolute PDF path once. A new conversation's
+        // prompt can then name the file directly instead of paying for a search;
+        // an unplaceable chapter (hand-edited catalog) simply has no path.
+        const pdfConfig = { libraryDir: library.libraryDir, fragmentDir: library.fragmentDir }
+        const booksWithPaths = (Array.isArray(fresh.books) ? fresh.books : []).map(book => ({
+          ...book,
+          chapters: Array.isArray(book.chapters)
+            ? book.chapters.map(chapter => {
+              const pdf = chapterPdfPath(pdfConfig, book, chapter)
+              return pdf.ok ? { ...chapter, pdfPath: pdf.path } : chapter
+            })
+            : book.chapters,
+        }))
         sendJson(response, 200, {
           ok: true,
           version: PLUGIN_VERSION,
@@ -330,6 +343,7 @@ async function activeLibrary() {
           },
           libraries: libraryList,
           libraryDir: library.libraryDir,
+          fragmentDir: library.fragmentDir,
           artifactDir: library.artifactDir,
           indexPath: library.indexPath,
           covers: await coverIds(library.coverDir),
@@ -339,7 +353,7 @@ async function activeLibrary() {
           pending: pending === undefined ? {} : await pending.list(),
           links: links === undefined ? {} : await links.list(),
           shelves: options.shelves === undefined ? { hidden: [], shelves: [] } : await options.shelves.get(library.id),
-          books: fresh.books,
+          books: booksWithPaths,
           skipped: fresh.skipped,
           warnings: fresh.warnings,
           state,

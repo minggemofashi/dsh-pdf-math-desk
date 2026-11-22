@@ -4076,14 +4076,16 @@ window.__ModuleLoader__.load({
 
     /**
      * The context line every new conversation starts with: which book, chapter
-     * and PDF it belongs to, and where the reader is. Pure, so the absolute
-     * paths P5 adds do not have to be threaded through the reader.
+     * and PDF it belongs to, and where the reader is. With `paths`, it also names
+     * the library, the chapter's folder and the exact PDF, so the model never
+     * has to search for the book.
      * @param {{ title: string }} bookRow - catalog book row.
      * @param {{ code: string, title: string, file: string }} chapter - catalog chapter row.
      * @param {{ pdf: string, page: number, mode: string } | null} position - the open reader when it is this chapter.
-     * @returns {string} the header line.
+     * @param {{ libraryDir: string, bookDir: string, pdfPath: string, artifactDir: string } | null} [paths] - the chapter's absolute locations.
+     * @returns {string} the header block.
      */
-    function sessionSeedText(bookRow, chapter, position) {
+    function sessionSeedText(bookRow, chapter, position, paths) {
       const pdf = position === null
         ? (chapter.file === '' ? '' : `${chapter.file}.pdf`)
         : position.pdf
@@ -4095,7 +4097,14 @@ window.__ModuleLoader__.load({
       const suffix = position === null
         ? ''
         : ` · 阅读位置：第 ${position.page} 页（${position.mode === 'continuous' ? '连续' : '单页'}）`
-      return `${parts.join(' · ')}${suffix}`
+      const header = `${parts.join(' · ')}${suffix}`
+      if (paths === null || paths === undefined) return header
+      const lines = [header, '路径（已给出，不要搜索或列举目录）：']
+      if (paths.libraryDir !== '') lines.push(`书库：${paths.libraryDir}`)
+      if (paths.bookDir !== '') lines.push(`书目录：${paths.bookDir}`)
+      if (paths.pdfPath !== '') lines.push(`本章 PDF：${paths.pdfPath}`)
+      if (paths.artifactDir !== '') lines.push(`产物目录：${paths.artifactDir}`)
+      return lines.join('\n')
     }
 
     const MASK_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -6837,6 +6846,13 @@ window.__ModuleLoader__.load({
           chapter.file === '' ? null : h('div', { className: 'md-detail-line' },
             h('span', { className: 'md-detail-key' }, format('pdfLabel')),
             h('span', { className: 'md-detail-value' }, `${chapter.file}.pdf`),
+            typeof chapter.pdfPath === 'string' && chapter.pdfPath !== ''
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: chapter.pdfPath,
+                onClick: () => props.onCopyPath(chapter.pdfPath),
+              }, format('copyPath'))
+              : null,
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-detail-open',
               onClick: () => props.onOpenPdf(chapter),
@@ -9821,6 +9837,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             version: typeof data.version === 'string' ? data.version : '0.0.0',
             covers: new Set(Array.isArray(data.covers) ? data.covers : []),
             libraryDir: typeof data.libraryDir === 'string' ? data.libraryDir : '',
+            fragmentDir: typeof data.fragmentDir === 'string' ? data.fragmentDir : '',
             artifactDir: typeof data.artifactDir === 'string' ? data.artifactDir : '',
             resumeRatio: typeof data.resumeRatio === 'number' ? data.resumeRatio : 0.85,
             target: data.target !== null && typeof data.target === 'object'
@@ -10394,7 +10411,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * @param {object} chapter - catalog chapter row.
        * @returns {string} the header line.
        */
-      const seedFor = useCallback((bookRow, chapter) => {
+      const seedFor = useCallback((bookRow, chapter, paths) => {
         const shown = readerRef.current
         const sameChapter = shown !== null && shown.bookId === bookRow.id && shown.code === chapter.code
         const position = sameChapter
@@ -10404,7 +10421,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             mode: shown.mode,
           }
           : null
-        return sessionSeedText(bookRow, chapter, position)
+        return sessionSeedText(bookRow, chapter, position, paths ?? null)
       }, [])
 
       /**
@@ -10554,8 +10571,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           refreshSessions()
           showNotice(format('sessionCreated', { title }))
           // Every new conversation starts knowing which book, chapter and PDF it
-          // belongs to; a continuation also starts from the chapter outline.
-          const parts = [seedFor(book, chapter)]
+          // belongs to, and where that file sits on disk; a continuation also
+          // starts from the chapter outline.
+          const paths = catalog === null
+            ? null
+            : {
+              libraryDir: typeof catalog.libraryDir === 'string' ? catalog.libraryDir : '',
+              bookDir: typeof catalog.fragmentDir === 'string' && catalog.fragmentDir !== ''
+                && typeof book.dir === 'string' && book.dir !== ''
+                ? `${catalog.fragmentDir}\\${book.dir}`
+                : '',
+              pdfPath: typeof chapter.pdfPath === 'string' ? chapter.pdfPath : '',
+              artifactDir: typeof catalog.artifactDir === 'string' && catalog.artifactDir !== ''
+                ? `${catalog.artifactDir}\\${book.id}\\${chapter.code}\\`
+                : '',
+            }
+          const parts = [seedFor(book, chapter, paths)]
           // The Socratic persona is a local-only workflow file, used for Q&A only.
           if (mode === 'qa') {
             try {
@@ -10567,9 +10598,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }
           }
           if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
-          if (catalog !== null && typeof catalog.libraryDir === 'string' && catalog.libraryDir !== '') {
-            parts.push(`产物目录：${catalog.libraryDir}\\产物\\${book.id}\\${chapter.code}\\`)
-          }
           let hasOutline = false
           if (continuation >= 2) {
             const outline = await loadOutline(book.id, chapter.code)
@@ -11114,11 +11142,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const readerNewSession = useCallback((mode, forceNew) => {
         if (reader === null || book === null || book.id !== reader.bookId) return
         setReaderForceNew(false)
-        void resumeOrCreate({ code: reader.code, title: reader.title }, mode, {
+        // Use the catalog row so the new conversation also gets the chapter's
+        // PDF path; the reader only knows the title.
+        const entry = catalog === null ? undefined : catalog.books.find(candidate => candidate.id === reader.bookId)
+        const chapter = entry === undefined
+          ? { code: reader.code, title: reader.title }
+          : ((entry.chapters ?? []).find(candidate => candidate.code === reader.code)
+            ?? { code: reader.code, title: reader.title })
+        void resumeOrCreate(chapter, mode, {
           jumpOnCreate: true,
           forceNew: forceNew === true,
         })
-      }, [book, reader, resumeOrCreate])
+      }, [book, catalog, reader, resumeOrCreate])
 
       const retryRename = useCallback(async () => {
         if (createError === null || typeof createError.sessionId !== 'string' || creatingRef.current) return
