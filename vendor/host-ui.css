@@ -233,3 +233,567 @@
   gap: 8px;
   padding: 0 24px;
 }
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/ShortcutKeys.module.css */
+.ShortcutKeys_keys {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.ShortcutKeys_key {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+}
+.ShortcutKeys_tooltip {
+  color: inherit;
+  font-size: 11px;
+  line-height: 14px;
+  gap: 2px;
+}
+.ShortcutKeys_tooltip .ShortcutKeys_key {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 2px;
+  border-radius: 4px;
+  border: 0;
+  background: var(--dsw-alias-tooltip-key-bg);
+}
+.ShortcutKeys_separator {
+  font: inherit;
+}
+.ShortcutKeys_joined {
+  box-sizing: border-box;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--dsw-alias-tooltip-key-bg);
+}
+.ShortcutKeys_joined .ShortcutKeys_key {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Tooltip.module.css */
+.Tooltip_bubble {
+  display: inline-flex;
+  align-items: safe center;
+  gap: 8px;
+  position: fixed;
+  z-index: 100;
+  width: max-content;
+  box-sizing: border-box;
+  max-width: min(50vw, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 3px 7px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-tooltip-bg);
+  color: var(--dsw-alias-tooltip-label);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  animation: Tooltip_tooltip-in 150ms var(--ds-ease-in-out);
+}
+.Tooltip_bubble[data-portal] {
+  z-index: 1100;
+}
+:where(html[data-platform=darwin]) .Tooltip_bubble {
+  -webkit-app-region: no-drag;
+}
+.Tooltip_bubble[data-pinned] {
+  pointer-events: auto;
+}
+.Tooltip_label {
+  min-width: 0;
+}
+.Tooltip_bubble[data-has-shortcut] {
+  padding-inline-end: 5px;
+}
+.Tooltip_bubble[data-has-shortcut]:not(:has(.Tooltip_label)) {
+  padding: 3px;
+}
+.Tooltip_bubble[data-side=right],
+.Tooltip_bubble[data-side=left] {
+  transform: translateY(-50%);
+}
+.Tooltip_bubble[data-side=bottom] {
+  transform: translateX(-50%);
+}
+.Tooltip_bubble[data-side=top] {
+  transform: translate(-50%, -100%);
+}
+.Tooltip_bubble[data-side=bottom][data-align=end] {
+  transform: translateX(-100%);
+}
+.Tooltip_bubble[data-side=top][data-align=end] {
+  transform: translate(-100%, -100%);
+}
+@keyframes Tooltip_tooltip-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .Tooltip_bubble {
+    animation: none;
+  }
+}
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Menu.module.css */
+.Menu_root {
+  position: relative;
+  display: inline-flex;
+}
+.Menu_list,
+.Menu_submenu {
+  box-sizing: border-box;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+.Menu_list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: min(144px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+}
+.Menu_list[data-context-menu]:not(:has([role=menuitem])) {
+  display: none;
+}
+.Menu_portal {
+  --dsh-menu-window-top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  position: fixed;
+  position-area: none;
+  top: max(var(--dsh-menu-window-top), calc(anchor(bottom) + 4px));
+  bottom: 12px;
+  left: max(12px, anchor(left));
+  right: 12px;
+  justify-self: start;
+  align-self: start;
+  margin: 0;
+  position-try-fallbacks:
+    --dsh-menu-wide-below,
+    --dsh-menu-above,
+    --dsh-menu-wide-above,
+    --dsh-menu-window,
+    --dsh-menu-wide-window;
+  width: max-content;
+  height: fit-content;
+  z-index: 1100;
+}
+.Menu_portal[data-anchor-side=top] {
+  top: var(--dsh-menu-window-top);
+  bottom: max(12px, calc(anchor(top) + 4px));
+  align-self: end;
+  position-try-fallbacks:
+    --dsh-menu-wide-above,
+    --dsh-menu-below,
+    --dsh-menu-wide-below,
+    --dsh-menu-window,
+    --dsh-menu-wide-window;
+}
+.Menu_portal[data-anchor-side=right] {
+  top: max(var(--dsh-menu-window-top), anchor(top));
+  bottom: 12px;
+  left: max(12px, calc(anchor(right) + 4px));
+  right: 12px;
+  position-try-fallbacks:
+    --dsh-menu-left,
+    --dsh-menu-wide-below,
+    --dsh-menu-window,
+    --dsh-menu-wide-window;
+}
+.Menu_portal[data-anchor-align=end]:not([data-anchor-side=right]) {
+  left: 12px;
+  right: max(12px, anchor(right));
+  justify-self: end;
+  --dsh-menu-wide-align: start;
+}
+.Menu_portal[data-match-anchor-width] {
+  min-width: min(anchor-size(width), calc(100vw - 24px));
+}
+.Menu_portal[data-context-menu] {
+  --dsh-menu-window-top: 12px;
+}
+@position-try --dsh-menu-below {
+  top: max(var(--dsh-menu-window-top), calc(anchor(bottom) + 4px));
+  bottom: 12px;
+  align-self: start;
+}
+@position-try --dsh-menu-above {
+  top: var(--dsh-menu-window-top);
+  bottom: max(12px, calc(anchor(top) + 4px));
+  align-self: end;
+}
+@position-try --dsh-menu-wide-below {
+  top: max(var(--dsh-menu-window-top), calc(anchor(bottom) + 4px));
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  align-self: start;
+  justify-self: safe var(--dsh-menu-wide-align, end);
+}
+@position-try --dsh-menu-wide-above {
+  top: var(--dsh-menu-window-top);
+  bottom: max(12px, calc(anchor(top) + 4px));
+  left: 12px;
+  right: 12px;
+  align-self: end;
+  justify-self: safe var(--dsh-menu-wide-align, end);
+}
+@position-try --dsh-menu-left {
+  left: 12px;
+  right: max(12px, calc(anchor(left) + 4px));
+  justify-self: end;
+}
+@position-try --dsh-menu-window {
+  top: var(--dsh-menu-window-top);
+  bottom: 12px;
+  align-self: safe start;
+}
+@position-try --dsh-menu-wide-window {
+  top: var(--dsh-menu-window-top);
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  align-self: safe start;
+  justify-self: safe var(--dsh-menu-wide-align, end);
+}
+.Menu_sideTop {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.Menu_alignEnd {
+  left: auto;
+  right: 0;
+}
+.Menu_scrollable {
+  max-height: calc(100vh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+  max-height: calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+}
+.Menu_viewport {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.Menu_scrollable .Menu_viewport {
+  overflow-y: auto;
+}
+.Menu_footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+.Menu_list[data-context-menu] .Menu_footer:has(> .Menu_separator:first-child) {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.Menu_itemWrap {
+  position: relative;
+}
+.Menu_item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+}
+@media (hover: hover) {
+  .Menu_item:hover:not(:disabled):not([aria-disabled=true]) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+.Menu_item:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
+}
+.Menu_denseList .Menu_item {
+  min-height: 30px;
+  padding-block: 4px;
+}
+.Menu_denseList .Menu_label {
+  padding-block: 3px;
+}
+.Menu_list.Menu_compactList,
+.Menu_submenu.Menu_compactList {
+  min-width: min(156px, calc(100vw - 24px));
+  padding: 4px;
+}
+.Menu_compactList .Menu_item {
+  min-height: 24px;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: var(--dsw-radius-sm);
+  font-size: 11px;
+  line-height: 17px;
+}
+.Menu_compactList .Menu_itemIcon {
+  width: 12px;
+  height: 12px;
+}
+.Menu_compactList .Menu_separator {
+  margin: 2px 6px;
+}
+.Menu_compactList .Menu_label {
+  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 15px;
+}
+.Menu_item:disabled,
+.Menu_item[aria-disabled=true] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.Menu_itemIcon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-menu-icon);
+}
+.Menu_itemIcon svg,
+.Menu_check {
+  width: 14px;
+  height: 14px;
+}
+.Menu_compactList .Menu_itemIcon svg,
+.Menu_compactList .Menu_check {
+  width: 12px;
+  height: 12px;
+}
+.Menu_itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.Menu_shortcut {
+  flex: none;
+  margin-inline-start: auto;
+}
+.Menu_shortcut .Menu_shortcutKeys {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+@media (pointer: coarse) {
+  html:not([data-input-modality=keyboard]) .Menu_shortcut {
+    display: none;
+  }
+}
+.Menu_check {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+}
+.Menu_selected {
+  background: transparent;
+}
+.Menu_selectedFill {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.Menu_danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+.Menu_danger .Menu_itemIcon {
+  color: var(--dsw-alias-state-error-primary);
+}
+@media (hover: hover) {
+  .Menu_danger:hover:not(:disabled):not([aria-disabled=true]) {
+    background: var(--dsw-alias-interactive-bg-hover-danger);
+  }
+}
+.Menu_danger:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  outline: none;
+}
+.Menu_label {
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.Menu_separator {
+  height: 0.5px;
+  margin: 3px 8px;
+  background: var(--dsw-alias-border-l2);
+}
+.Menu_separator + .Menu_separator,
+.Menu_separator + .Menu_itemWrap > .Menu_separator:first-child,
+.Menu_itemWrap:first-child > .Menu_separator:first-child {
+  display: none;
+}
+.Menu_list[data-context-menu] .Menu_viewport > .Menu_itemWrap ~ [data-slot] .Menu_itemWrap:first-child > .Menu_separator:first-child {
+  display: block;
+}
+.Menu_submenuAnchor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.Menu_submenu {
+  --dsh-menu-window-top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  position: fixed;
+  position-anchor: var(--dsh-submenu-parent);
+  position-visibility: always;
+  margin: 0;
+  z-index: 1101;
+  width: max-content;
+  min-width: min(163px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 12px - var(--dsh-menu-window-top));
+}
+.Menu_submenu[data-contextual] {
+  --dsh-menu-window-top: 12px;
+}
+.Menu_submenu[data-submenu-layout=side] {
+  top: max(var(--dsh-menu-window-top), min(calc(anchor(top) + var(--dsh-submenu-row-offset, 0px)), calc(100dvh - 12px - var(--dsh-submenu-height, 0px))));
+  left: calc(anchor(right) + 4px);
+  right: 12px;
+  justify-self: start;
+  height: max-content;
+  position-try-fallbacks: --dsh-submenu-left;
+}
+@position-try --dsh-submenu-left {
+  left: 12px;
+  right: calc(anchor(left) + 4px);
+  justify-self: end;
+}
+.Menu_submenu[data-submenu-layout=page] {
+  top: max(var(--dsh-menu-window-top), anchor(top));
+  bottom: 12px;
+  left: max(12px, anchor(left));
+  right: 12px;
+  align-self: start;
+  justify-self: start;
+  height: fit-content;
+  min-width: min(anchor-size(width), calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+}
+.Menu_parentPage {
+  visibility: hidden;
+  pointer-events: none;
+}
+.Menu_submenu > .Menu_item {
+  flex: none;
+}
+.Menu_list[data-menu-phase=dismiss],
+.Menu_list[data-menu-phase=replace] {
+  pointer-events: none;
+}
+.Menu_list[data-context-menu].Menu_scrollable {
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+}
+
+/* node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuSurface.module.css */
+.MenuSurface_surface,
+.MenuSurface_backing {
+  border-radius: var(--dsw-radius-lg);
+}
+.MenuSurface_compact {
+  border-radius: var(--dsw-radius-md);
+}
+:where(.MenuSurface_surface) {
+  position: relative;
+}
+.MenuSurface_surface {
+  anchor-name: var(--dsh-menu-anchor);
+  isolation: isolate;
+}
+.MenuSurface_material {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsw-menu-surface-fill);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
+}
+.MenuSurface_backing {
+  display: none;
+}
+html[data-platform=darwin] .MenuSurface_backing {
+  display: block;
+  position: fixed;
+  position-anchor: var(--dsh-menu-anchor);
+  top: anchor(top);
+  left: anchor(left);
+  width: anchor-size(width, 0px);
+  height: anchor-size(height, 0px);
+  z-index: -1;
+  background: var(--dsw-alias-bg-base);
+  pointer-events: none;
+}
+.MenuSurface_surface[data-menu-phase=enter] > *,
+.MenuSurface_backing[data-menu-phase=enter] {
+  animation: MenuSurface_dsh-context-menu-in var(--dsh-menu-enter) ease-out;
+}
+.MenuSurface_surface[data-menu-phase=dismiss] > *,
+.MenuSurface_backing[data-menu-phase=dismiss],
+.MenuSurface_surface[data-menu-phase=replace] > *,
+.MenuSurface_backing[data-menu-phase=replace] {
+  animation: MenuSurface_dsh-context-menu-out var(--dsh-menu-dismiss) ease-in both;
+}
+.MenuSurface_surface[data-menu-phase=replace] > *,
+.MenuSurface_backing[data-menu-phase=replace] {
+  animation-duration: var(--dsh-menu-replace);
+}
+@keyframes MenuSurface_dsh-context-menu-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes MenuSurface_dsh-context-menu-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .MenuSurface_surface[data-menu-phase] > *,
+  .MenuSurface_backing[data-menu-phase] {
+    animation-duration: 0ms;
+  }
+}

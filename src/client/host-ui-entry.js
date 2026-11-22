@@ -8,3 +8,4 @@
 export { Button } from '@deepseek-ai/dsh-client-ui-primitives/src/Button.tsx'
 export { Input } from '@deepseek-ai/dsh-client-ui-primitives/src/Input.tsx'
 export { Modal } from '@deepseek-ai/dsh-client-ui-primitives/src/Modal.tsx'
+export { Menu } from '@deepseek-ai/dsh-client-ui-primitives/src/Menu.tsx'

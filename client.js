@@ -3309,6 +3309,89 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Select adapter: host Menu with a button anchor; fallback list stays local.
+     * @param {{ value: string, label: string, placeholder?: string, options: object[], disabled?: boolean, onChange: Function }} props - select state.
+     * @returns {import('react').ReactElement} the select.
+     */
+    function KitSelect(props) {
+      const ui = useHostUi()
+      const [open, setOpen] = React.useState(false)
+      const rootRef = React.useRef(null)
+      React.useEffect(() => {
+        if (!open) return undefined
+        const onPointer = event => {
+          if (rootRef.current !== null && !rootRef.current.contains(event.target)) setOpen(false)
+        }
+        const onKey = event => {
+          if (event.key === 'Escape') setOpen(false)
+        }
+        window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('keydown', onKey)
+        return () => {
+          window.removeEventListener('pointerdown', onPointer)
+          window.removeEventListener('keydown', onKey)
+        }
+      }, [open])
+      const options = Array.isArray(props.options) ? props.options : []
+      const value = props.value === undefined || props.value === null ? '' : String(props.value)
+      const current = options.find(option => String(option.value) === value)
+      const label = current === undefined ? (props.placeholder === undefined ? '' : props.placeholder) : current.label
+      const trigger = h(KitButton, {
+        className: `md-btn md-btn-small${props.className === undefined ? '' : ` ${props.className}`}`,
+        variant: 'outline',
+        disabled: props.disabled === true,
+        title: props.title,
+        onClick: () => setOpen(value => !value),
+        'aria-label': props.label,
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-haspopup': 'listbox',
+      }, label)
+      const HostMenu = ui !== null && ui !== undefined && ui.Menu !== undefined
+        && (typeof ui.Menu === 'function' || (typeof ui.Menu === 'object' && ui.Menu.$$typeof))
+        ? ui.Menu
+        : null
+      if (HostMenu !== null) {
+        return h(HostMenu, {
+          open,
+          anchor: trigger,
+          items: options.map(option => ({
+            id: String(option.value),
+            label: option.label,
+            disabled: option.disabled === true,
+          })),
+          selectedId: value,
+          onSelect: id => {
+            setOpen(false)
+            if (typeof props.onChange === 'function') props.onChange(id)
+          },
+          onClose: () => setOpen(false),
+          side: 'bottom',
+          align: 'start',
+          portal: true,
+          compact: true,
+        })
+      }
+      return h('span', { className: 'md-kit-select', ref: rootRef },
+        trigger,
+        open
+          ? h('div', { className: 'md-kit-select-menu', role: 'listbox', 'aria-label': props.label },
+            options.map(option => h('button', {
+              key: String(option.value),
+              type: 'button',
+              className: 'md-kit-select-option',
+              role: 'option',
+              'aria-selected': String(option.value) === value ? 'true' : 'false',
+              disabled: option.disabled === true,
+              onClick: () => {
+                setOpen(false)
+                if (typeof props.onChange === 'function') props.onChange(String(option.value))
+              },
+            }, option.label)))
+          : null
+      )
+    }
+
     function SettingsDialog(props) {
       const hostUi = useHostUi()
       const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
@@ -8254,35 +8337,35 @@ window.__ModuleLoader__.load({
                 onClick: () => { void maskAllBlocks() },
               }, autoBoxed ? format('overlayBlocksCancel') : format('overlayBlocks'))
               : null,
-            h('select', {
+            h(KitSelect, {
               className: 'md-reader-lang md-reader-export',
               value: '',
               title: format('exportGroupHint'),
-              'aria-label': format('exportGroup'),
-              onChange: event => {
-                const action = event.target.value
-                event.target.value = ''
+              label: format('exportGroup'),
+              placeholder: format('exportGroup'),
+              options: [
+                { value: 'page', label: format('exportPage') },
+                { value: 'chapter', label: format('exportChapter') },
+                { value: 'import', label: format('importAnnots') },
+              ],
+              onChange: action => {
                 if (action === 'page') void exportPage()
                 else if (action === 'chapter') void exportChapter()
                 else if (action === 'import') void importAnnots()
               },
-            },
-              h('option', { value: '' }, format('exportGroup')),
-              h('option', { value: 'page' }, format('exportPage')),
-              h('option', { value: 'chapter' }, format('exportChapter')),
-              h('option', { value: 'import' }, format('importAnnots'))
-            ),
+            }),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            h('select', {
+            h(KitSelect, {
               className: 'md-reader-lang',
               value: translateTarget,
               title: format('translateHint'),
-              'aria-label': format('translateFor'),
-              onChange: event => setTranslateTarget(event.target.value),
-            },
-              h('option', { value: 'zh' }, format('langZh')),
-              h('option', { value: 'en' }, format('langEn'))
-            ),
+              label: format('translateFor'),
+              options: [
+                { value: 'zh', label: format('langZh') },
+                { value: 'en', label: format('langEn') },
+              ],
+              onChange: value => setTranslateTarget(value),
+            }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: translating || reader.phase !== 'ready',
@@ -9043,6 +9126,11 @@ window.__ModuleLoader__.load({
 .md-settings-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .md-kit-input { flex: 1 1 auto; min-width: 0; }
 .md-kit-input input { font: inherit; }
+.md-kit-select { position: relative; display: inline-flex; flex-direction: column; }
+.md-kit-select-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 140px; padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--dsw-alias-bg-layer-1); border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); box-shadow: var(--dsw-elevation-prominent); }
+.md-kit-select-option { display: flex; align-items: center; min-height: 30px; padding: 0 8px; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-primary); text-align: left; cursor: pointer; }
+.md-kit-select-option:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.md-kit-select-option:disabled { opacity: .4; cursor: not-allowed; }
 .md-settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
 .md-tab-btn[data-on='true'] { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-brand-primary); font-weight: 600; }
 .md-settings-note { margin: 0; font-size: 12px; color: var(--dsw-alias-brand-primary); }

@@ -51,6 +51,7 @@ var host_ui_entry_exports = {};
 __export(host_ui_entry_exports, {
   Button: () => Button,
   Input: () => Input,
+  Menu: () => Menu,
   Modal: () => Modal
 });
 module.exports = __toCommonJS(host_ui_entry_exports);
@@ -653,4 +654,1066 @@ function Modal({
       }
     )
   ] }), document.body);
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Menu.tsx
+var import_react11 = require("react");
+var import_react_dom5 = require("react-dom");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/useMenuSubmenu.ts
+var import_react6 = require("react");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/menu-submenu-position.ts
+var SUBMENU_GAP = 4;
+var SUBMENU_MARGIN = 12;
+function submenuNeedsPage(parent, width, viewportWidth) {
+  const right = parent.right + SUBMENU_GAP + width <= viewportWidth - SUBMENU_MARGIN;
+  const left = parent.left - SUBMENU_GAP - width >= SUBMENU_MARGIN;
+  return !right && !left;
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/pointer-grace.ts
+var import_react5 = require("react");
+var POINTER_GRACE_MS = 200;
+function usePointerGrace(close) {
+  const timerRef = (0, import_react5.useRef)(null);
+  const closeRef = (0, import_react5.useRef)(close);
+  closeRef.current = close;
+  const cancel = (0, import_react5.useCallback)(() => {
+    if (timerRef.current === null) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+  const arm = (0, import_react5.useCallback)(() => {
+    cancel();
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      closeRef.current();
+    }, POINTER_GRACE_MS);
+  }, [cancel]);
+  (0, import_react5.useEffect)(() => cancel, [cancel]);
+  return { arm, cancel };
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/useMenuSubmenu.ts
+function menuHoverAllowed(event) {
+  return event.pointerType !== "touch" && window.matchMedia("(any-hover: hover)").matches;
+}
+function useMenuSubmenu(options) {
+  const { open, items, footer, listRef, refocusAnchor } = options;
+  const [expanded, setExpanded] = (0, import_react6.useState)(null);
+  const panelRef = (0, import_react6.useRef)(null);
+  const pendingFocus = (0, import_react6.useRef)(null);
+  const entry = [...items, ...footer ?? []].find((item) => !("type" in item) && item.id === expanded?.id && item.disabled !== true && item.submenu !== void 0 && item.submenu.length > 0);
+  const trigger = expanded?.trigger ?? null;
+  const anchorId = (0, import_react6.useId)().replaceAll(":", "");
+  const parentAnchor = `--dsh-submenu-parent-${anchorId}`;
+  const [needsPage, setNeedsPage] = (0, import_react6.useState)(null);
+  const contains = (node) => panelRef.current?.contains(node) === true;
+  const invalidated = expanded !== null && entry === void 0;
+  const active = document.activeElement;
+  const restoreInvalidatedFocus = open && invalidated && (contains(active) || trigger === active);
+  const backWasFocused = contains(active) && active?.hasAttribute("data-menu-back") === true;
+  const measured = needsPage !== null;
+  const page = entry !== void 0 && expanded?.activated === true && needsPage === true;
+  const hidden = !measured || needsPage && !page;
+  const visible = open && entry !== void 0;
+  (0, import_react6.useLayoutEffect)(() => {
+    const panel = panelRef.current;
+    const parent = listRef.current;
+    if (!visible || panel === null || parent === null || trigger === null) {
+      setNeedsPage(null);
+      return;
+    }
+    const measureRow = () => {
+      panel.style.setProperty("--dsh-submenu-row-offset", `${trigger.getBoundingClientRect().top - parent.getBoundingClientRect().top}px`);
+    };
+    const measure = () => {
+      const layout = panel.getAttribute("data-submenu-layout");
+      panel.removeAttribute("data-submenu-layout");
+      const width = panel.offsetWidth;
+      panel.style.setProperty("--dsh-submenu-height", `${panel.offsetHeight}px`);
+      if (layout !== null) panel.setAttribute("data-submenu-layout", layout);
+      measureRow();
+      const viewport = document.documentElement.clientWidth || window.innerWidth;
+      setNeedsPage(submenuNeedsPage(parent.getBoundingClientRect(), width, viewport));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    parent.addEventListener("scroll", measureRow, true);
+    const observer = new ResizeObserver(measure);
+    for (const element of [parent, trigger, panel]) observer.observe(element);
+    return () => {
+      window.removeEventListener("resize", measure);
+      parent.removeEventListener("scroll", measureRow, true);
+      observer.disconnect();
+    };
+  }, [visible, entry, trigger, listRef]);
+  const focusFirstChild = () => {
+    const panel = panelRef.current;
+    const first = panel?.querySelector('button[role="menuitem"]:not(:disabled):not([data-menu-back])') ?? panel?.querySelector("button:not(:disabled)");
+    first?.focus();
+  };
+  const returnToParent = () => {
+    cancelClose();
+    pendingFocus.current = trigger;
+    setExpanded(null);
+  };
+  const collapse = () => {
+    cancelClose();
+    if (contains(document.activeElement)) returnToParent();
+    else setExpanded(null);
+  };
+  const { arm: armClose, cancel: cancelClose } = usePointerGrace(() => {
+    if (!page) collapse();
+  });
+  const openChild = (id, target, enter = false) => {
+    cancelClose();
+    if (trigger !== target && contains(document.activeElement)) {
+      pendingFocus.current = target;
+      target.focus();
+      pendingFocus.current = null;
+    }
+    pendingFocus.current = enter ? "child" : null;
+    setExpanded((current) => current?.id === id ? enter && !current.activated ? { ...current, activated: true } : current : { id, trigger: target, activated: enter });
+    if (enter) focusFirstChild();
+  };
+  (0, import_react6.useLayoutEffect)(() => {
+    if (!open || invalidated) {
+      cancelClose();
+      pendingFocus.current = null;
+      setExpanded(null);
+      if (restoreInvalidatedFocus && (document.activeElement === document.body || document.activeElement === trigger)) {
+        const target = trigger?.isConnected === true && !trigger.disabled ? trigger : listRef.current?.querySelector("button:not(:disabled)");
+        pendingFocus.current = target ?? null;
+        if (target != null) target.focus();
+        else refocusAnchor();
+        pendingFocus.current = null;
+      }
+      return;
+    }
+    if (entry === void 0 && pendingFocus.current instanceof HTMLButtonElement) {
+      pendingFocus.current.focus();
+      pendingFocus.current = null;
+    }
+    if (entry === void 0 || hidden) return;
+    if (pendingFocus.current === "child" || page && listRef.current?.contains(document.activeElement) || !page && backWasFocused) {
+      focusFirstChild();
+      pendingFocus.current = null;
+    }
+  }, [open, entry, needsPage, page, hidden, invalidated, restoreInvalidatedFocus, backWasFocused, cancelClose]);
+  const collapseFrom = (event) => {
+    const row = event.target.closest('button[role="menuitem"]');
+    if (row === null || row.getAttribute("aria-haspopup") === "menu") return;
+    if (row.closest('[role="menu"]') === event.currentTarget) collapse();
+  };
+  return {
+    entry,
+    panelRef,
+    parentAnchor,
+    measured,
+    page,
+    hidden,
+    contains,
+    activeList: (focused) => page || contains(focused) ? panelRef.current : listRef.current,
+    returnToParent: () => {
+      if (entry === void 0 || hidden) return false;
+      returnToParent();
+      return true;
+    },
+    openChild,
+    focusParent: (id, target) => {
+      if (pendingFocus.current !== target) openChild(id, target);
+    },
+    leave: () => {
+      if (!page) armClose();
+    },
+    cancelClose,
+    collapseFrom
+  };
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuRow.tsx
+var import_react9 = require("react");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/ShortcutKeys.module.css
+var ShortcutKeys_default = {
+  keys: "ShortcutKeys_keys",
+  key: "ShortcutKeys_key",
+  tooltip: "ShortcutKeys_tooltip",
+  separator: "ShortcutKeys_separator",
+  joined: "ShortcutKeys_joined"
+};
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/ShortcutKeys.tsx
+var import_jsx_runtime5 = __toESM(require_react_jsx_runtime(), 1);
+function ShortcutKeys({ keys, variant = "plain", className }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: clsx_default(ShortcutKeys_default.keys, variant === "tooltip" && ShortcutKeys_default.tooltip, variant === "tooltip" && keys.includes("+") && ShortcutKeys_default.joined, className), children: keys.map((key, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("kbd", { className: key === "+" ? ShortcutKeys_default.separator : ShortcutKeys_default.key, children: key }, index)) });
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Tooltip.tsx
+var import_react8 = require("react");
+var import_react_dom2 = require("react-dom");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/tooltip-placement.ts
+var opposite = { right: "left", left: "right", top: "bottom", bottom: "top" };
+function placeTooltip(input) {
+  const { anchor, viewportWidth, viewportHeight, side, align, gap } = input;
+  let { width, height } = input;
+  const margin = 12;
+  const maxWidth = Math.max(0, viewportWidth - margin * 2);
+  const maxHeight = Math.max(0, viewportHeight - margin * 2);
+  width = Math.min(width, maxWidth);
+  height = Math.min(height, maxHeight);
+  const clampX = (x) => Math.max(margin, Math.min(x, viewportWidth - margin - width));
+  const clampY = (y) => Math.max(margin, Math.min(y, viewportHeight - margin - height));
+  const horizontal = side === "right" || side === "left";
+  const candidates = [side, opposite[side], ...horizontal ? ["bottom", "top"] : ["right", "left"]];
+  const positions = {
+    right: { left: anchor.right + 10, top: clampY((anchor.top + anchor.bottom - height) / 2) },
+    left: { left: anchor.left - 10 - width, top: clampY((anchor.top + anchor.bottom - height) / 2) },
+    bottom: { left: clampX(align === "end" ? anchor.right - width : (anchor.left + anchor.right - width) / 2), top: anchor.bottom + gap },
+    top: { left: clampX(align === "end" ? anchor.right - width : (anchor.left + anchor.right - width) / 2), top: anchor.top - gap - height }
+  };
+  for (const candidate of candidates) {
+    const position2 = positions[candidate];
+    if (position2.left >= margin && position2.top >= margin && position2.left + width <= viewportWidth - margin && position2.top + height <= viewportHeight - margin) {
+      return { ...position2, side: candidate, width, height, overflow: false };
+    }
+  }
+  const position = positions[side];
+  return { left: clampX(position.left), top: clampY(position.top), side, width, height, overflow: true };
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/useDismissOnOutsidePointer.ts
+var import_react7 = require("react");
+function useDismissOnOutsidePointer(root, open, setOpen, portal) {
+  (0, import_react7.useEffect)(() => {
+    if (!open) return;
+    const closeOutside = (event) => {
+      if (event.target instanceof Node && root.current?.contains(event.target) !== true && portal?.current?.contains(event.target) !== true) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+    };
+  }, [root, open, setOpen, portal]);
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Tooltip.module.css
+var Tooltip_default = {
+  bubble: "Tooltip_bubble",
+  "tooltip-in": "Tooltip_tooltip-in",
+  label: "Tooltip_label"
+};
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/input-modality.ts
+var INPUT_MODALITY = { pointer: "pointer", keyboard: "keyboard" };
+var INPUT_MODALITY_ATTRIBUTE = "data-input-modality";
+var FOCUS_NAVIGATION = /* @__PURE__ */ new Set(["Tab", "Home", "End", "PageUp", "PageDown"]);
+var pointer = false;
+var pointerOwnsFocus = false;
+var keyFocusOrigin;
+function publish() {
+  document.documentElement.setAttribute(INPUT_MODALITY_ATTRIBUTE, pointerOwnsFocus ? INPUT_MODALITY.pointer : INPUT_MODALITY.keyboard);
+}
+function pointerModality() {
+  return pointer;
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", () => {
+    pointer = true;
+    pointerOwnsFocus = true;
+    keyFocusOrigin = void 0;
+    publish();
+  }, true);
+  window.addEventListener("keydown", (event) => {
+    pointer = false;
+    if (event.isComposing) {
+      keyFocusOrigin = void 0;
+      return;
+    }
+    keyFocusOrigin = event.composedPath()[0];
+    if (!FOCUS_NAVIGATION.has(event.key) && !event.key.startsWith("Arrow")) return;
+    pointerOwnsFocus = false;
+    publish();
+  }, true);
+  window.addEventListener("focusin", (event) => {
+    if (keyFocusOrigin === void 0 || event.composedPath()[0] === keyFocusOrigin) return;
+    keyFocusOrigin = void 0;
+    if (!pointerOwnsFocus) return;
+    pointerOwnsFocus = false;
+    publish();
+  }, true);
+  window.addEventListener("blur", () => {
+    keyFocusOrigin = void 0;
+  });
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Tooltip.tsx
+var import_jsx_runtime6 = __toESM(require_react_jsx_runtime(), 1);
+var TooltipSuppression = (0, import_react8.createContext)(null);
+function clipped(anchor) {
+  return [anchor, ...anchor.querySelectorAll("*")].some((el) => el instanceof HTMLElement && el.scrollWidth > el.clientWidth);
+}
+function Tooltip({ label, shortcutKeys, side = "right", align = "center", delayMs = 0, focusDelayMs = 0, gap = 8, disabled = false, portal = false, maxWidth, openOnClick = false, onlyWhenClipped = false, children }) {
+  const id = (0, import_react8.useId)();
+  const [pinned, setPinned] = (0, import_react8.useState)(false);
+  const anchor = (0, import_react8.useRef)(null);
+  const childRef = children.ref;
+  const mergedRef = (0, import_react8.useCallback)((el) => {
+    anchor.current = el;
+    if (typeof childRef === "function") childRef(el);
+    else if (childRef != null) childRef.current = el;
+  }, [childRef]);
+  const [pos, setPos] = (0, import_react8.useState)(null);
+  const bubble = (0, import_react8.useRef)(null);
+  const resolvedLabel = pos === null ? null : typeof label === "function" ? label() : label;
+  const showTimer = (0, import_react8.useRef)(null);
+  const triggers = (0, import_react8.useRef)({ hover: false, focus: false });
+  const suppressAncestors = (0, import_react8.useContext)(TooltipSuppression);
+  const [suppressed, setSuppressed] = (0, import_react8.useState)(false);
+  const announce = (0, import_react8.useCallback)((active) => {
+    suppressAncestors?.(active);
+  }, [suppressAncestors]);
+  const visible = pos !== null && !disabled;
+  (0, import_react8.useEffect)(() => {
+    const el = bubble.current;
+    if (pos === null || !visible || suppressed || el === null) return;
+    let size;
+    let anchorRect = pos;
+    const fit = () => {
+      if (size === void 0) return;
+      const placement = placeTooltip({
+        anchor: anchorRect,
+        width: size.inlineSize,
+        height: size.blockSize,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        side,
+        align,
+        gap
+      });
+      const horizontal = placement.side === "right" || placement.side === "left";
+      const offsetX = horizontal ? 0 : align === "end" ? placement.width : placement.width / 2;
+      const offsetY = horizontal ? placement.height / 2 : placement.side === "top" ? placement.height : 0;
+      el.style.left = `${placement.left + offsetX}px`;
+      el.style.top = `${placement.top + offsetY}px`;
+      el.dataset.side = placement.side;
+      el.style.visibility = "visible";
+    };
+    const onResize = () => {
+      if (anchor.current !== null) anchorRect = anchor.current.getBoundingClientRect();
+      fit();
+    };
+    const observer = new ResizeObserver((entries) => {
+      size = entries[0]?.borderBoxSize[0];
+      fit();
+    });
+    observer.observe(el, { box: "border-box" });
+    window.addEventListener("resize", onResize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, [align, gap, pos, side, suppressed, visible]);
+  (0, import_react8.useEffect)(() => {
+    announce(visible);
+    return () => {
+      announce(false);
+    };
+  }, [announce, visible]);
+  const cancelShow = (0, import_react8.useCallback)(() => {
+    if (showTimer.current === null) return;
+    clearTimeout(showTimer.current);
+    showTimer.current = null;
+  }, []);
+  (0, import_react8.useEffect)(() => {
+    if (pinned && (disabled || !openOnClick)) setPinned(false);
+    if (disabled) {
+      cancelShow();
+      triggers.current = { hover: false, focus: false };
+      setPos(null);
+    }
+    return cancelShow;
+  }, [cancelShow, disabled, openOnClick, pinned]);
+  const show = () => {
+    if (disabled) return;
+    const el = anchor.current;
+    if (el === null) return;
+    if (onlyWhenClipped && !clipped(el)) return;
+    setPos(el.getBoundingClientRect());
+    announce(true);
+  };
+  const showAfterDelay = (delay) => {
+    cancelShow();
+    if (delay <= 0) {
+      show();
+      return;
+    }
+    showTimer.current = setTimeout(() => {
+      showTimer.current = null;
+      show();
+    }, delay);
+  };
+  const withdraw = (0, import_react8.useCallback)(() => {
+    setPinned(false);
+    setPos(null);
+    announce(false);
+  }, [announce]);
+  const hide = () => {
+    cancelShow();
+    if (!triggers.current.hover && !triggers.current.focus && !pinned) withdraw();
+  };
+  const dismiss = (0, import_react8.useCallback)(() => {
+    cancelShow();
+    triggers.current = { hover: false, focus: false };
+    withdraw();
+  }, [cancelShow, withdraw]);
+  useDismissOnOutsidePointer(anchor, openOnClick && visible, dismiss, bubble);
+  (0, import_react8.useEffect)(() => {
+    if (!openOnClick || !visible) return;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape" && event.key !== "Tab") return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      dismiss();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [dismiss, openOnClick, visible]);
+  const content = visible && !suppressed && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+    "span",
+    {
+      ref: bubble,
+      id: openOnClick ? id : void 0,
+      className: Tooltip_default.bubble,
+      "data-side": side,
+      "data-portal": portal || void 0,
+      "data-pinned": pinned || void 0,
+      "data-align": align,
+      "data-has-shortcut": shortcutKeys?.length ? true : void 0,
+      style: { left: pos.left, top: pos.top, visibility: "hidden", ...maxWidth === void 0 ? {} : { maxWidth: `min(${maxWidth}px, calc(100vw - 24px))` } },
+      role: "tooltip",
+      "aria-label": shortcutKeys?.length ? [resolvedLabel, shortcutKeys.join(" ")].filter(Boolean).join(" ") : void 0,
+      children: [
+        resolvedLabel && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: Tooltip_default.label, children: resolvedLabel }),
+        shortcutKeys !== void 0 && shortcutKeys.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ShortcutKeys, { keys: shortcutKeys, variant: "tooltip" })
+      ]
+    }
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(TooltipSuppression.Provider, { value: setSuppressed, children: [
+    (0, import_react8.cloneElement)(children, {
+      ref: mergedRef,
+      "aria-describedby": openOnClick && visible ? [children.props["aria-describedby"], id].filter(Boolean).join(" ") : children.props["aria-describedby"],
+      onPointerEnter: (e) => {
+        children.props.onPointerEnter?.(e);
+        if (e.pointerType === "touch") return;
+        if (e.pointerType === "mouse" && !window.matchMedia("(any-hover: hover)").matches) return;
+        triggers.current.hover = true;
+        showAfterDelay(delayMs);
+      },
+      onPointerLeave: (e) => {
+        children.props.onPointerLeave?.(e);
+        triggers.current.hover = false;
+        cancelShow();
+        if (!pinned) withdraw();
+      },
+      onPointerDown: (e) => {
+        children.props.onPointerDown?.(e);
+        if (e.pointerType === "touch" && !pinned) dismiss();
+      },
+      // Activating an ordinary action dismisses the bubble: it often changes
+      // what the anchor now does (pin → unpin), and the click leaves the
+      // anchor focused, which would otherwise pin the relabelled bubble up.
+      onClick: (e) => {
+        children.props.onClick?.(e);
+        triggers.current.focus = false;
+        cancelShow();
+        if (openOnClick && !disabled && !pinned) {
+          setPinned(true);
+          show();
+        } else withdraw();
+      },
+      onFocus: (e) => {
+        children.props.onFocus?.(e);
+        if (pointerModality()) return;
+        triggers.current.focus = true;
+        showAfterDelay(focusDelayMs);
+      },
+      onBlur: (e) => {
+        children.props.onBlur?.(e);
+        triggers.current.focus = false;
+        hide();
+      }
+    }),
+    portal ? content !== false && (0, import_react_dom2.createPortal)(content, document.body) : content
+  ] });
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Menu.module.css
+var Menu_default = {
+  root: "Menu_root",
+  list: "Menu_list",
+  submenu: "Menu_submenu",
+  portal: "Menu_portal",
+  sideTop: "Menu_sideTop",
+  alignEnd: "Menu_alignEnd",
+  scrollable: "Menu_scrollable",
+  viewport: "Menu_viewport",
+  footer: "Menu_footer",
+  separator: "Menu_separator",
+  itemWrap: "Menu_itemWrap",
+  item: "Menu_item",
+  denseList: "Menu_denseList",
+  label: "Menu_label",
+  compactList: "Menu_compactList",
+  itemIcon: "Menu_itemIcon",
+  check: "Menu_check",
+  itemLabel: "Menu_itemLabel",
+  shortcut: "Menu_shortcut",
+  shortcutKeys: "Menu_shortcutKeys",
+  selected: "Menu_selected",
+  selectedFill: "Menu_selectedFill",
+  danger: "Menu_danger",
+  submenuAnchor: "Menu_submenuAnchor",
+  parentPage: "Menu_parentPage"
+};
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuRow.tsx
+var import_jsx_runtime7 = __toESM(require_react_jsx_runtime(), 1);
+function MenuRow({
+  children,
+  icon,
+  shortcut,
+  current,
+  disabled = false,
+  disabledReason,
+  danger,
+  separatorBefore,
+  selected,
+  selection = "check",
+  reserveIcon,
+  decorativeIcon = true,
+  wrapperProps,
+  ...button
+}) {
+  const reasonId = (0, import_react9.useId)();
+  const explained = disabled && disabledReason !== void 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { ...wrapperProps, className: Menu_default.itemWrap, children: [
+    separatorBefore && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: Menu_default.separator, role: "separator" }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Tooltip, { label: disabledReason ?? "", disabled: !explained, side: "bottom", delayMs: 500, maxWidth: 300, portal: true, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+      "button",
+      {
+        ...button,
+        type: "button",
+        role: "menuitem",
+        className: clsx_default(Menu_default.item, selected && (selection === "fill" ? Menu_default.selectedFill : Menu_default.selected), danger && Menu_default.danger),
+        disabled: disabled && !explained,
+        "aria-disabled": explained || void 0,
+        "aria-describedby": explained ? reasonId : void 0,
+        "aria-keyshortcuts": shortcut?.aria,
+        "aria-current": current === true ? "page" : void 0,
+        onClick: explained ? void 0 : button.onClick,
+        children: [
+          (icon !== void 0 || reserveIcon) && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { "aria-hidden": decorativeIcon || void 0, className: Menu_default.itemIcon, children: icon }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: Menu_default.itemLabel, children }),
+          shortcut !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { "aria-hidden": "true", className: Menu_default.shortcut, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ShortcutKeys, { keys: shortcut.keys, className: Menu_default.shortcutKeys }) }),
+          selected && selection === "check" && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(IconCheckOutlineRegular, { className: Menu_default.check }),
+          button["aria-haspopup"] === "menu" && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(IconChevronRightOutlineRegular, { "aria-hidden": "true", className: Menu_default.check })
+        ]
+      }
+    ) }),
+    explained && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { id: reasonId, hidden: true, children: disabledReason })
+  ] });
+}
+function menuIconColumns(entries, contextual) {
+  const aligned = /* @__PURE__ */ new Set();
+  if (!contextual) return aligned;
+  let group = [];
+  const finish = () => {
+    if (group.some((entry) => !("type" in entry) && entry.icon !== void 0)) {
+      for (const entry of group) aligned.add(entry);
+    }
+    group = [];
+  };
+  for (const entry of entries) {
+    if ("type" in entry && entry.type === "separator") finish();
+    else group.push(entry);
+  }
+  finish();
+  return aligned;
+}
+function renderMenuDecoration(entry) {
+  return entry.type === "separator" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: Menu_default.separator, role: "separator" }, entry.id) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: Menu_default.label, role: "presentation", children: entry.text }, entry.id);
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/SubmenuPanel.tsx
+var import_react_dom4 = require("react-dom");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuSurface.tsx
+var import_react10 = require("react");
+var import_react_dom3 = require("react-dom");
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuSurface.module.css
+var MenuSurface_default = {
+  surface: "MenuSurface_surface",
+  backing: "MenuSurface_backing",
+  compact: "MenuSurface_compact",
+  material: "MenuSurface_material",
+  "dsh-context-menu-in": "MenuSurface_dsh-context-menu-in",
+  "dsh-context-menu-out": "MenuSurface_dsh-context-menu-out"
+};
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/MenuSurface.tsx
+var import_jsx_runtime8 = __toESM(require_react_jsx_runtime(), 1);
+var MENU_TRANSITION_MS = Object.freeze({ enter: 40, dismiss: 80, replace: 10, prepare: 20 });
+var MenuSurface = (0, import_react10.forwardRef)(function MenuSurface2({
+  compact = false,
+  phase,
+  className,
+  style,
+  children,
+  ...props
+}, ref) {
+  const id = (0, import_react10.useId)();
+  const backingRef = (0, import_react10.useRef)(null);
+  (0, import_react10.useLayoutEffect)(() => {
+    document.body.appendChild(backingRef.current);
+  }, []);
+  const anchorStyle = {
+    "--dsh-menu-anchor": `--dsh-menu-${id.replaceAll(":", "")}`,
+    "--dsh-menu-enter": `${MENU_TRANSITION_MS.enter}ms`,
+    "--dsh-menu-dismiss": `${MENU_TRANSITION_MS.dismiss}ms`,
+    "--dsh-menu-replace": `${MENU_TRANSITION_MS.replace}ms`
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+      "div",
+      {
+        ...props,
+        ref,
+        "data-menu-material": "translucent",
+        "data-menu-phase": phase,
+        className: clsx_default(MenuSurface_default.surface, compact && MenuSurface_default.compact, className),
+        style: { ...style, ...anchorStyle },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { "aria-hidden": "true", className: MenuSurface_default.material }),
+          children
+        ]
+      }
+    ),
+    (0, import_react_dom3.createPortal)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        "div",
+        {
+          ref: backingRef,
+          "aria-hidden": "true",
+          "data-menu-backing": "",
+          "data-menu-phase": phase,
+          className: clsx_default(MenuSurface_default.backing, compact && MenuSurface_default.compact),
+          style: { ...anchorStyle, visibility: style?.visibility }
+        }
+      ),
+      document.body
+    )
+  ] });
+});
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/SubmenuPanel.tsx
+var import_jsx_runtime9 = __toESM(require_react_jsx_runtime(), 1);
+function anchors(submenu, hidden) {
+  return { "--dsh-submenu-parent": submenu.parentAnchor, ...hidden ? { visibility: "hidden" } : {} };
+}
+function SubmenuPanel({ entry, submenu, compact, dense, contextual, backLabel, onSelect, onClose, afterSelection }) {
+  const columns = menuIconColumns(entry.submenu, contextual);
+  return (0, import_react_dom4.createPortal)(/* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+    MenuSurface,
+    {
+      ref: submenu.panelRef,
+      compact,
+      className: clsx_default(Menu_default.submenu, Menu_default.scrollable, dense && Menu_default.denseList, compact && Menu_default.compactList),
+      style: anchors(submenu, submenu.hidden),
+      "data-submenu-layout": submenu.measured ? submenu.page ? "page" : "side" : void 0,
+      "data-contextual": contextual ? "" : void 0,
+      role: "menu",
+      onPointerEnter: submenu.cancelClose,
+      onPointerLeave: (event) => {
+        if (menuHoverAllowed(event)) submenu.leave();
+      },
+      onContextMenu: contextual ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      } : void 0,
+      onClick: (event) => {
+        event.stopPropagation();
+        afterSelection();
+      },
+      children: [
+        submenu.page && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+            MenuRow,
+            {
+              "data-menu-back": "",
+              icon: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(IconChevronLeftOutlineRegular, { className: Menu_default.check }),
+              onClick: submenu.returnToParent,
+              children: backLabel
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: Menu_default.separator, role: "separator" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: Menu_default.viewport, role: "presentation", children: entry.submenu.map((sub) => "type" in sub ? renderMenuDecoration(sub) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+          MenuRow,
+          {
+            icon: sub.icon,
+            reserveIcon: columns.has(sub),
+            disabled: sub.disabled,
+            danger: sub.danger,
+            shortcut: sub.shortcut,
+            onClick: () => {
+              onSelect?.(sub.id);
+            },
+            children: sub.label
+          },
+          sub.id
+        )) })
+      ]
+    }
+  ), document.body);
+}
+
+// node_modules/@deepseek-ai/dsh-client-ui-primitives/src/Menu.tsx
+var import_jsx_runtime10 = __toESM(require_react_jsx_runtime(), 1);
+function Menu({ open, anchor, items = [], children, submenuBackLabel, selectedId, selectedIds, onSelect, onClose, align = "start", side = "bottom", portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = "check", anchorRef, anchorPoint, minWidthFromAnchor = false, footer, className, listClassName, contextual = false, exiting, returnFocus, isExternalTrigger }) {
+  const rootRef = (0, import_react11.useRef)(null);
+  const listRef = (0, import_react11.useRef)(null);
+  const menuId = (0, import_react11.useId)();
+  const pointX = anchorPoint?.x;
+  const pointY = anchorPoint?.y;
+  const point = (0, import_react11.useMemo)(() => {
+    if (pointX === void 0 || pointY === void 0) return void 0;
+    const visualOrigin = open && typeof window.CSS !== "undefined" && window.CSS.supports("-webkit-backdrop-filter", "none");
+    const viewport = visualOrigin ? window.visualViewport : void 0;
+    return { x: pointX + (viewport?.offsetLeft ?? 0), y: pointY + (viewport?.offsetTop ?? 0) };
+  }, [open, pointX, pointY]);
+  (0, import_react11.useLayoutEffect)(() => {
+    const trigger = returnFocus?.();
+    if (!open || !contextual || trigger == null) return;
+    const previous = trigger.getAttribute("aria-controls");
+    trigger.setAttribute("aria-controls", [previous, menuId].filter(Boolean).join(" "));
+    return () => {
+      if (previous === null) trigger.removeAttribute("aria-controls");
+      else trigger.setAttribute("aria-controls", previous);
+    };
+  }, [open, contextual, returnFocus, menuId]);
+  const walkIndex = (0, import_react11.useRef)(null);
+  const triggerRef = (0, import_react11.useRef)(null);
+  const selectingWithTab = (0, import_react11.useRef)(false);
+  const refocusAnchor = (navigation = false) => {
+    const remembered = triggerRef.current;
+    const trigger = returnFocus?.() ?? (remembered?.isConnected ? remembered : anchorRef?.current) ?? null;
+    const target = trigger !== null && document.contains(trigger) && !trigger.disabled ? trigger : rootRef.current?.querySelector("button:not(:disabled)");
+    if (target == null) return;
+    if (navigation) target.focus();
+    else focusWithoutRing(target);
+  };
+  const refocusAfterSelection = () => {
+    const navigation = selectingWithTab.current;
+    queueMicrotask(() => {
+      if (openRef.current && exitingRef.current === void 0) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body || listRef.current?.contains(active) === true || submenu.contains(active)) refocusAnchor(navigation);
+    });
+  };
+  const exitingRef = (0, import_react11.useRef)(exiting);
+  exitingRef.current = exiting;
+  const openRef = (0, import_react11.useRef)(open);
+  openRef.current = open;
+  const submenu = useMenuSubmenu({ open: open && exiting === void 0, items, footer, listRef, refocusAnchor });
+  const submenuEvents = (0, import_react11.useRef)(submenu);
+  submenuEvents.current = submenu;
+  const close = (0, import_react11.useRef)(onClose);
+  close.current = onClose;
+  const anchorName = `--dsh-menu-trigger-${menuId.replaceAll(":", "")}`;
+  const [externalAnchor, setExternalAnchor] = (0, import_react11.useState)(null);
+  const positioned = !portal || anchorRef === void 0 || externalAnchor !== null;
+  (0, import_react11.useEffect)(() => {
+    if (!open || !portal || anchorRef === void 0) {
+      setExternalAnchor(null);
+      return;
+    }
+    const element = anchorRef.current;
+    setExternalAnchor(element);
+    if (element === null) return;
+    const previous = element.style.getPropertyValue("anchor-name");
+    const priority = element.style.getPropertyPriority("anchor-name");
+    element.style.setProperty("anchor-name", anchorName);
+    return () => {
+      element.style.setProperty("anchor-name", previous, priority);
+    };
+  });
+  (0, import_react11.useEffect)(() => {
+    if (!open || !portal || exiting !== void 0) return;
+    const currentAnchor = () => returnFocus?.() ?? (anchorRef === void 0 ? rootRef.current : anchorRef.current);
+    const element = currentAnchor();
+    if (element === null) return;
+    let dismissed = false;
+    const check = () => {
+      const current = currentAnchor();
+      if (dismissed || current !== null && current.isConnected && current.closest("[inert], [hidden]") === null) return;
+      dismissed = true;
+      close.current();
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(element.ownerDocument.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["inert", "hidden"]
+    });
+    check();
+    return () => {
+      observer.disconnect();
+    };
+  }, [open, portal, exiting, anchorRef, externalAnchor, returnFocus]);
+  const { arm: armClose, cancel: cancelClose } = usePointerGrace(onClose);
+  (0, import_react11.useEffect)(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    triggerRef.current = active instanceof HTMLElement && active !== document.body && (anchorRef !== void 0 || anchorPoint !== void 0 || rootRef.current?.contains(active) === true) ? active : null;
+  }, [open]);
+  (0, import_react11.useEffect)(() => {
+    if (!open || !positioned || exiting !== void 0 || !autoFocus || listRef.current?.contains(document.activeElement) || submenu.contains(document.activeElement)) return;
+    const first = listRef.current?.querySelector("button:not(:disabled)");
+    walkIndex.current = first === void 0 || first === null ? null : 0;
+    if (first != null) focusWithoutRing(first);
+  }, [open, autoFocus, items.length, footer?.length, positioned, exiting]);
+  (0, import_react11.useEffect)(() => {
+    if (!open || exiting !== void 0) {
+      walkIndex.current = null;
+      return;
+    }
+    const composition = observeComposition(document);
+    const onPointerDown = (e) => {
+      if (!(e.target instanceof Node) || contextual && e.button === 2) return;
+      if (rootRef.current?.contains(e.target) === true || anchorRef?.current?.contains(e.target) === true) return;
+      if (isExternalTrigger?.(e.target) === true) return;
+      if (listRef.current?.contains(e.target) === true || submenuEvents.current.contains(e.target)) return;
+      onClose();
+    };
+    const onKeyDown = (e) => {
+      if (composition.guards(e) || isBehindModal(triggerRef.current ?? rootRef.current) || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+      const focused = document.activeElement;
+      const insideList = listRef.current?.contains(focused) === true || submenuEvents.current.contains(focused);
+      const anchored = focused === returnFocus?.() || anchorRef?.current?.contains(focused) === true || rootRef.current?.contains(focused) === true || insideList;
+      if (e.key === "Escape" && !e.shiftKey) {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (submenuEvents.current.returnToParent()) return;
+        onClose();
+        if (anchored || autoFocus) refocusAnchor();
+      }
+      if (e.key === "ArrowLeft" && anchored && submenuEvents.current.returnToParent()) {
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "ArrowRight" && insideList && focused instanceof HTMLButtonElement && focused.getAttribute("aria-haspopup") === "menu") {
+        e.preventDefault();
+        focused.click();
+        return;
+      }
+      if (e.key === "Tab") {
+        const list3 = submenuEvents.current.activeList(focused);
+        if (list3 === null || !anchored) return;
+        if (e.shiftKey) {
+          e.preventDefault();
+          onClose();
+          refocusAnchor(true);
+          return;
+        }
+        if (insideList) {
+          if (focused instanceof Element && focused.getAttribute("role") === "menuitem") {
+            e.preventDefault();
+            if (focused.getAttribute("aria-disabled") === "true") {
+              onClose();
+              refocusAnchor(true);
+              return;
+            }
+            selectingWithTab.current = true;
+            try {
+              focused.click();
+            } finally {
+              selectingWithTab.current = false;
+            }
+          }
+          return;
+        }
+        const row = list3.querySelector("button:not(:disabled)");
+        if (row === null) return;
+        e.preventDefault();
+        row.focus();
+        walkIndex.current = 0;
+        return;
+      }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const list2 = submenuEvents.current.activeList(focused);
+      if (list2 === null || !anchored) return;
+      const buttons = Array.from(list2.querySelectorAll("button:not(:disabled)"));
+      if (buttons.length === 0) return;
+      const index = buttons.indexOf(focused);
+      const from = index >= 0 ? index : walkIndex.current;
+      const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : from === null ? e.key === "ArrowDown" ? 0 : buttons.length - 1 : (from + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+      e.preventDefault();
+      walkIndex.current = next;
+      buttons[next]?.focus();
+    };
+    const onWindowBlur = () => {
+      if (document.activeElement instanceof HTMLIFrameElement) onClose();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    const onEscape = (event) => {
+      if (event.key === "Escape") onKeyDown(event);
+    };
+    const onOtherKey = (event) => {
+      if (event.key !== "Escape") onKeyDown(event);
+    };
+    document.addEventListener("keydown", onOtherKey);
+    document.addEventListener("keydown", onEscape, true);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      composition.dispose();
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onOtherKey);
+      document.removeEventListener("keydown", onEscape, true);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [open, onClose, autoFocus, contextual, exiting, anchorRef, returnFocus, isExternalTrigger]);
+  (0, import_react11.useLayoutEffect)(() => {
+    if (exiting === "dismiss" && listRef.current?.contains(document.activeElement)) refocusAnchor();
+  }, [exiting]);
+  (0, import_react11.useEffect)(() => {
+    if (!open) cancelClose();
+  }, [open, cancelClose]);
+  const itemColumns = menuIconColumns(items, contextual);
+  const footerColumns = menuIconColumns(footer ?? [], contextual);
+  const renderEntry = (entry, columns) => {
+    if ("type" in entry) return renderMenuDecoration(entry);
+    const hasSub = entry.submenu !== void 0 && entry.submenu.length > 0;
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+      MenuRow,
+      {
+        icon: entry.icon,
+        reserveIcon: columns.has(entry),
+        disabled: entry.disabled,
+        danger: entry.danger,
+        shortcut: entry.shortcut,
+        selected: entry.id === selectedId || selectedIds?.includes(entry.id) === true,
+        selection,
+        "aria-haspopup": hasSub ? "menu" : void 0,
+        "aria-expanded": hasSub ? submenu.entry?.id === entry.id && !submenu.hidden : void 0,
+        wrapperProps: hasSub ? {
+          onPointerEnter: (event) => {
+            if (!menuHoverAllowed(event) || entry.disabled) return;
+            const trigger = event.currentTarget.querySelector("button");
+            if (trigger !== null) submenu.openChild(entry.id, trigger);
+          },
+          onPointerLeave: (event) => {
+            if (menuHoverAllowed(event)) submenu.leave();
+          }
+        } : void 0,
+        onFocus: hasSub ? (event) => {
+          submenu.focusParent(entry.id, event.currentTarget);
+        } : void 0,
+        onClick: (event) => {
+          if (hasSub) submenu.openChild(entry.id, event.currentTarget, true);
+          else onSelect?.(entry.id);
+        },
+        children: entry.label
+      },
+      entry.id
+    );
+  };
+  const list = open && positioned && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
+    MenuSurface,
+    {
+      compact,
+      id: contextual ? menuId : void 0,
+      ref: listRef,
+      className: clsx_default(Menu_default.list, listClassName, dense && Menu_default.denseList, compact && Menu_default.compactList, Menu_default.scrollable, submenu.page && Menu_default.parentPage, portal && Menu_default.portal, side === "top" && !portal && Menu_default.sideTop, align === "end" && !portal && Menu_default.alignEnd),
+      style: portal ? { positionAnchor: anchorName } : void 0,
+      "data-anchor-side": portal ? side : void 0,
+      "data-anchor-align": portal ? align : void 0,
+      "data-match-anchor-width": portal && minWidthFromAnchor ? "" : void 0,
+      role: exiting === void 0 && !submenu.page ? "menu" : void 0,
+      "aria-hidden": exiting === void 0 && !submenu.page ? void 0 : true,
+      "data-context-menu": contextual ? "" : void 0,
+      phase: contextual ? exiting ?? "enter" : void 0,
+      onClick: (e) => {
+        e.stopPropagation();
+        const row = e.target instanceof Element ? e.target.closest('button[role="menuitem"]') : null;
+        if (row !== null && row.getAttribute("aria-haspopup") !== "menu") refocusAfterSelection();
+      },
+      onContextMenu: contextual ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      } : void 0,
+      onPointerOver: (event) => {
+        if (menuHoverAllowed(event)) submenu.collapseFrom(event);
+      },
+      onFocus: submenu.collapseFrom,
+      children: [
+        submenu.entry !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { "aria-hidden": "true", className: Menu_default.submenuAnchor, style: { anchorName: submenu.parentAnchor } }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: Menu_default.viewport, role: "presentation", children: [
+          items.map((entry) => renderEntry(entry, itemColumns)),
+          children
+        ] }),
+        footer !== void 0 && footer.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: Menu_default.footer, role: "presentation", children: footer.map((entry) => renderEntry(entry, footerColumns)) })
+      ]
+    }
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
+    "span",
+    {
+      ref: rootRef,
+      className: clsx_default(Menu_default.root, className),
+      style: { anchorName: anchorRef === void 0 ? anchorName : void 0, ...point === void 0 ? {} : {
+        position: "fixed",
+        left: point.x,
+        top: point.y,
+        width: 0,
+        height: 0
+      } },
+      onPointerEnter: closeOnPointerLeave ? cancelClose : void 0,
+      onPointerLeave: closeOnPointerLeave ? (event) => {
+        if (open && menuHoverAllowed(event)) armClose();
+      } : void 0,
+      children: [
+        anchor,
+        portal ? list !== false && (0, import_react_dom5.createPortal)(list, document.body) : list,
+        open && exiting === void 0 && submenu.entry !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+          SubmenuPanel,
+          {
+            entry: submenu.entry,
+            submenu,
+            compact,
+            dense,
+            contextual,
+            backLabel: submenuBackLabel ?? submenu.entry.label,
+            onSelect,
+            onClose,
+            afterSelection: refocusAfterSelection
+          },
+          submenu.entry.id
+        )
+      ]
+    }
+  );
 }
