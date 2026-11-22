@@ -639,7 +639,15 @@ window.__ModuleLoader__.load({
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub releases',
       updateLatest: '已是最新版本（v{version}）',
-      updateNew: '发现新版本 {version}（当前 {current}），到 GitHub Releases 下载',
+      updateNew: '发现新版本 {version}（当前 {current}），可以立即更新',
+      updateNow: '立即更新',
+      updateDownloadOnly: '市场未管理这个插件，点击会下载 zip；解压后在 DSH 插件页更新',
+      updateMarketStarting: '正在通过插件市场更新…',
+      updateMarketProgress: '正在更新：{state}',
+      updateMarketDone: '已更新到 v{version}；重启 DSH 后生效',
+      updateMarketFailed: '更新失败：{message}',
+      updateRetry: '重试',
+      updateDownload: '下载新版本 zip',
       updateNoRelease: '仓库还没有发布版本',
       updateFailed: '检查更新失败（网络或代理问题），可稍后重试',
       pdfPassword: '这个 PDF 有密码或加密，暂时打不开——请先解除保护再放进书库',
@@ -1172,7 +1180,15 @@ window.__ModuleLoader__.load({
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases on click',
       updateLatest: 'Up to date (v{version})',
-      updateNew: 'Version {version} is available (you have {current}) — see GitHub Releases',
+      updateNew: 'Version {version} is available (you have {current}) — update now',
+      updateNow: 'Update now',
+      updateDownloadOnly: 'The market does not manage this plugin; the button downloads the zip. Unzip it and update in the DSH plugin page.',
+      updateMarketStarting: 'Updating through the plugin market…',
+      updateMarketProgress: 'Updating: {state}',
+      updateMarketDone: 'Updated to v{version}; restart DSH to apply',
+      updateMarketFailed: 'Update failed: {message}',
+      updateRetry: 'Retry',
+      updateDownload: 'Download the new zip',
       updateNoRelease: 'The repository has no release yet',
       updateFailed: 'Update check failed (network or proxy) — try again later',
       pdfPassword: 'This PDF is password-protected or encrypted, so it cannot be opened yet — remove the protection first',
@@ -3298,7 +3314,31 @@ window.__ModuleLoader__.load({
           type: 'button', className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
           title: format('updateHint'),
           onClick: props.onCheckUpdate,
-        }, props.updateBusy === true ? format('updateChecking') : format('updateCheck'))
+        }, props.updateBusy === true ? format('updateChecking') : format('updateCheck')),
+        props.updateInfo === null
+          ? null
+          : h('div', { className: 'md-update-box' },
+            h('p', { className: 'md-shelf-sub' },
+              `v${props.updateInfo.current} → v${props.updateInfo.version}`),
+            props.marketUpdate !== null
+              ? h('button', {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: props.updateBusy === true,
+                onClick: props.onInstallUpdate,
+              }, format('updateNow'))
+              : h('a', {
+                className: 'md-btn md-btn-small',
+                href: props.updateInfo.download,
+                target: '_blank',
+                rel: 'noreferrer',
+                title: format('updateDownloadOnly'),
+              }, format('updateNow')),
+            h('p', { className: 'md-shelf-sub' },
+              props.marketUpdate !== null ? format('updateHint') : format('updateDownloadOnly'))
+          ),
+        props.updateOperation === null
+          ? null
+          : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message)
       )
       return h(React.Fragment, null,
         h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
@@ -8792,6 +8832,8 @@ window.__ModuleLoader__.load({
 .md-tab-btn[data-on='true'] { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-brand-primary); font-weight: 600; }
 .md-settings-note { margin: 0; font-size: 12px; color: var(--dsw-alias-brand-primary); }
 .md-settings-actions { display: flex; gap: 8px; padding-top: 4px; }
+.md-update-box { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: .5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); }
+.md-update-box .md-btn { align-self: flex-start; }
 .md-shortcut-list { display: flex; flex-direction: column; gap: 4px; }
 .md-shortcut-row { gap: 8px; }
 .md-shortcut-name { flex: 1 1 auto; min-width: 0; }
@@ -11035,6 +11077,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [libBusy, setLibBusy] = useState(false)
       const [libError, setLibError] = useState('')
       const [updateBusy, setUpdateBusy] = useState(false)
+      const [updateInfo, setUpdateInfo] = useState(null)
+      const [marketUpdate, setMarketUpdate] = useState(null)
+      const [updateOperation, setUpdateOperation] = useState(null)
       const [previewPdf, setPreviewPdf] = useState(() => {
         try {
           return window.localStorage.getItem('pdfdesk:preview-pdf') !== '0'
@@ -13061,6 +13106,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const checkUpdates = useCallback(async () => {
         if (updateBusy) return
         setUpdateBusy(true)
+        setUpdateOperation(null)
         try {
           // The Host performs the request: it can follow a local proxy, while the
           // Electron renderer cannot.
@@ -13072,18 +13118,125 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }
           const latest = typeof payload.latest === 'string' ? payload.latest : ''
           if (latest === '') {
+            setUpdateInfo(null)
             showNotice(format('updateNoRelease'))
             return
           }
-          showNotice(compareVersions(latest, current) > 0
-            ? format('updateNew', { version: latest.replace(/^v/i, ''), current })
-            : format('updateLatest', { version: current }))
+          const version = typeof payload.version === 'string' && payload.version !== ''
+            ? payload.version
+            : latest.replace(/^v/i, '')
+          const download = typeof payload.download === 'string' ? payload.download : ''
+          const comparison = compareVersions(latest, current)
+          if (comparison <= 0) {
+            setUpdateInfo(null)
+            setMarketUpdate(null)
+            showNotice(format('updateLatest', { version: current }))
+            return
+          }
+          setUpdateInfo({ latest, version, current, download, url: typeof payload.url === 'string' ? payload.url : '' })
+          setMarketUpdate(await discoverMarketUpdate(current))
+          showNotice(format('updateNew', { version, current }))
         } catch {
           showNotice(format('updateFailed'))
         } finally {
           setUpdateBusy(false)
         }
       }, [catalog, showNotice, updateBusy])
+
+      /**
+       * Discover whether dshmarket can update this installed package.
+       * @param {string} current - installed version.
+       * @returns {Promise<object | null>} market update info, or null.
+       */
+      const discoverMarketUpdate = useCallback(async current => {
+        try {
+          const capabilityResponse = await window.fetch('/dsh-market/api/v1/capabilities', { credentials: 'same-origin' })
+          if (!capabilityResponse.ok) return null
+          const capabilities = await capabilityResponse.json()
+          if (capabilities === null || typeof capabilities !== 'object'
+            || capabilities.features === undefined || capabilities.features.update !== true
+            || capabilities.endpoints === undefined || typeof capabilities.endpoints.updates !== 'string') return null
+          const url = new URL(capabilities.endpoints.updates, window.location.origin)
+          url.searchParams.set('name', 'dsh-pdf-workbench')
+          url.searchParams.set('force', '1')
+          const response = await window.fetch(url, { credentials: 'same-origin' })
+          if (!response.ok) return null
+          const payload = await response.json()
+          const item = payload !== null && typeof payload === 'object' ? payload.package : null
+          if (item === null || typeof item !== 'object' || item.updateAvailable !== true) return null
+          if (compareVersions(String(item.latestVersion ?? ''), current) <= 0) return null
+          return { item, endpoints: capabilities.endpoints, restart: capabilities.restart }
+        } catch {
+          return null
+        }
+      }, [])
+
+      /** Start the one-click update: market operation when managed, otherwise download. */
+      const installUpdate = useCallback(async () => {
+        if (updateInfo === null || updateBusy) return
+        if (marketUpdate !== null && typeof marketUpdate.endpoints?.updates === 'string') {
+          setUpdateBusy(true)
+          setUpdateOperation({ state: 'starting', message: format('updateMarketStarting') })
+          try {
+            const response = await window.fetch(marketUpdate.endpoints.updates, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ packageName: 'dsh-pdf-workbench' }),
+            })
+            if (!response.ok) {
+              setUpdateOperation({ state: 'failed', message: format('updateMarketFailed', { message: `HTTP ${response.status}` }) })
+              return
+            }
+            const started = await response.json()
+            const operationId = typeof started.operationId === 'string' ? started.operationId : ''
+            if (operationId === '') {
+              setUpdateOperation({ state: 'failed', message: format('updateMarketFailed', { message: 'no operationId' }) })
+              return
+            }
+            const terminal = new Set(['succeeded', 'failed', 'cancelled', 'rolled-back'])
+            for (let attempt = 0; attempt < 180; attempt += 1) {
+              await new Promise(resolve => window.setTimeout(resolve, 1000))
+              const pollUrl = new URL(marketUpdate.endpoints.operations, window.location.origin)
+              pollUrl.searchParams.set('operationId', operationId)
+              const pollResponse = await window.fetch(pollUrl, { credentials: 'same-origin' })
+              if (!pollResponse.ok) continue
+              const pollPayload = await pollResponse.json()
+              const operation = pollPayload !== null && typeof pollPayload === 'object' && pollPayload.operation !== undefined
+                ? pollPayload.operation
+                : pollPayload
+              const state = operation !== null && typeof operation === 'object' && typeof operation.state === 'string' ? operation.state : ''
+              setUpdateOperation({ state, message: format('updateMarketProgress', { state: state === '' ? '…' : state }) })
+              if (!terminal.has(state)) continue
+              if (state === 'succeeded') {
+                const version = typeof operation.installedVersion === 'string' && operation.installedVersion !== ''
+                  ? operation.installedVersion
+                  : updateInfo.version
+                setUpdateInfo(null)
+                setMarketUpdate(null)
+                setUpdateOperation({ state, message: format('updateMarketDone', { version }) })
+              } else {
+                const message = typeof operation.message === 'string' && operation.message !== '' ? operation.message : state
+                setUpdateOperation({ state, message: format('updateMarketFailed', { message }) })
+              }
+              return
+            }
+            setUpdateOperation({ state: 'failed', message: format('updateMarketFailed', { message: 'timeout' }) })
+          } catch (error) {
+            setUpdateOperation({ state: 'failed', message: format('updateMarketFailed', { message: errorText(error) }) })
+          } finally {
+            setUpdateBusy(false)
+          }
+          return
+        }
+        if (updateInfo.download !== '') {
+          try {
+            window.open(updateInfo.download, '_blank', 'noopener')
+          } catch {
+            // popup blocked
+          }
+        }
+      }, [format, marketUpdate, updateBusy, updateInfo])
 
       /** Persist hidden books / shelves for the active library. */
       const saveShelfGroups = useCallback(next => {
@@ -13857,6 +14010,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onWorkflowChange: value => writeWorkflowMode(value),
             onApiKeyChange: configured => setEnvTools(current => ({ ...current, apiKey: configured === true })),
             updateBusy,
+            updateInfo,
+            marketUpdate,
+            updateOperation,
+            onInstallUpdate: installUpdate,
             onCheckUpdate: checkUpdates,
             previewPdf,
             allowNonPdfDelete,

@@ -125,7 +125,16 @@ export async function checkForUpdate(configuredProxy) {
       }
       const payload = JSON.parse(response.body.toString('utf8'))
       const latest = typeof payload.tag_name === 'string' ? payload.tag_name : ''
-      return { ok: true, latest, url: RELEASES_URL, via: attempt.via }
+      const version = latest.replace(/^v/i, '')
+      const assets = Array.isArray(payload.assets) ? payload.assets : []
+      const zip = assets.find(asset => asset !== null && typeof asset === 'object'
+        && typeof asset.name === 'string' && asset.name.toLowerCase().endsWith('.zip')
+        && typeof asset.browser_download_url === 'string'
+        && /^https:\/\/github\.com\//.test(asset.browser_download_url))
+      const download = zip !== undefined && zip !== null
+        ? zip.browser_download_url
+        : (version === '' ? '' : `https://github.com/${REPO}/releases/download/${encodeURIComponent(latest)}/dsh-pdf-workbench-${encodeURIComponent(version)}.zip`)
+      return { ok: true, latest, version, url: RELEASES_URL, download, via: attempt.via }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
     }
