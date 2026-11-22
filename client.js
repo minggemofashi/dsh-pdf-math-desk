@@ -7606,8 +7606,10 @@ window.__ModuleLoader__.load({
             ],
           })
           : null,
-        h('div', { className: 'md-rail-tab', 'data-side': railSide, 'aria-hidden': true },
-          railSide === 'right' ? '‹' : '›'),
+        railOpen
+          ? null
+          : h('div', { className: 'md-rail-tab', 'data-side': railSide, 'aria-hidden': true },
+            railSide === 'right' ? '‹' : '›'),
         h('div', {
           className: 'md-rail-wrap',
           'data-side': railSide,
@@ -8370,7 +8372,7 @@ window.__ModuleLoader__.load({
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
 .md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
-.md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 58px; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-right: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); opacity: .9; z-index: 41; pointer-events: none; }
+.md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 58px; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-right: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); opacity: .9; z-index: 39; pointer-events: none; transition: opacity .18s ease; }
 .md-rail-tab[data-side="right"] { right: 0; }
 .md-rail-tab[data-side="left"] { left: 0; border-radius: 0 6px 6px 0; border-right: 1px solid var(--dsw-alias-border-l3); border-left: none; }
 .md-rail-wrap[data-side="right"] { right: 0; }
