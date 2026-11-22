@@ -6,6 +6,7 @@
 
 - **构建链**：esbuild + 官方 `@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.5`，只构建 Button/Input/Modal，生成 `vendor/host-ui.cjs/css`；React/ReactDOM 走宿主 require，CSS Modules 本地编译。
 - **宿主 Button 试点**：设置里的「检查更新」「立即更新」优先使用宿主 Button；加载失败自动回退。关于页显示当前是宿主组件还是回退。
+- **宿主 Input**：文本、数字、密码、搜索输入框改用宿主 `Input` 适配层（`KitInput`）；range/file 保持原生。加载失败自动回退。
 - **立即更新**：检查发现新版本后，设置 → 关于 出现「立即更新」。如果 dshmarket 的更新 API v1 管理该插件，则走市场的一键更新并轮询进度；否则按钮直接下载新版本 zip，解压后在插件页更新。
 
 ## v1.3.1

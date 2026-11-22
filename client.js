@@ -3141,10 +3141,10 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-workspace-new' },
             h('span', { className: 'md-workspace-label' }, format('workspaceNew')),
             h('span', { className: 'md-shelf-sub' }, format('workspacePath')),
-            h('input', {
+            h(KitInput, {
               className: 'md-settings-input',
               value: path,
-              onChange: event => setPath(event.target.value),
+              onChange: value => setPath(value),
               onKeyDown: event => {
                 if (event.key !== 'Enter') return
                 event.preventDefault()
@@ -3210,6 +3210,62 @@ window.__ModuleLoader__.load({
         onClick: props.onClick,
       }, props.children)
     }
+
+    /**
+     * Input adapter: host Input when available; the business onChange always
+     * receives the value, never the raw event.
+     */
+    const KitInput = React.forwardRef(function KitInput(props, ref) {
+      const ui = useHostUi()
+      const controlled = props.value !== undefined
+      const value = controlled && props.value !== null ? String(props.value) : ''
+      const change = event => {
+        if (typeof props.onChange === 'function') props.onChange(event.target.value, event)
+      }
+      const HostInput = ui !== null && ui !== undefined && typeof ui.Input === 'object' ? ui.Input : null
+      if (HostInput !== null) {
+        return h(HostInput, {
+          ref,
+          ...(controlled ? { value } : { defaultValue: props.defaultValue }),
+          type: props.type === undefined ? 'text' : props.type,
+          placeholder: props.placeholder,
+          disabled: props.disabled === true,
+          readOnly: props.readOnly === true,
+          autoFocus: props.autoFocus === true,
+          min: props.min,
+          max: props.max,
+          step: props.step,
+          inputMode: props.inputMode,
+          title: props.title,
+          'aria-label': props['aria-label'],
+          onChange: change,
+          onKeyDown: props.onKeyDown,
+          onBlur: props.onBlur,
+          className: 'md-kit-input',
+        })
+      }
+      return h('span', { className: `md-kit-input${props.className === undefined ? '' : ` ${props.className}`}` },
+        h('input', {
+          ref,
+          className: props.className,
+          type: props.type === undefined ? 'text' : props.type,
+          ...(controlled ? { value } : { defaultValue: props.defaultValue }),
+          placeholder: props.placeholder,
+          disabled: props.disabled === true,
+          readOnly: props.readOnly === true,
+          autoFocus: props.autoFocus === true,
+          min: props.min,
+          max: props.max,
+          step: props.step,
+          inputMode: props.inputMode,
+          title: props.title,
+          'aria-label': props['aria-label'],
+          onChange: change,
+          onKeyDown: props.onKeyDown,
+          onBlur: props.onBlur,
+        })
+      )
+    })
 
     function SettingsDialog(props) {
       const hostUi = useHostUi()
@@ -3424,10 +3480,10 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
           h('p', { className: 'md-shelf-sub' }, apiKeyNote),
           h('div', { className: 'md-settings-row' },
-            h('input', {
+            h(KitInput, {
               className: 'md-settings-input', type: 'password',
               value: apiKey, placeholder: 'sk-...',
-              onChange: event => setApiKey(event.target.value),
+              onChange: value => setApiKey(value),
             }),
             h('button', { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
           )
@@ -3659,11 +3715,11 @@ window.__ModuleLoader__.load({
             h('p', { className: 'md-shelf-sub' }, format('libraryAddHint'))
           ),
           h('div', { className: 'md-add-row' },
-            h('input', {
+            h(KitInput, {
               className: 'md-input md-add-path', value: dir, disabled: busy,
               placeholder: format('addPathPlaceholder'),
               'aria-label': format('libraryPath'),
-              onChange: event => setDir(event.target.value),
+              onChange: value => setDir(value),
             }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small', disabled: busy,
@@ -3679,11 +3735,11 @@ window.__ModuleLoader__.load({
                 })
               },
             }, format('libraryPick')),
-            h('input', {
+            h(KitInput, {
               className: 'md-input md-add-name', value: name, disabled: busy,
               placeholder: format('addNamePlaceholder'),
               'aria-label': format('libraryName'),
-              onChange: event => setName(event.target.value),
+              onChange: value => setName(value),
             }),
             h('button', {
               type: 'button', className: 'md-btn md-btn-small md-btn-primary md-add-submit',
@@ -3996,10 +4052,10 @@ window.__ModuleLoader__.load({
               'aria-label': format('previewClose'), onClick: props.onClose,
             }, '×')
           ),
-          h('input', {
+          h(KitInput, {
             className: 'md-input', value: props.name, autoFocus: true,
             placeholder: format('shelfName'),
-            onChange: event => props.onChange(event.target.value),
+            onChange: value => props.onChange(value),
             onKeyDown: event => {
               if (event.key === 'Enter') props.onConfirm()
             },
@@ -4036,13 +4092,13 @@ window.__ModuleLoader__.load({
         return h('li', { key: item.id, className: 'md-session-row', 'data-via-link': item.viaLink ? 'true' : undefined },
           editing
             ? h('div', { className: 'md-session-edit' },
-              h('input', {
+              h(KitInput, {
                 className: 'md-session-input',
                 value: renaming.value,
                 'aria-label': format('rename'),
                 title: format('renameHint'),
                 autoFocus: true,
-                onChange: event => props.onRenameInput(event.target.value),
+                onChange: value => props.onRenameInput(value),
                 onKeyDown: event => {
                   if (event.key === 'Enter') {
                     event.preventDefault()
@@ -4200,14 +4256,14 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'md-picker-sub' },
             format('importChapter', { code: props.target.code, title: props.target.title })),
-          h('input', {
+          h(KitInput, {
             className: 'md-picker-search',
             type: 'search',
             placeholder: format('importSearch'),
             'aria-label': format('importSearch'),
             value: query,
             autoFocus: true,
-            onChange: event => setQuery(event.target.value),
+            onChange: value => setQuery(value),
             onKeyDown: event => {
               if (event.key === 'Escape') {
                 event.preventDefault()
@@ -8042,12 +8098,12 @@ window.__ModuleLoader__.load({
               disabled: reader.page <= 1, title: format('readerPrev'), 'aria-label': format('readerPrev'),
               onClick: props.onPrev,
             }, '‹'),
-            h('input', {
+            h(KitInput, {
               className: 'md-reader-page',
               type: 'number', min: 1, max: reader.count > 0 ? reader.count : undefined,
               value: pageText,
               'aria-label': format('readerPage'),
-              onChange: event => setPageText(event.target.value),
+              onChange: value => setPageText(value),
               onKeyDown: event => {
                 if (event.key !== 'Enter') return
                 event.preventDefault()
@@ -8958,6 +9014,8 @@ window.__ModuleLoader__.load({
 .md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .md-settings-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
+.md-kit-input { flex: 1 1 auto; min-width: 0; }
+.md-kit-input input { font: inherit; }
 .md-settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
 .md-tab-btn[data-on='true'] { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-brand-primary); font-weight: 600; }
 .md-settings-note { margin: 0; font-size: 12px; color: var(--dsw-alias-brand-primary); }
@@ -10793,7 +10851,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => goPage(page - 1),
           }, '‹'),
           gotoOpen
-            ? h('input', {
+            ? h(KitInput, {
               key: 'goto',
               ref: gotoInput,
               className: 'md-side-goto',
