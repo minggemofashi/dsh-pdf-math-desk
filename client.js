@@ -5619,6 +5619,16 @@ window.__ModuleLoader__.load({
       const [resize, setResize] = useState(null)
       const [resizeEntry, setResizeEntry] = useState(null)
       const [roughTick, setRoughTick] = useState(0)
+      // Pointer-near-the-edge state for the rail. CSS :hover alone proved
+      // unreliable once the rail sits over the scrolling stage, so the section
+      // also opens it by position.
+      const [railOpen, setRailOpen] = useState(false)
+      const onRailPointer = event => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const fromEdge = railSide === 'right' ? rect.right - event.clientX : event.clientX - rect.left
+        const open = fromEdge <= 48
+        setRailOpen(current => (current === open ? current : open))
+      }
       useEffect(() => {
         let alive = true
         roughReady.then(() => { if (alive) setRoughTick(value => value + 1) })
@@ -7030,6 +7040,8 @@ window.__ModuleLoader__.load({
         'data-mode': reader.mode,
         tabIndex: -1,
         ref: props.paneRef,
+        onPointerMove: onRailPointer,
+        onPointerLeave: () => setRailOpen(false),
       },
         h('div', { className: 'md-reader-bar' },
           h('button', {
@@ -7441,9 +7453,9 @@ window.__ModuleLoader__.load({
             ],
           })
           : null,
-        h('div', { className: 'md-rail-hot', 'data-side': railSide, 'aria-hidden': true }),
+        h('div', { className: 'md-rail-tab', 'data-side': railSide, 'aria-hidden': true }),
         h('div', { className: 'md-rail-wrap', 'data-side': railSide },
-          h('div', { className: 'md-rail', role: 'toolbar', 'aria-label': format('annotTools') },
+          h('div', { className: 'md-rail', 'data-open': railOpen ? 'true' : undefined, role: 'toolbar', 'aria-label': format('annotTools') },
             railTool('select', 'annotSelect', 'M5 3l7 17 2-7 7-2z'),
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
@@ -8086,15 +8098,15 @@ window.__ModuleLoader__.load({
 .md-annot-text.md-annot-selected { outline: 2px solid #2f6df6; outline-offset: 3px; border-radius: 3px; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
-.md-rail-wrap { position: absolute; top: 50%; transform: translateY(-50%); z-index: 13; width: 48px; display: flex; justify-content: center; pointer-events: none; }
-.md-rail-wrap[data-side="right"] { right: 4px; }
-.md-rail-wrap[data-side="left"] { left: 4px; }
-.md-rail-hot { position: absolute; top: 0; bottom: 0; width: 16px; z-index: 13; }
-.md-rail-hot[data-side="right"] { right: 0; }
-.md-rail-hot[data-side="left"] { left: 0; }
+.md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
+.md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 4px; height: 46px; border-radius: 2px; background: var(--dsw-alias-border-l3); opacity: .55; z-index: 39; pointer-events: none; }
+.md-rail-tab[data-side="right"] { right: 2px; }
+.md-rail-tab[data-side="left"] { left: 2px; }
+.md-rail-wrap[data-side="right"] { right: 0; }
+.md-rail-wrap[data-side="left"] { left: 0; }
 .md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: 78vh; overflow-y: auto; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
 .md-rail-wrap[data-side="left"] .md-rail { transform: translateX(-10px); }
-.md-rail-hot:hover + .md-rail-wrap .md-rail, .md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within { opacity: 1; transform: none; pointer-events: auto; }
+.md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within, .md-rail[data-open="true"] { opacity: 1; transform: none; pointer-events: auto; }
 .md-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .md-rail-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); }
