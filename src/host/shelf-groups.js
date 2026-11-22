@@ -5,7 +5,7 @@
  * lists the browser asked the Host to remember, keyed by library id so several
  * libraries can hide or group independently.
  *
- * @module dsh-pdf-math-desk/shelf-groups
+ * @module dsh-pdf-workbench/shelf-groups
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'

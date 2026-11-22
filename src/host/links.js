@@ -12,7 +12,7 @@
  * mode)`; the Host validates the chapter against the live catalog before saving.
  * A link whose session disappears is pruned, never fatal.
  *
- * @module dsh-pdf-math-desk/links
+ * @module dsh-pdf-workbench/links
  */
 import { readFile, rename, mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'

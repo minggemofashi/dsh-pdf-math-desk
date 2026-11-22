@@ -6,7 +6,7 @@
  * has no storage service and a layout reset must not lose the place. Writes are
  * debounced by the caller; this module is tolerant of a damaged file.
  *
- * @module dsh-pdf-math-desk/state
+ * @module dsh-pdf-workbench/state
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'

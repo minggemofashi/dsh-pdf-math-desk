@@ -1,20 +1,22 @@
 {
-  "name": "dsh-pdf-math-desk",
-  "version": "0.73.0",
+  "name": "dsh-pdf-workbench",
+  "version": "1.0.0",
   "private": false,
   "type": "module",
-  "description": "A full-page math workbench organized by book and chapter.",
+  "description": "PDF reading workbench for DSH: books and chapters, ask-as-you-read conversations, annotations, and a built-in pdf.js reader.",
   "keywords": [
     "dsh-plugin",
-    "math",
     "pdf",
+    "reader",
+    "annotation",
+    "math",
     "latex"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/minggemofashi/dsh-pdf-math-desk.git"
+    "url": "https://github.com/minggemofashi/dsh-pdf-workbench.git"
   },
-  "homepage": "https://github.com/minggemofashi/dsh-pdf-math-desk",
+  "homepage": "https://github.com/minggemofashi/dsh-pdf-workbench",
   "icon": "icon.svg",
   "exports": {
     ".": "./index.js",

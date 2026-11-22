@@ -1,5 +1,5 @@
 /**
- * Host half of dsh-pdf-math-desk.
+ * Host half of dsh-pdf-workbench.
  *
  * Owns the catalog (index file or file-name derivation), the persisted
  * workbench position, the pending-intent registry for created-but-unused
@@ -12,7 +12,7 @@
  * classified session. The browser half never renames on creation for that
  * reason.
  *
- * @module dsh-pdf-math-desk
+ * @module dsh-pdf-workbench
  */
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,13 +28,13 @@ import { installToolkit } from './src/host/toolkit.js'
 import { purgeArchivedBlanks } from './src/host/purge.js'
 
 /** Cordis plugin name. */
-export const name = 'mathdesk'
+export const name = 'pdfdesk'
 
 /** The browser carrier is the only hard dependency. */
 export const inject = ['webServer']
 
 /**
- * Mount the `/mathdesk/*` routes and name pending sessions on their first turn.
+ * Mount the `/pdfdesk/*` routes and name pending sessions on their first turn.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
  * @param {unknown} [rawConfig] - the Loader row's `config`.
  * @returns {void}
@@ -153,7 +153,7 @@ export function apply(ctx, rawConfig) {
     },
   })
 
-  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: PREFIX, handler }), 'mathdesk: routes')
+  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: PREFIX, handler }), 'pdfdesk: routes')
 
   // The first turn names a created session; every finished turn records how full
   // its context is, so "New" can decide between continuing and starting over.
@@ -183,10 +183,10 @@ export function apply(ctx, rawConfig) {
         titles.rename(session, entry.title)
       } catch (error) {
         // Keep the intent: the workbench renames it on its next visit.
-        ctx.logger?.warn?.('mathdesk: failed to name session %s: %s', session.id, String(error))
+        ctx.logger?.warn?.('pdfdesk: failed to name session %s: %s', session.id, String(error))
         return
       }
       await pending.remove(session.id)
     }).catch(() => {})
-  }), 'mathdesk: pending naming and context pressure')
+  }), 'pdfdesk: pending naming and context pressure')
 }

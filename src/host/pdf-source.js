@@ -7,7 +7,7 @@
  * built from validated segments and then checked for containment: a catalog that
  * was edited by hand must not be able to point the reader outside the library.
  *
- * @module dsh-pdf-math-desk/pdf-source
+ * @module dsh-pdf-workbench/pdf-source
  */
 import { open, stat } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'

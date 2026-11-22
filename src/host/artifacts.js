@@ -11,7 +11,7 @@
  * full, decoded, and bounded: 512 KiB and a hard line cap is enough for notes
  * and extracts, and the response says when it stopped early.
  *
- * @module dsh-pdf-math-desk/artifacts
+ * @module dsh-pdf-workbench/artifacts
  */
 import { open, readdir, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve, sep } from 'node:path'

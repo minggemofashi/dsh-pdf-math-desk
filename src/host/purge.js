@@ -8,7 +8,7 @@
  * archived, not live in this process, attached to the library directory, and
  * has never started a turn. Everything else is left alone.
  *
- * @module dsh-pdf-math-desk/purge
+ * @module dsh-pdf-workbench/purge
  */
 import { rm, rmdir } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'

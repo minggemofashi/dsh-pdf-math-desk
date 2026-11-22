@@ -2,6 +2,13 @@
 
 版本号与 git tag、分发包文件名保持一致。每条一行说清“改了什么、为什么”。
 
+## v1.0.0
+
+- **改名**：仓库/包名 `dsh-pdf-math-desk` → `dsh-pdf-workbench`；显示名「PDF 阅读 · 随时问答」，侧栏「PDF阅读」；内部命名空间 `mathdesk` → `pdfdesk`（路由 `/pdfdesk/*`、`~/.dsh/pdfdesk`、`<库根>\.pdfdesk\annotations`、localStorage `pdfdesk:*`、`dsh-resource://pdfdesk/...`）。
+- **数据迁移**：旧数据不会自动搬。把 `~/.dsh/mathdesk` 改名为 `~/.dsh/pdfdesk`、书库里的 `.mathdesk` 改名为 `.pdfdesk`，即可恢复书库列表/设置/标注；不改则按新装处理（标注在旧目录里，不会丢文件）。
+- **发布渠道**：从 1.0.0 起只发布 **GitHub Release**（zip），不再发布 npm 与插件市场；旧 npm 包冻结在 0.73.0。
+- 含 0.73.0 之后的全部改动：页码单一来源与回显抑制、右栏单页/连续与动作同源、多批注、会话路径注入、批注模块化、透明文本框与字号滑块、内置 Excalifont（SIL OFL 1.1）、答疑人格随初始提示词注入与设置开关、书库不可读时仍显示书库页。
+
 ## v0.73.0
 
 - **页码只有一个来源**：章节页收归 `setChapterPage` / `reportChapterPage` / `setChapterCount` 单一写入，跳转带原因；跳转后 800ms 内另一端“滚动经过的页”不再回传，修掉页码在 1–3 页之间回弹、退回去会变的问题。页数只由原文 PDF 登记，译文 PDF 只做渲染夹取，不再把章节页“缩”小；页码框、预览、批注键、撤销栈始终指向同一页。

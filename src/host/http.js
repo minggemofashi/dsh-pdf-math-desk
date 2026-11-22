@@ -1,10 +1,10 @@
 /**
- * HTTP plumbing for the `/mathdesk/*` surface.
+ * HTTP plumbing for the `/pdfdesk/*` surface.
  *
  * Mirrors the guards an installed plugin uses: loopback-only reads, same-origin
  * mutations, a tiny JSON body cap, and `{ ok, error }` envelopes.
  *
- * @module dsh-pdf-math-desk/http
+ * @module dsh-pdf-workbench/http
  */
 
 /** Request bodies are a position, not data; anything larger is a client bug. */

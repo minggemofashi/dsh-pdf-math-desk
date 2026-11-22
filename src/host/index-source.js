@@ -7,7 +7,7 @@
  * cannot use. A catalog that could not be read at all reports a `problem`
  * instead of looking like an empty library.
  *
- * @module dsh-pdf-math-desk/index-source
+ * @module dsh-pdf-workbench/index-source
  */
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'

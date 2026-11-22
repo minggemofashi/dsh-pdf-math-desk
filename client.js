@@ -1,5 +1,5 @@
 /**
- * Browser half of dsh-pdf-math-desk: the full-page workbench.
+ * Browser half of dsh-pdf-workbench: the full-page workbench.
  *
  * Registered in two places under the same id: `sidebar.panellist` (the icon the
  * sidebar resolves to the `main` key) and `main` (the page itself). The page is
@@ -11,7 +11,7 @@
  * own width (container query), not the window's.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-pdf-math-desk',
+  id: 'dsh-pdf-workbench',
   factory(require) {
     'use strict'
 
@@ -23,9 +23,9 @@ window.__ModuleLoader__.load({
     const useMemo = React.useMemo
     const useRef = React.useRef
 
-    const PANEL_ID = 'mathdesk'
-    const NS = 'mathDesk'
-    const ENDPOINT = 'mathdesk/'
+    const PANEL_ID = 'pdfdesk'
+    const NS = 'pdfDesk'
+    const ENDPOINT = 'pdfdesk/'
     const REQUEST_TIMEOUT_MS = 12000
     const SAVE_DELAY_MS = 180
     const NOTICE_MS = 5000
@@ -35,7 +35,7 @@ window.__ModuleLoader__.load({
 
     /** The mode word written into a session title (data, not UI copy). */
     const TITLE_MODE = { extract: '提取', qa: '答疑', exercise: '习题' }
-    const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-math-desk'
+    const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-workbench'
     const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
 
     /**
@@ -46,7 +46,7 @@ window.__ModuleLoader__.load({
      */
     function readReaderPage(bookId, code) {
       try {
-        const raw = window.localStorage.getItem(`mathdesk:page:${bookId}:${code}`)
+        const raw = window.localStorage.getItem(`pdfdesk:page:${bookId}:${code}`)
         const value = Number.parseInt(raw ?? '', 10)
         return Number.isFinite(value) && value > 0 ? value : 1
       } catch {
@@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
      */
     function saveReaderPage(bookId, code, page) {
       try {
-        window.localStorage.setItem(`mathdesk:page:${bookId}:${code}`, String(page))
+        window.localStorage.setItem(`pdfdesk:page:${bookId}:${code}`, String(page))
       } catch {
         // storage unavailable
       }
@@ -98,7 +98,7 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------------- copy -- */
 
     const zh = {
-      title: '数学工作台',
+      title: 'PDF 阅读 · 随时问答',
       subtitle: '{books} 本书 · {chapters} 章',
       shelf: '书架',
       libraries: '书库',
@@ -170,7 +170,7 @@ window.__ModuleLoader__.load({
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: '在工作台打开',
       sideOpenInDeskHint: '回到阅读器，停在同一页',
-      sideForeign: '这个地址不属于数学工作台，无法预览',
+      sideForeign: '这个地址不属于PDF阅读，无法预览',
       sideHint: '翻页、模式与文件版本跟阅读器同步',
       sideMenuMore: '更多操作',
       sideMenuHint: '右键或点 ⋯ 打开菜单',
@@ -357,7 +357,7 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: '开启后 md/txt 等产物也能删除；关闭时只删 PDF',
       socraticToggle: '答疑苏格拉底人格',
       socraticHint: '新建或打开答疑会话时，把本地 qa-persona.md 放进输入框（其他模式不注入）',
-      personaFailed: '答疑人格读取失败（检查 ~/.dsh/mathdesk/qa-persona.md 或重启 DSH）',
+      personaFailed: '答疑人格读取失败（检查 ~/.dsh/pdfdesk/qa-persona.md 或重启 DSH）',
       settings: '设置',
       version: '版本',
       githubRepo: 'GitHub 仓库',
@@ -386,7 +386,7 @@ window.__ModuleLoader__.load({
       settingsTabEnv: '环境',
       settingsTabAbout: '关于',
       settingsNotesTitle: '笔记与备份',
-      settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.mathdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
+      settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.pdfdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
       shortcutsTitle: '快捷键',
       shortcutsHint: '默认是阅读器一直用的键；点「录制」按新键替换，Esc 取消',
       shortcutsRecord: '录制',
@@ -522,13 +522,13 @@ window.__ModuleLoader__.load({
       previewEncoding: '按 {encoding} 解码',
       previewContext: '{code} · {title}',
       artifactAt: '产物目录：{dir}',
-      navLabel: '数学工作台',
+      navLabel: 'PDF阅读',
       pageCrashed: '工作台页面出错了',
       pageCrashHint: '这是插件内部的错误，不是你的数据问题。把下面的信息发给我就能定位。',
     }
 
     const en = {
-      title: 'Math workbench',
+      title: 'PDF reading · ask as you read',
       subtitle: '{books} books · {chapters} chapters',
       shelf: 'Books',
       libraries: 'Libraries',
@@ -786,7 +786,7 @@ window.__ModuleLoader__.load({
       deleteNonPdfHint: 'When on, md/txt artifacts can be deleted too; when off, only PDFs',
       socraticToggle: 'Socratic Q&A persona',
       socraticHint: 'Put the local qa-persona.md into the input when a Q&A session is created or opened (other modes are left alone)',
-      personaFailed: 'Could not read the Q&A persona (check ~/.dsh/mathdesk/qa-persona.md or restart DSH)',
+      personaFailed: 'Could not read the Q&A persona (check ~/.dsh/pdfdesk/qa-persona.md or restart DSH)',
       settings: 'Settings',
       version: 'Version',
       githubRepo: 'GitHub repository',
@@ -816,7 +816,7 @@ window.__ModuleLoader__.load({
       settingsTabEnv: 'Toolchain',
       settingsTabAbout: 'About',
       settingsNotesTitle: 'Notes and backup',
-      settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.mathdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
+      settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.pdfdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
       shortcutsTitle: 'Shortcuts',
       shortcutsHint: 'These are the keys the reader has always used; press “Record”, then the new key (Esc cancels)',
       shortcutsRecord: 'Record',
@@ -952,7 +952,7 @@ window.__ModuleLoader__.load({
       previewEncoding: 'decoded as {encoding}',
       previewContext: '{code} · {title}',
       artifactAt: 'Produced files live in: {dir}',
-      navLabel: 'Math workbench',
+      navLabel: 'PDF reading',
       pageCrashed: 'The workbench page crashed',
       pageCrashHint: 'This is a bug inside the plugin, not a problem with your data. Send me the text below.',
     }
@@ -1021,7 +1021,7 @@ window.__ModuleLoader__.load({
      * not answer within the timeout rejects with `timeout`; long jobs (rendering
      * a whole chapter) pass their own budget.
      * @param {string} method - HTTP method.
-     * @param {string} path - route suffix under `/mathdesk/`.
+     * @param {string} path - route suffix under `/pdfdesk/`.
      * @param {unknown} [body] - JSON body for mutations.
      * @param {number} [timeoutMs] - how long to wait, in milliseconds.
      * @returns {Promise<any>} the response payload.
@@ -1095,8 +1095,8 @@ window.__ModuleLoader__.load({
     function loadPdfjs() {
       if (pdfjsModule === null) {
         const base = typeof document === 'undefined' ? window.location.href : document.baseURI
-        const url = new URL('mathdesk/vendor/pdf.min.mjs', base).href
-        const worker = new URL('mathdesk/vendor/pdf.worker.min.mjs', base).href
+        const url = new URL('pdfdesk/vendor/pdf.min.mjs', base).href
+        const worker = new URL('pdfdesk/vendor/pdf.worker.min.mjs', base).href
         pdfjsModule = import(url).then(module => {
           const lib = module.GlobalWorkerOptions === undefined ? (module.default ?? module) : module
           lib.GlobalWorkerOptions.workerSrc = worker
@@ -1121,8 +1121,8 @@ window.__ModuleLoader__.load({
     function pdfAssetUrls() {
       if (pdfAssets === null) {
         pdfAssets = {
-          cMapUrl: new URL('mathdesk/vendor/cmaps/', document.baseURI).href,
-          wasmUrl: new URL('mathdesk/vendor/wasm/', document.baseURI).href,
+          cMapUrl: new URL('pdfdesk/vendor/cmaps/', document.baseURI).href,
+          wasmUrl: new URL('pdfdesk/vendor/wasm/', document.baseURI).href,
         }
       }
       return pdfAssets
@@ -1131,20 +1131,20 @@ window.__ModuleLoader__.load({
     /** Rendered cover data URLs by book id; a null entry is "this book has none". */
     const coverCache = new Map()
 
-    /** Recent workbench events for debugging (and `window.__mathdeskTrace`). */
+    /** Recent workbench events for debugging (and `window.__pdfdeskTrace`). */
     const traceRing = []
 
     /**
      * Whether the console copy of `trace` is wanted. Diagnostics stay in the ring
      * buffer; printing is opt-in so normal use keeps a clean console:
-     * `localStorage.setItem('mathdesk:debug', '1')` then reload.
+     * `localStorage.setItem('pdfdesk:debug', '1')` then reload.
      * @returns {boolean} whether to print.
      */
     function traceEnabled() {
       if (typeof window === 'undefined') return false
-      if (window.__mathdeskDebug === true) return true
+      if (window.__pdfdeskDebug === true) return true
       try {
-        return window.localStorage.getItem('mathdesk:debug') === '1'
+        return window.localStorage.getItem('pdfdesk:debug') === '1'
       } catch {
         return false
       }
@@ -1161,7 +1161,7 @@ window.__ModuleLoader__.load({
       )).join(' ')}`
       traceRing.push(line)
       if (traceRing.length > 40) traceRing.shift()
-      if (traceEnabled()) console.log('[mathdesk]', line)
+      if (traceEnabled()) console.log('[pdfdesk]', line)
     }
 
     /** Covers are rendered one at a time: each one needs its whole PDF. */
@@ -1173,7 +1173,7 @@ window.__ModuleLoader__.load({
      * @returns {string} the URL.
      */
     function coverUrlFor(book) {
-      return new URL(`mathdesk/cover?book=${encodeURIComponent(book.id)}`, document.baseURI).href
+      return new URL(`pdfdesk/cover?book=${encodeURIComponent(book.id)}`, document.baseURI).href
     }
 
     /**
@@ -1189,7 +1189,7 @@ window.__ModuleLoader__.load({
       if (chapters.length === 0) return null
       const first = chapters.find(chapter => chapter.code === 'c00') ?? chapters[0]
       const lib = await loadPdfjs()
-      const url = new URL(`mathdesk/pdf?book=${encodeURIComponent(book.id)}&code=${encodeURIComponent(first.code)}`, document.baseURI).href
+      const url = new URL(`pdfdesk/pdf?book=${encodeURIComponent(book.id)}&code=${encodeURIComponent(first.code)}`, document.baseURI).href
       const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
       try {
         const doc = await task.promise
@@ -1768,7 +1768,7 @@ window.__ModuleLoader__.load({
      */
     function socraticEnabled() {
       try {
-        return window.localStorage.getItem('mathdesk:socratic') !== '0'
+        return window.localStorage.getItem('pdfdesk:socratic') !== '0'
       } catch {
         return true
       }
@@ -1785,7 +1785,7 @@ window.__ModuleLoader__.load({
     async function seedQaPersona(sessionId) {
       if (typeof sessionId !== 'string' || sessionId === '') return
       if (!socraticEnabled()) return
-      const key = `mathdesk:qa-persona:${sessionId}`
+      const key = `pdfdesk:qa-persona:${sessionId}`
       try {
         if (window.localStorage.getItem(key) === '1') return
       } catch {
@@ -1831,17 +1831,17 @@ window.__ModuleLoader__.load({
     /* --------------------------------------------------------------- side -- */
 
     /** The right column's tab type id: its body and its title register under this key. */
-    const SIDE_TAB_ID = 'dsh-pdf-math-desk/pdf'
+    const SIDE_TAB_ID = 'dsh-pdf-workbench/pdf'
     /** The tab kind that type opens under; one chapter is one tab. */
-    const SIDE_TAB_KIND = 'mathdesk-pdf'
-    /** Every side-preview address starts here: `dsh-resource://mathdesk/chapter/<book>/<code>`. */
-    const SIDE_ADDRESS = 'dsh-resource://mathdesk/chapter/'
+    const SIDE_TAB_KIND = 'pdfdesk-pdf'
+    /** Every side-preview address starts here: `dsh-resource://pdfdesk/chapter/<book>/<code>`. */
+    const SIDE_ADDRESS = 'dsh-resource://pdfdesk/chapter/'
 
     /** Whether this build has the right column and our tab type is registered in it. */
     let sideTabsReady = false
 
     /** The menu target family the side preview contributes to. */
-    const SIDE_MENU_KIND = 'mathdeskSide'
+    const SIDE_MENU_KIND = 'pdfdeskSide'
 
     /** Whether the shared context menu already holds our contribution. */
     let sideMenuReady = false
@@ -2108,7 +2108,7 @@ window.__ModuleLoader__.load({
      * Mirror one page's annotations to the library, debounced.
      *
      * localStorage is the live store, but it dies with site data or a new
-     * browser; the Host keeps `<库根>\.mathdesk\annotations\<书>\<章>.json` so the
+     * browser; the Host keeps `<库根>\.pdfdesk\annotations\<书>\<章>.json` so the
      * notes travel with the library and survive plugin updates.
      * @param {string} bookId - book id.
      * @param {string} code - chapter code.
@@ -2125,8 +2125,8 @@ window.__ModuleLoader__.load({
         let masks = []
         let annots = []
         try {
-          masks = JSON.parse(window.localStorage.getItem(`mathdesk:masks:${bookId}:${code}:${page}`) ?? '[]')
-          annots = JSON.parse(window.localStorage.getItem(`mathdesk:annots:${bookId}:${code}:${page}`) ?? '[]')
+          masks = JSON.parse(window.localStorage.getItem(`pdfdesk:masks:${bookId}:${code}:${page}`) ?? '[]')
+          annots = JSON.parse(window.localStorage.getItem(`pdfdesk:annots:${bookId}:${code}:${page}`) ?? '[]')
         } catch {
           return
         }
@@ -2144,8 +2144,8 @@ window.__ModuleLoader__.load({
      */
     function localChapterPages(bookId, code) {
       const pages = new Map()
-      const prefixMasks = `mathdesk:masks:${bookId}:${code}:`
-      const prefixAnnots = `mathdesk:annots:${bookId}:${code}:`
+      const prefixMasks = `pdfdesk:masks:${bookId}:${code}:`
+      const prefixAnnots = `pdfdesk:annots:${bookId}:${code}:`
       try {
         for (let index = 0; index < window.localStorage.length; index += 1) {
           const key = window.localStorage.key(index)
@@ -2198,8 +2198,8 @@ window.__ModuleLoader__.load({
         const page = Number.parseInt(key, 10)
         if (!Number.isFinite(page) || page < 1 || local.has(page)) continue
         try {
-          window.localStorage.setItem(`mathdesk:masks:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.masks) ? entry.masks : []))
-          window.localStorage.setItem(`mathdesk:annots:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.annots) ? entry.annots : []))
+          window.localStorage.setItem(`pdfdesk:masks:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.masks) ? entry.masks : []))
+          window.localStorage.setItem(`pdfdesk:annots:${bookId}:${code}:${page}`, JSON.stringify(Array.isArray(entry.annots) ? entry.annots : []))
           restored += 1
         } catch {
           // storage unavailable
@@ -2258,7 +2258,7 @@ window.__ModuleLoader__.load({
     /* --------------------------------------------------------------- keys -- */
 
     /** Storage key of the user's reader shortcuts. */
-    const SHORTCUTS_KEY = 'mathdesk:shortcuts'
+    const SHORTCUTS_KEY = 'pdfdesk:shortcuts'
 
     /**
      * Every reader action that can take keys, with the shortcuts it has always
@@ -4191,8 +4191,8 @@ window.__ModuleLoader__.load({
      * @returns {{ historyKeyOf: Function, readList: Function, load: Function, save: Function, restore: Function, undo: Function, redo: Function, depth: Function }} the store.
      */
     function createAnnotationStore(bookId, code, origin) {
-      const storageKey = (kind, page) => `mathdesk:${kind}:${bookId}:${code}:${page}`
-      const historyKeyOf = page => `mathdesk:history:${bookId}:${code}:${page}`
+      const storageKey = (kind, page) => `pdfdesk:${kind}:${bookId}:${code}:${page}`
+      const historyKeyOf = page => `pdfdesk:history:${bookId}:${code}:${page}`
       const readList = (kind, page) => {
         try {
           const raw = window.localStorage.getItem(storageKey(kind, page))
@@ -4280,7 +4280,7 @@ window.__ModuleLoader__.load({
         ? (chapter.file === '' ? '' : `${chapter.file}.pdf`)
         : position.pdf
       const parts = [
-        `〔数学工作台〕本章：${bookRow.title}`,
+        `〔PDF阅读〕本章：${bookRow.title}`,
         `${chapter.code} ${chapter.title}`,
       ]
       if (pdf !== '') parts.push(`PDF：${pdf}`)
@@ -4540,7 +4540,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the ink layer.
      */
     function ColumnInk(props) {
-      const storageKey = `mathdesk:annots:${props.bookId}:${props.code}:${props.page}:${props.store}`
+      const storageKey = `pdfdesk:annots:${props.bookId}:${props.code}:${props.page}:${props.store}`
       const [strokes, setStrokes] = useState([])
       const [draft, setDraft] = useState(null)
       const [note, setNote] = useState(null)
@@ -4813,7 +4813,7 @@ window.__ModuleLoader__.load({
     function useDiag() {
       const [on, setOn] = useState(() => {
         try {
-          return window.localStorage.getItem('mathdesk:diag') === '1'
+          return window.localStorage.getItem('pdfdesk:diag') === '1'
         } catch {
           return false
         }
@@ -4826,8 +4826,8 @@ window.__ModuleLoader__.load({
           event.stopPropagation()
           let now = false
           try {
-            now = window.localStorage.getItem('mathdesk:diag') === '1'
-            window.localStorage.setItem('mathdesk:diag', now ? '0' : '1')
+            now = window.localStorage.getItem('pdfdesk:diag') === '1'
+            window.localStorage.setItem('pdfdesk:diag', now ? '0' : '1')
           } catch {
             // storage unavailable: the toggle still works for this render
           }
@@ -5412,7 +5412,7 @@ window.__ModuleLoader__.load({
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
       const jobRef = useRef('')
-      const noteKey = `mathdesk:translate-note:${reader.bookId}:${reader.code}`
+      const noteKey = `pdfdesk:translate-note:${reader.bookId}:${reader.code}`
       const updateNote = value => {
         setTranslateNote(value)
         try {
@@ -5436,7 +5436,7 @@ window.__ModuleLoader__.load({
         if (reflow.length === 0) return base
         return `${base}；${format('translateBlocksFallback', { n: reflow.length, pages: reflow.join('、') })}`
       }
-      const partialKey = `mathdesk:partial:${reader.bookId}:${reader.code}`
+      const partialKey = `pdfdesk:partial:${reader.bookId}:${reader.code}`
       const [partialPages, setPartialPages] = useState([])
       // Last failed action, so a failure in export/import gets a retry button
       // instead of a dead-end message.
@@ -5599,7 +5599,7 @@ window.__ModuleLoader__.load({
               // A fresh translation or overlay rebuild must be fetched again; the
               // revision defeats any document cache inside pdf.js or the browser.
               if (docRev > 0) params.set('rev', String(docRev))
-              const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
+              const url = new URL(`pdfdesk/pdf?${params.toString()}`, document.baseURI).href
               return lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             }
             let doc = null
@@ -5681,7 +5681,7 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [reader.bookId, reader.code, reader.fileName])
-      const maskKey = `mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
+      const maskKey = `pdfdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
         const list = inkStore.readList('masks', reader.page)
         masksRef.current = list
@@ -5829,7 +5829,7 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const annotKey = `mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
+      const annotKey = `pdfdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
         const list = inkStore.readList('annots', reader.page)
         strokesRef.current = list
@@ -6085,7 +6085,7 @@ window.__ModuleLoader__.load({
       // watching it instead of losing the progress.
       useEffect(() => {
         let cancelled = false
-        const key = `mathdesk:job:${reader.bookId}:${reader.code}`
+        const key = `pdfdesk:job:${reader.bookId}:${reader.code}`
         let jobId = ''
         try {
           jobId = window.localStorage.getItem(key) ?? ''
@@ -6387,7 +6387,7 @@ window.__ModuleLoader__.load({
           jobRef.current = jobId
           deskStatus.job = jobId
           try {
-            window.localStorage.setItem(`mathdesk:job:${reader.bookId}:${reader.code}`, jobId)
+            window.localStorage.setItem(`pdfdesk:job:${reader.bookId}:${reader.code}`, jobId)
           } catch {
             // storage unavailable
           }
@@ -6396,7 +6396,7 @@ window.__ModuleLoader__.load({
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
             if (state.status === 'done' || state.status === 'error') {
               try {
-                window.localStorage.removeItem(`mathdesk:job:${reader.bookId}:${reader.code}`)
+                window.localStorage.removeItem(`pdfdesk:job:${reader.bookId}:${reader.code}`)
               } catch {
                 // storage unavailable
               }
@@ -7317,14 +7317,14 @@ window.__ModuleLoader__.load({
     const CSS = `
 /* Excalidraw's hand-drawn text face (SIL OFL 1.1, see vendor/fonts/excalifont/OFL.txt).
    Served by the Host, split into the same unicode-range subsets as upstream. */
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+20-7e,U+a0-a3,U+a5-a6,U+a8-ab,U+ad-b1,U+b4,U+b6-b8,U+ba-ff,U+131,U+152-153,U+2bc,U+2c6,U+2da,U+2dc,U+304,U+308,U+2013-2014,U+2018-201a,U+201c-201e,U+2020,U+2022,U+2024-2026,U+2030,U+2039-203a,U+20ac,U+2122,U+2212; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-be310b9bcd4f1a43f571c46df7809174.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+100-130,U+132-137,U+139-149,U+14c-151,U+154-17e,U+192,U+1fc-1ff,U+218-21b,U+237,U+1e80-1e85,U+1ef2-1ef3,U+2113; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-b9dcf9d2e50a1eaf42fc664b50a3fd0d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+400-45f,U+490-491,U+2116; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-41b173a47b57366892116a575a43e2b6.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+37e,U+384-38a,U+38c,U+38e-393,U+395-3a1,U+3a3-3a8,U+3aa-3cf,U+3d7; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
-@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
-.md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: mathdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+20-7e,U+a0-a3,U+a5-a6,U+a8-ab,U+ad-b1,U+b4,U+b6-b8,U+ba-ff,U+131,U+152-153,U+2bc,U+2c6,U+2da,U+2dc,U+304,U+308,U+2013-2014,U+2018-201a,U+201c-201e,U+2020,U+2022,U+2024-2026,U+2030,U+2039-203a,U+20ac,U+2122,U+2212; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-be310b9bcd4f1a43f571c46df7809174.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+100-130,U+132-137,U+139-149,U+14c-151,U+154-17e,U+192,U+1fc-1ff,U+218-21b,U+237,U+1e80-1e85,U+1ef2-1ef3,U+2113; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-b9dcf9d2e50a1eaf42fc664b50a3fd0d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+400-45f,U+490-491,U+2116; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-41b173a47b57366892116a575a43e2b6.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+37e,U+384-38a,U+38c,U+38e-393,U+395-3a1,U+3a3-3a8,U+3aa-3cf,U+3d7; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
+@font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
+.md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: pdfdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
 .md-inner { height: 100%; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 clamp(18px, 4cqw, 40px); box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; }
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
 .md-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .01em; }
@@ -7758,7 +7758,7 @@ window.__ModuleLoader__.load({
 /* While the reader is in use, the floating balance widget fades so the page and
    its translation boxes stay readable underneath. The selector belongs to
    dsh-whale-widget-bowl; with that plugin absent the rule matches nothing. */
-body[data-mathdesk-reading='1'] .dshwv-root { opacity: .28; }
+body[data-pdfdesk-reading='1'] .dshwv-root { opacity: .28; }
 .md-annot-readonly { pointer-events: none; }
 /* The side preview's own ink: only the tool layer takes pointer events. */
 .md-annot-edit { pointer-events: auto; cursor: crosshair; touch-action: none; }
@@ -7769,7 +7769,7 @@ body[data-mathdesk-reading='1'] .dshwv-root { opacity: .28; }
 .md-masks-readonly .md-mask { border-color: color-mix(in srgb, rgb(40, 140, 235) 55%, transparent); }
 .md-root :focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-clearance, 48px) + 4px); }
-@container mathdesk (max-width: 620px) {
+@container pdfdesk (max-width: 620px) {
   .md-head { flex-direction: column; align-items: flex-start; gap: 10px; }
   .md-head-actions { align-self: flex-end; }
   .md-row { grid-template-columns: 44px minmax(0, 1fr) auto 18px; }
@@ -7778,15 +7778,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
   .md-session-list { padding-left: 0; }
   .md-crumb-current { max-width: 24ch; }
 }
-@container mathdesk (max-width: 760px) {
+@container pdfdesk (max-width: 760px) {
   .md-preview { position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: min(94%, 460px); margin: 0; padding: 14px 16px 20px 18px; background: var(--dsw-alias-bg-base); border-left: 1px solid var(--dsw-alias-border-l3); }
   .md-preview-backdrop { display: block; position: absolute; inset: 0; z-index: 4; background: color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent); }
   .md-preview-body { border-radius: 8px; }
 }
-@container mathdesk (max-width: 620px) {
+@container pdfdesk (max-width: 620px) {
   .md-file-meta { display: none; }
 }
-@container mathdesk (max-width: 520px) {
+@container pdfdesk (max-width: 520px) {
   .md-session-time { display: none; }
 }
 `
@@ -7857,7 +7857,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // (this is about looks, not about one chapter).
       const [toolsHidden, setToolsHidden] = useState(() => {
         try {
-          return window.localStorage.getItem('mathdesk:side-toolbar') === '0'
+          return window.localStorage.getItem('pdfdesk:side-toolbar') === '0'
         } catch {
           return false
         }
@@ -7866,7 +7866,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setToolsHidden(current => {
           const next = !current
           try {
-            window.localStorage.setItem('mathdesk:side-toolbar', next ? '0' : '1')
+            window.localStorage.setItem('pdfdesk:side-toolbar', next ? '0' : '1')
           } catch {
             // storage unavailable: the choice lasts for this tab only
           }
@@ -7972,7 +7972,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             const query = new URLSearchParams({ book: bookId, code })
             if (shownVariant !== '') query.set('variant', shownVariant)
             if (docRev > 0) query.set('rev', String(docRev))
-            const url = new URL(`mathdesk/pdf?${query.toString()}`, document.baseURI).href
+            const url = new URL(`pdfdesk/pdf?${query.toString()}`, document.baseURI).href
             task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             const loaded = await task.promise
             if (cancelled) {
@@ -8052,7 +8052,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               if (cancelled) return
               const query = new URLSearchParams({ book: bookId, code, variant: name })
               if (docRev > 0) query.set('rev', String(docRev))
-              const url = new URL(`mathdesk/pdf?${query.toString()}`, document.baseURI).href
+              const url = new URL(`pdfdesk/pdf?${query.toString()}`, document.baseURI).href
               const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
               try {
                 const loaded = await task.promise
@@ -8532,14 +8532,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useEffect(() => {
         const node = sideRoot.current
         if (node === null || typeof document === 'undefined' || document.body === undefined) return undefined
-        const enter = () => { document.body.dataset.mathdeskReading = '1' }
-        const leave = () => { delete document.body.dataset.mathdeskReading }
+        const enter = () => { document.body.dataset.pdfdeskReading = '1' }
+        const leave = () => { delete document.body.dataset.pdfdeskReading }
         node.addEventListener('pointerenter', enter)
         node.addEventListener('pointerleave', leave)
         return () => {
           node.removeEventListener('pointerenter', enter)
           node.removeEventListener('pointerleave', leave)
-          delete document.body.dataset.mathdeskReading
+          delete document.body.dataset.pdfdeskReading
         }
       }, [])
 
@@ -9058,7 +9058,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               `page   ${page} / ${count} · display ${displayPage} · jump ${jump} · ${Math.round(shown * 100)}%`,
               `shared ${storeView.page ?? '—'} / ${storeView.count ?? '—'} · jump ${storeView.jump ?? 0} · ${storeView.cause ?? '—'} @${storeView.origin ?? '—'}`,
               `tool   ${tool || '—'} · ${autoFit ? 'auto' : follow ? 'follow' : 'manual'}`,
-              `annot  mathdesk:annots:${bookId}:${code}:${page}`,
+              `annot  pdfdesk:annots:${bookId}:${code}:${page}`,
             ],
           })
           : null,
@@ -9113,15 +9113,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               ? format('sideForeign')
               : format('sideTabTitle', { book: target.bookId, code: target.code })
           },
-        }), 'mathdesk: side preview type')
+        }), 'pdfdesk: side preview type')
         scope.effect(() => slots.inject('sidebar.right.pane.tab', () => slots.register({
           name: 'sidebar.right.pane.tab',
           key: SIDE_TAB_ID,
-        }, SidePdfView)), 'mathdesk: side preview body')
+        }, SidePdfView)), 'pdfdesk: side preview body')
         scope.effect(() => slots.inject('sidebar.right.pane.tab.title', () => slots.register({
           name: 'sidebar.right.pane.tab.title',
           key: SIDE_TAB_ID,
-        }, SideTitle)), 'mathdesk: side preview title')
+        }, SideTitle)), 'pdfdesk: side preview title')
         sideTabsReady = true
         trace('side', 'tab type registered')
         // The preview's actions live in the shared context menu, contributed once
@@ -9139,7 +9139,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               const provider = sideMenuProviders.get(`${target.bookId}:${target.code}`)
               return provider === undefined ? [] : provider()
             },
-          }), 'mathdesk: side menu')
+          }), 'pdfdesk: side menu')
           sideMenuReady = true
           trace('side', 'menu contribution registered')
           return true
@@ -9251,14 +9251,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [updateBusy, setUpdateBusy] = useState(false)
       const [previewPdf, setPreviewPdf] = useState(() => {
         try {
-          return window.localStorage.getItem('mathdesk:preview-pdf') !== '0'
+          return window.localStorage.getItem('pdfdesk:preview-pdf') !== '0'
         } catch {
           return true
         }
       })
       const [allowNonPdfDelete, setAllowNonPdfDelete] = useState(() => {
         try {
-          return window.localStorage.getItem('mathdesk:delete-non-pdf') === '1'
+          return window.localStorage.getItem('pdfdesk:delete-non-pdf') === '1'
         } catch {
           return false
         }
@@ -9623,7 +9623,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
             if (reader.name !== '') params.set('name', reader.name)
             if (reader.variant === 'translated') params.set('variant', 'translated')
-            const url = new URL(`mathdesk/pdf?${params.toString()}`, document.baseURI).href
+            const url = new URL(`pdfdesk/pdf?${params.toString()}`, document.baseURI).href
             const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
             readerTask.current = task
             const doc = await task.promise
@@ -10920,7 +10920,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (persona !== '') {
               // Mark it: opening this session again must not append the persona
               // a second time.
-              try { window.localStorage.setItem(`mathdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
+              try { window.localStorage.setItem(`pdfdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
             }
           }
           if (options !== undefined && options.jump === true) {
@@ -11808,7 +11808,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                         setPreviewPdf(value => {
                           const next = !value
                           try {
-                            window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
+                            window.localStorage.setItem('pdfdesk:preview-pdf', next ? '1' : '0')
                           } catch {
                             // storage unavailable
                           }
@@ -11823,7 +11823,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                         setAllowNonPdfDelete(value => {
                           const next = !value
                           try {
-                            window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
+                            window.localStorage.setItem('pdfdesk:delete-non-pdf', next ? '1' : '0')
                           } catch {
                             // storage unavailable
                           }
@@ -11839,7 +11839,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                         setSocratic(value => {
                           const next = !value
                           try {
-                            window.localStorage.setItem('mathdesk:socratic', next ? '1' : '0')
+                            window.localStorage.setItem('pdfdesk:socratic', next ? '1' : '0')
                           } catch {
                             // storage unavailable
                           }
@@ -11950,7 +11950,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onPreview: () => setPreviewPdf(value => {
               const next = !value
               try {
-                window.localStorage.setItem('mathdesk:preview-pdf', next ? '1' : '0')
+                window.localStorage.setItem('pdfdesk:preview-pdf', next ? '1' : '0')
               } catch {
                 // storage unavailable
               }
@@ -11959,7 +11959,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onNonPdf: () => setAllowNonPdfDelete(value => {
               const next = !value
               try {
-                window.localStorage.setItem('mathdesk:delete-non-pdf', next ? '1' : '0')
+                window.localStorage.setItem('pdfdesk:delete-non-pdf', next ? '1' : '0')
               } catch {
                 // storage unavailable
               }
@@ -12046,7 +12046,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * @returns {void}
        */
       componentDidCatch(error, info) {
-        console.error('mathdesk: page crashed', error, info)
+        console.error('pdfdesk: page crashed', error, info)
       }
 
       /** Let the user try the same page again after a transient failure. */
@@ -12093,7 +12093,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
      */
     function apply(ctx) {
       clientContext = ctx
-      if (typeof window !== 'undefined') window.__mathdeskTrace = traceRing
+      if (typeof window !== 'undefined') window.__pdfdeskTrace = traceRing
       localeService = ctx.get('locale') ?? null
       sessionsService = ctx.get('sessions') ?? null
       translate = localeService === null ? key => key : localeService.bind(NS)
@@ -12102,7 +12102,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         disposers.push(ctx.locale.register(NS, 'zh', zh))
         disposers.push(ctx.locale.register(NS, 'en', en))
         return () => { for (const dispose of disposers) dispose() }
-      }, 'mathdesk: dictionaries')
+      }, 'pdfdesk: dictionaries')
 
       // The right column's preview is visible while this page is not mounted, so
       // the stylesheet lives in the document head for the plugin's lifetime; the
@@ -12110,32 +12110,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       ctx.effect(() => {
         if (typeof document === 'undefined' || document.head === undefined) return () => {}
         const style = document.createElement('style')
-        style.dataset.mathdesk = 'stylesheet'
+        style.dataset.pdfdesk = 'stylesheet'
         style.textContent = CSS
         document.head.appendChild(style)
         return () => { style.remove() }
-      }, 'mathdesk: stylesheet')
+      }, 'pdfdesk: stylesheet')
 
       ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
         name: 'sidebar.panellist',
         id: PANEL_ID,
         order: 30,
         label: () => format('navLabel'),
-      }, DeskIcon)), 'mathdesk: sidebar entry')
+      }, DeskIcon)), 'pdfdesk: sidebar entry')
 
       ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
         name: 'main',
         key: PANEL_ID,
-      }, WorkbenchRoot)), 'mathdesk: page')
+      }, WorkbenchRoot)), 'pdfdesk: page')
 
       // The Q&A persona must reach sessions opened from the sidebar too, where no
       // workbench click happens. This seat lives in the composer for every
       // session and seeds only Q&A ones, once each.
       ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
         name: 'conversation.composer.dock',
-        id: 'mathdesk-qa-persona',
+        id: 'pdfdesk-qa-persona',
         order: 40,
-      }, QaPersonaSeat)), 'mathdesk: qa persona seat')
+      }, QaPersonaSeat)), 'pdfdesk: qa persona seat')
 
       // The right column's chapter tab. It is optional wiring: without that
       // column the reader keeps opening the plain file tab instead.
@@ -12147,7 +12147,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
     }
 
     return {
-      name: 'dsh-pdf-math-desk',
+      name: 'dsh-pdf-workbench',
       inject: ['slots', 'locale'],
       apply,
     }

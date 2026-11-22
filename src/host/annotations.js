@@ -4,7 +4,7 @@
  * The browser's localStorage is the live store (both the reader and the right
  * column edit it directly), but it disappears with site data, a new browser or
  * a new machine. Every edit is therefore mirrored to
- * `<库根>\.mathdesk\annotations\<书>\<章>.json`, which travels with the library
+ * `<库根>\.pdfdesk\annotations\<书>\<章>.json`, which travels with the library
  * and survives plugin updates — the file format carries its own version so a
  * later release can migrate old files instead of dropping them.
  */
@@ -35,7 +35,7 @@ export function pathSegment(value) {
  * @returns {string} absolute path.
  */
 export function annotationsFile(libraryDir, book, code) {
-  return join(libraryDir, '.mathdesk', 'annotations', book, `${code}.json`)
+  return join(libraryDir, '.pdfdesk', 'annotations', book, `${code}.json`)
 }
 
 /**

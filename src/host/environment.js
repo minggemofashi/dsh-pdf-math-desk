@@ -3,7 +3,7 @@
  *
  * The plugin never installs TeX or Python: Markdown-to-PDF is an optional
  * feature, so the browser hides its buttons until both are present.
- * @module dsh-pdf-math-desk/environment
+ * @module dsh-pdf-workbench/environment
  */
 import { accessSync, constants } from 'node:fs'
 import { delimiter, join } from 'node:path'

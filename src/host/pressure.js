@@ -8,7 +8,7 @@
  * end of every turn here, and a session that is no longer live still answers
  * from this snapshot.
  *
- * @module dsh-pdf-math-desk/pressure
+ * @module dsh-pdf-workbench/pressure
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'

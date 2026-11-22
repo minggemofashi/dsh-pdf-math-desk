@@ -55,7 +55,7 @@
 
 - 块：`{ id, page, bbox, kind, text, md }`（来自 `/blocks` + 缓存 blocks.json）；
 - overlay PDF：`<原名>_overlay.pdf`，页面尺寸与原文一致，页数 1:1；
-- 译文：`<原名>_translated.pdf`；块缓存：`~/.dsh/mathdesk/translation/<书>/<章>/page-NNN.blocks.json`；
+- 译文：`<原名>_translated.pdf`；块缓存：`~/.dsh/pdfdesk/translation/<书>/<章>/page-NNN.blocks.json`；
 - 遮罩/标注：`{ page, x, y, w, h }`，按书/章/页存 localStorage（迁移到 sidecar 可选）。
 
 ## 6. 迁移步骤（每步可独立验收）

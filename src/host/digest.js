@@ -11,7 +11,7 @@
  * their text, asks the default model for an outline, and saves the result next to
  * the chapter's produced files so it is readable and reusable.
  *
- * @module dsh-pdf-math-desk/digest
+ * @module dsh-pdf-workbench/digest
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

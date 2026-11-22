@@ -7,14 +7,14 @@
  * ports before falling back to a direct connection. Loopback-only route, no
  * credentials, one GET per click.
  *
- * @module dsh-pdf-math-desk/update
+ * @module dsh-pdf-workbench/update
  */
 import http from 'node:http'
 import https from 'node:https'
 import tls from 'node:tls'
 
 /** Repository whose Releases are compared. */
-export const REPO = 'minggemofashi/dsh-pdf-math-desk'
+export const REPO = 'minggemofashi/dsh-pdf-workbench'
 
 /** Where the release page lives, for the "new version" notice. */
 export const RELEASES_URL = `https://github.com/${REPO}/releases`
@@ -52,7 +52,7 @@ function requestOnce(url, proxy) {
       const request = https.get({
         host: target.hostname,
         path: `${target.pathname}${target.search}`,
-        headers: { accept: 'application/vnd.github+json', 'user-agent': 'dsh-pdf-math-desk' },
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'dsh-pdf-workbench' },
         timeout: TIMEOUT,
       }, response => {
         const chunks = []
@@ -83,7 +83,7 @@ function requestOnce(url, proxy) {
         secure.write(`GET ${target.pathname}${target.search} HTTP/1.1\r\n`
           + `Host: ${target.hostname}\r\n`
           + 'Accept: application/vnd.github+json\r\n'
-          + 'User-Agent: dsh-pdf-math-desk\r\n'
+          + 'User-Agent: dsh-pdf-workbench\r\n'
           + 'Accept-Encoding: identity\r\n'
           + 'Connection: close\r\n\r\n')
       })

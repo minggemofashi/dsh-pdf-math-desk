@@ -4,7 +4,7 @@
  * pdf.js gives text items only; PyMuPDF already groups them into paragraph
  * blocks and reports span sizes, which is what the paragraph/heading/formula
  * boxes need.
- * @module dsh-pdf-math-desk/blocks
+ * @module dsh-pdf-workbench/blocks
  */
 import { execFile } from 'node:child_process'
 

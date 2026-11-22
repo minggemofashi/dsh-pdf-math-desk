@@ -1,6 +1,6 @@
 # 右侧文档预览接入 PdfViewer（实现手册）
 
-> 目标：点「提取 / 答疑 / 习题」跳转会话后，右侧栏里的 PDF 预览是**数学工作台自己的阅读器**（翻页、缩放、单页/连续、只读标注），并与插件阅读器**同步页码、阅读模式、译文版本**。
+> 目标：点「提取 / 答疑 / 习题」跳转会话后，右侧栏里的 PDF 预览是**PDF阅读自己的阅读器**（翻页、缩放、单页/连续、只读标注），并与插件阅读器**同步页码、阅读模式、译文版本**。
 >
 > 状态：v0.61.0 自建标签页 + 阅读器 + 页码/模式/版本同步 + 「在工作台打开」；v0.61.2 只读遮罩；v0.62.0 动作进右键菜单 + 自动适应栏宽；v0.63.0 右栏可直接写标注/框选并跳到会话。本文记录最终采用的接入方式、契约与后续步骤。
 
@@ -12,7 +12,7 @@
 
 | 层 | 事实 | 结论 |
 | --- | --- | --- |
-| 标签类型 `ctx.sidebarRightTabs.register()` | `{ id, kind, patterns, priority, canOpen, title, keepMounted, multiple }`；地址按 glob 认领；`extension` 优先于 `builtin` | **可采用**：注册新 kind，只认领 `dsh-resource://mathdesk/**` |
+| 标签类型 `ctx.sidebarRightTabs.register()` | `{ id, kind, patterns, priority, canOpen, title, keepMounted, multiple }`；地址按 glob 认领；`extension` 优先于 `builtin` | **可采用**：注册新 kind，只认领 `dsh-resource://pdfdesk/**` |
 | 文档呈现 `sidebar.right.tab.document`（keyed） | 键就是实现 id（`…/documentpreview/pdf` 等 8 个自带实现）；`documentPreviews.register()` 按**扩展名**匹配，外部实现排在自带实现之前 | **不采用**：按 `pdf` 后缀匹配会接管全部 PDF 预览，丢失文字选择等 DSH 原生能力 |
 
 因此最终方案是**并列**而不是劫持：DSH 继续负责别人的 PDF，我们的章节 PDF 走自己的地址与组件。
@@ -35,7 +35,7 @@
 ## 3. 地址与注册
 
 ```
-dsh-resource://mathdesk/chapter/<encodeURIComponent(bookId)>/<encodeURIComponent(code)>
+dsh-resource://pdfdesk/chapter/<encodeURIComponent(bookId)>/<encodeURIComponent(code)>
 ```
 
 - `sideAddress(bookId, code)` 生成；`sideTarget(address)` 反解；
@@ -44,9 +44,9 @@ dsh-resource://mathdesk/chapter/<encodeURIComponent(bookId)>/<encodeURIComponent
 
 ```js
 ctx.sidebarRightTabs.register({
-  id: 'dsh-pdf-math-desk/pdf',
-  kind: 'mathdesk-pdf',
-  patterns: ['dsh-resource://mathdesk/chapter/**'],
+  id: 'dsh-pdf-workbench/pdf',
+  kind: 'pdfdesk-pdf',
+  patterns: ['dsh-resource://pdfdesk/chapter/**'],
   keepMounted: true,
   title: address => `${book} · ${code}`,
 })
@@ -56,14 +56,14 @@ ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({ name
 
 **降级路径**：右栏服务不可用（或注册抛错）时 `sideTabsReady` 保持 false，`openPdfInSession` 退回原来的 `dsh-resource://file/session/<session>/<相对路径>` 文本标签页——功能不阻塞。
 
-**样式**：右栏在离开工作台页后仍然显示，而页面内的 `<style>` 会随页面卸载消失，所以 `apply()` 里把同一份 `CSS` 插到 `document.head`（`<style data-mathdesk="stylesheet">`，插件卸载时移除）。
+**样式**：右栏在离开工作台页后仍然显示，而页面内的 `<style>` 会随页面卸载消失，所以 `apply()` 里把同一份 `CSS` 插到 `document.head`（`<style data-pdfdesk="stylesheet">`，插件卸载时移除）。
 
 ## 4. 取数：直接走自己的 Host 路由
 
-不新增代理路由。右侧与阅读器用的是同一条 `/mathdesk/pdf`：
+不新增代理路由。右侧与阅读器用的是同一条 `/pdfdesk/pdf`：
 
 ```
-mathdesk/pdf?book=<id>&code=<code>[&variant=translated][&rev=<docRev>]
+pdfdesk/pdf?book=<id>&code=<code>[&variant=translated][&rev=<docRev>]
 ```
 
 `rev` 是文件版本计数器，用来击穿 pdf.js 与浏览器的文档缓存（翻译完成、补译、导入标注后递增）。
@@ -106,7 +106,7 @@ const VIEW_PUBLISHED = {
 
 ### 5.4 标注/框选的双向同步
 
-两端都能写同一份 `mathdesk:annots|masks:*`，所以不用各自的计数器（会互相盖掉），而是**共享一个**：
+两端都能写同一份 `pdfdesk:annots|masks:*`，所以不用各自的计数器（会互相盖掉），而是**共享一个**：
 
 - 编辑者先落盘，再 `bumpAnnotRev(bookId, code, 'reader'|'side')`，把 `viewLink.state.annotRev` 加一发出去；
 - 另一端收到更高值 → 把该页两组数据从 localStorage 重读（`remoteAnnotRev` / `seenAnnotRev`）；
@@ -121,8 +121,8 @@ const VIEW_PUBLISHED = {
 - 加载：`loadPdfjs()` + `getDocument({ url, isEvalSupported:false, ...pdfAssetUrls() })`，卸载或换版时 `task.destroy()`；
 - 渲染：复用 `PdfViewer`（`variant:'stage'`），单页模式把图层放进页面盒，连续模式把同一组图层交给 `ContinuousView`，由 `ReaderPage` 画在当前页；
 - 工具条：`‹ 页码 ›`、笔/擦/文本框/框选四个图标、缩放百分比、`⋯`；**页码可以点**，就地变成输入框（Enter 跳页、Esc 取消；`v0.69.0`，不再用 `window.prompt`）；可在菜单里**隐藏**（`v0.64.0`），隐藏时右上角悬浮一个鼠标移入才出现的 `⋯` 作为入口，舞台顶部留 32px 让它不压页面；其余动作见 6.4 的右键菜单；
-- 标注层：`mathdesk:annots:<书>:<章>:<页>` → `.md-annot-readonly`（`pointer-events:none`）；编辑层只在选了工具时出现（`.md-annot-edit`）；
-- 遮罩层：`mathdesk:masks:<书>:<章>:<页>` → `.md-masks-readonly`（`z-index:4`，标注之下），每个框用 `OverlayMaskPage` 把**译文页**画进框里；框本身先出现、译文随后填进来。
+- 标注层：`pdfdesk:annots:<书>:<章>:<页>` → `.md-annot-readonly`（`pointer-events:none`）；编辑层只在选了工具时出现（`.md-annot-edit`）；
+- 遮罩层：`pdfdesk:masks:<书>:<章>:<页>` → `.md-masks-readonly`（`z-index:4`，标注之下），每个框用 `OverlayMaskPage` 把**译文页**画进框里；框本身先出现、译文随后填进来。
 
 ### 6.1.1 右侧编辑（`v0.63.0`）
 
@@ -130,7 +130,7 @@ const VIEW_PUBLISHED = {
 - 菜单动作：撤销、重做、清除本页标注、清空本页框选；
 - 持久化：`commitStrokes` / `commitMasks` 写同一条 localStorage 键，然后 `bumpAnnotRev`；
 - 单页、连续都能用（`v0.70.0`）：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在**当前页**的页面盒里渲染它，所以连续模式下图层跟着阅读位置走；跨页连续画不支持，翻页时草稿会关掉；
-- 阅读器双语模式：左右两栏各挂一个可写图层，**两栏各自独立**——原文栏用主页图层（`mathdesk:annots:<book>:<code>:<page>`，与单页/译文视图共用），译文栏用独立的 `ColumnInk`（`…:<page>:right` 后缀），两栏可以停在不同页、各写各的；
+- 阅读器双语模式：左右两栏各挂一个可写图层，**两栏各自独立**——原文栏用主页图层（`pdfdesk:annots:<book>:<code>:<page>`，与单页/译文视图共用），译文栏用独立的 `ColumnInk`（`…:<page>:right` 后缀），两栏可以停在不同页、各写各的；
 - 框选模式下会**提前加载**叠加/译文文档（`wantsMaskDoc` 把 `tool === 'mask'` 也算进去），这样画完第一框马上能看到译文。
 
 ### 6.1.3 文本框就地编辑（`v0.69.0`）
@@ -169,14 +169,14 @@ const VIEW_PUBLISHED = {
 
 ### 6.3 「在工作台打开」
 
-`requestDeskOpen(bookId, code, page)`：`ctx.layout.selectPanel('mathdesk')` + 通过 `deskOpenListeners` 广播；`WorkbenchPage` 收到后从 `catalog.books` 找到章（含 `title/file`），必要时先 `openBook`，再 `openReader({ ..., page })`。加载中收到的请求会暂存到 `pendingDeskOpen`，catalog 到位后重放。
+`requestDeskOpen(bookId, code, page)`：`ctx.layout.selectPanel('pdfdesk')` + 通过 `deskOpenListeners` 广播；`WorkbenchPage` 收到后从 `catalog.books` 找到章（含 `title/file`），必要时先 `openBook`，再 `openReader({ ..., page })`。加载中收到的请求会暂存到 `pendingDeskOpen`，catalog 到位后重放。
 
 ### 6.3.1 「跳到会话」（`v0.63.0`）
 
 右键菜单 **跳到会话 ▸ 提取 / 答疑 / 习题**：
 
 - **已有会话**：`useSessionList()` + `parseSessionTitle()` 按 `书名/章代码/模式` 找最近更新的一条，`openHostSession(id)` 直接跳过去；菜单标签不带前缀；
-- **还没有**：标签显示 `＋ 提取`，动作走 `requestDeskSession(bookId, code, mode)` → `selectPanel('mathdesk')` + `deskSessionListeners` 广播；工作台页收到后（必要时先 `openBook`）调用它自己的 `resumeOrCreate(chapter, mode, { jumpOnCreate: true })`，标题、提纲、续聊编号全部复用工作台逻辑，右栏不重复实现；请求在 catalog 未就绪时暂存 `pendingDeskSession`，到位后重放。
+- **还没有**：标签显示 `＋ 提取`，动作走 `requestDeskSession(bookId, code, mode)` → `selectPanel('pdfdesk')` + `deskSessionListeners` 广播；工作台页收到后（必要时先 `openBook`）调用它自己的 `resumeOrCreate(chapter, mode, { jumpOnCreate: true })`，标题、提纲、续聊编号全部复用工作台逻辑，右栏不重复实现；请求在 catalog 未就绪时暂存 `pendingDeskSession`，到位后重放。
 
 ### 6.4 右键菜单（`v0.62.0`）
 
@@ -185,7 +185,7 @@ DSH 的菜单是**按 target kind 贡献动作**的共享弹窗（`ctx.contextMe
 ```js
 ctx.contextMenus.register({
   id: 'math-desk-side',
-  target: 'mathdeskSide',            // 运行时不校验 kind 集合，扩展方可自定义
+  target: 'pdfdeskSide',            // 运行时不校验 kind 集合，扩展方可自定义
   order: 20,
   resolve: target => sideMenuProviders.get(`${target.bookId}:${target.code}`)?.() ?? [],
 })
@@ -238,20 +238,20 @@ ctx.contextMenus.register({
 - **自定义 target kind**：`ContextMenuTargetMap` 是 TS 声明合并表，运行时不校验 kind，外部插件自定义 kind 属于预期用法；但若将来 DSH 加了运行时校验，菜单会静默不弹（阅读功能不受影响）。
 - **样式注入**：`document.head` 里多一份样式表；与页面内 `<style>` 内容相同，重复无害。
 - **标注与遮罩画在当前页上（v0.70.0）**：`PdfViewer` 把 `children` 交给 `ContinuousView`，`ReaderPage` 只在当前页的页面盒里渲染，所以连续/双语也能写；跨页连续画仍不支持（图层跟着当前页走），翻页时未保存的草稿会关闭。
-- **双语两栏各自独立（v0.72.5）**：两栏分别跟踪自己的可见页（左栏 `reader.page`、右栏 `dualRightPage`），**不做页码同步**；进入双语时只做一次“落到当前页”的定位（每栏 slot 表算 `scrollTop`，120/420/900ms 重试），之后各滚各的。原文栏沿用主页图层（与单页/译文共用 `mathdesk:annots:<book>:<code>:<page>`）；译文栏用 `ColumnInk` 组件，数据存在 `…:<page>:right` 后缀的键里，自带笔迹、橡皮、文字框和本地撤销栈；工具栏 ↶/↷ 跟着最后动过的那一栏（`activeSide`），两栏的栈互不影响。
+- **双语两栏各自独立（v0.72.5）**：两栏分别跟踪自己的可见页（左栏 `reader.page`、右栏 `dualRightPage`），**不做页码同步**；进入双语时只做一次“落到当前页”的定位（每栏 slot 表算 `scrollTop`，120/420/900ms 重试），之后各滚各的。原文栏沿用主页图层（与单页/译文共用 `pdfdesk:annots:<book>:<code>:<page>`）；译文栏用 `ColumnInk` 组件，数据存在 `…:<page>:right` 后缀的键里，自带笔迹、橡皮、文字框和本地撤销栈；工具栏 ↶/↷ 跟着最后动过的那一栏（`activeSide`），两栏的栈互不影响。
 - **译文栏笔记不导出**：`localChapterPages` 只把纯数字页码的键当作页面数据（`/^\d+$/`），`…:right` 的键不会并进导出/镜像；这是有意为之——译文栏是独立的一份笔记。
 - **双语两栏自动适应（v0.72.9）**：只按**宽度**适应——`dualFit.left/right` 用栏宽和第一页 `scale:1` 宽度算出比例，页面填满栏宽，高度超出就上下滚；打开双语自动使用，`ResizeObserver` 在栏宽变化时重算。两栏各自的缩放是本地状态（`dualLeftScale`/`rightScale`，null = 自动），不再借用共享的 `reader.scale`/`onFit`；表头「适应屏幕」把它们清回 null（恢复自动），单页模式仍用原来的 `fitScale`。
 - **表头悬停显示（v0.72.10）**：`.md-reader-colhead > :not(.md-reader-coltitle)` 默认 `opacity:0`、`pointer-events:none`，`transform: translateY(-3px)`；表头 `:hover`/`:focus-within` 时恢复，过渡 0.18s。标题始终可见，隐藏时不会误触按钮。
 - **翻译状态行悬停显示（v0.72.12）**：`translateNote` 外面是 `.md-reader-note-reveal`，**高度为 0**，注记本身 `position:absolute` 悬浮在页面上方——平时完全不占阅读面积；`.md-reader-bar:hover ~`、`.md-reader-subbar:hover ~` 或该行自身 hover 时淡入并轻微下落复位（过渡 0.18s），悬停期间只覆盖页面顶部一小条，不改变布局。
 - **文本框可连续放多个（v0.72.6）**：在任意一栏的文本框编辑中点击页面另一处，先保存当前草稿再在新位置开一个；空的新草稿不落盘（`index < 0` 且无文字），已有草稿清空保存等于删除。
-- **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('mathdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
+- **跳过会话的新建会闪一下工作台**：新建走 `selectPanel('pdfdesk')` + 工作台自己的 `resumeOrCreate`，创建后立刻切到会话；已有会话直接跳，不闪。
 - **撤销/重做按页记录两端的编辑**（v0.71.0）：`pageHistory` 是 `book|code|page` 为键的模块级栈（上限 40 步），阅读器和右栏共用，所以哪一栏写的都能被另一栏的 ↶ 撤回；一次撤销同时恢复笔迹与框选。
 - **遮罩的内存代价（v0.68.0 已降）**：整页只栅格化一次，所有框共用同一张位图（阅读器复用已有的整页 JPEG；右侧预览按页缓存最近两张）。以前是每个框一张整页 canvas。
 - **框的可见性不跟随阅读器的「叠加」开关**：只要该页存在框，右侧就画出来（框是页面数据，不是开关状态）。
 - **自动适应与滚动条**：`ResizeObserver` 测内容盒宽度，理论上「刚好不再出竖滚动条」的边界可能来回一次，差值 ≤1px 时忽略。
 - **同一章多个标签**：地址即内容 id，同一章在同一栏只有一张标签；重复打开是「指向同页」而不是新标签。
 - **跨书跳转**：`openFromSide` 会先切书页再开阅读器，避免「返回章节」落到旧书。
-- **桌面挂件遮挡**：`dsh-whale-widget-bowl` 的根节点是 `.dshwv-root`（`position:fixed; z-index:9999`，本身 `pointer-events:none`），跨插件无法把它压到页面下方，所以做成**悬停淡化**：指针进入预览时给 `body` 打 `data-mathdesk-reading`，注入的样式把它淡到 28%；该插件不在时规则匹配不到元素。若以后挂件类名变了，淡化失效但不影响阅读功能。
+- **桌面挂件遮挡**：`dsh-whale-widget-bowl` 的根节点是 `.dshwv-root`（`position:fixed; z-index:9999`，本身 `pointer-events:none`），跨插件无法把它压到页面下方，所以做成**悬停淡化**：指针进入预览时给 `body` 打 `data-pdfdesk-reading`，注入的样式把它淡到 28%；该插件不在时规则匹配不到元素。若以后挂件类名变了，淡化失效但不影响阅读功能。
 
 ## 10. 关键代码位置（`client.js`）
 

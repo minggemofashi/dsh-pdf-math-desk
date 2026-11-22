@@ -5,7 +5,7 @@
  *
  * The child process is spawned with `stdio: 'ignore'`: under the DSH sandbox
  * piped stdio is denied, and the result is proven by the output file anyway.
- * @module dsh-pdf-math-desk/render
+ * @module dsh-pdf-workbench/render
  */
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'

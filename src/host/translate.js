@@ -3,7 +3,7 @@
  *
  * The page is sent as a JPEG data URL; the model returns Markdown with LaTeX
  * formulas preserved. The caller renders that Markdown with `md2tex.py`.
- * @module dsh-pdf-math-desk/translate
+ * @module dsh-pdf-workbench/translate
  */
 
 const API_URL = 'https://api.deepseek.com/chat/completions'

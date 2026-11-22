@@ -4,7 +4,7 @@
  * The client starts it; the Host rasterizes the chapter PDF with PyMuPDF and
  * calls the vision model page by page, so closing the reader or switching
  * conversations no longer cancels the work.
- * @module dsh-pdf-math-desk/translate-job
+ * @module dsh-pdf-workbench/translate-job
  */
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
@@ -106,7 +106,7 @@ export async function startChapterJob(options) {
     let temporary = null
     let savedMarkdown = ''
     try {
-      temporary = await mkdtemp(join(tmpdir(), 'mathdesk-translate-'))
+      temporary = await mkdtemp(join(tmpdir(), 'pdfdesk-translate-'))
       await rasterize(options.rasterScript, options.source, temporary)
       const files = (await readdir(temporary)).filter(name => name.endsWith('.png')).sort()
       state.total = files.length

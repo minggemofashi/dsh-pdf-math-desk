@@ -4,7 +4,7 @@
  * The model gets the page image once plus the block list, and returns a JSON
  * object mapping block id to translated Markdown. Cost stays close to the
  * whole-page call; only missing or invalid blocks are retried.
- * @module dsh-pdf-math-desk/translate-blocks
+ * @module dsh-pdf-workbench/translate-blocks
  */
 
 const API_URL = 'https://api.deepseek.com/chat/completions'

@@ -1,4 +1,4 @@
-# 构建可分发的插件包：复制插件目录到 ../dist/dsh-pdf-math-desk-<version>/，
+# 构建可分发的插件包：复制插件目录到 ../dist/dsh-pdf-workbench-<version>/，
 # 换成分发用的中性 cordis.patch.yml，再压成 zip。
 # 用法：powershell -ExecutionPolicy Bypass -File .\build-dist.ps1
 param([string]$Version = '')
@@ -8,7 +8,7 @@ if ($Version -eq '') {
     $Version = (Get-Content (Join-Path $root 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 }
 $distRoot = Join-Path (Split-Path -Parent $root) 'dist'
-$pkg = Join-Path $distRoot "dsh-pdf-math-desk-$Version"
+$pkg = Join-Path $distRoot "dsh-pdf-workbench-$Version"
 Write-Host "packaging $Version -> $pkg"
 if (Test-Path $distRoot) { Remove-Item $distRoot -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $pkg | Out-Null
@@ -17,21 +17,21 @@ Get-ChildItem $root -Force |
     ForEach-Object { Copy-Item $_.FullName -Destination $pkg -Recurse -Force }
 
 $neutralPatch = @"
-# dsh-pdf-math-desk: a book -> chapter workbench in the main column.
+# dsh-pdf-workbench: a book -> chapter workbench in the main column.
 #
 # Optional: point ``libraryDir`` at a split-library root that holds ``分片/``
 # (and optionally ``整本/``, ``索引.json``). Without it the plugin starts neutral:
 # the workbench's 书库 page adds libraries on first use. Example:
 #   - insert:
-#       - id: mathdesk
-#         name: dsh-pdf-math-desk
+#       - id: pdfdesk
+#         name: dsh-pdf-workbench
 #         config:
 #           libraryDir: 'D:\数学书库'
 - insert:
-    - id: mathdesk
-      name: dsh-pdf-math-desk
+    - id: pdfdesk
+      name: dsh-pdf-workbench
 "@
-Set-Content -Path (Join-Path $pkg 'cordis.patch.yml') -Value $neutralPatch -Encoding UTF8
+[IO.File]::WriteAllText((Join-Path $pkg 'cordis.patch.yml'), $neutralPatch, [Text.UTF8Encoding]::new($false))
 
 # The py.cmd/node.cmd wrappers point at this machine's runtime; never ship them.
 foreach ($wrapper in @('py.cmd', 'node.cmd')) {
@@ -46,6 +46,6 @@ if ($leaks) {
     throw '分发副本里仍有本机路径，先清理再打包'
 }
 
-$zip = Join-Path $distRoot "dsh-pdf-math-desk-$Version.zip"
-Compress-Archive -Path $pkg -DestinationPath $zip -Force
+$zip = Join-Path $distRoot "dsh-pdf-workbench-$Version.zip"
+Compress-Archive -Path (Join-Path $pkg '*') -DestinationPath $zip -Force
 Write-Host "zip: $zip ($((Get-Item $zip).Length) bytes)"

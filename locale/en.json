@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Math workbench",
-    "description": "A full-page math workbench organized by book and chapter: multiple libraries, chapter conversations (extract / Q&A / exercises), artifact preview and Markdown-to-PDF rendering, a built-in pdf.js reader, plus shelf groups, a recycle bin, and whole-book PDFs.",
+    "title": "PDF reading · ask as you read",
+    "description": "A PDF reading workbench: libraries and shelves, chapter-by-chapter reading, ask-as-you-read conversations (extract / Q&A / exercises), ink and box annotations, bilingual view, and a built-in pdf.js reader, plus shelf groups, a recycle bin, and whole-book PDFs.",
     "detail": "docs/DETAIL.md"
   }
 }

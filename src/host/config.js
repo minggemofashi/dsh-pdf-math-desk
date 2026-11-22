@@ -5,7 +5,7 @@
  * the state store never assemble paths themselves. `libraryDir` comes from the
  * bundle patch (or the user's patch layer); the rest derives from it.
  *
- * @module dsh-pdf-math-desk/config
+ * @module dsh-pdf-workbench/config
  */
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -40,7 +40,7 @@ const COVER_FOLDER = '封面'
 const INDEX_FILE = '索引.json'
 
 /** Plugin data folder name under `$DSH_HOME`. */
-const DATA_FOLDER = 'mathdesk'
+const DATA_FOLDER = 'pdfdesk'
 
 /** Share of a session's context window at which "New" starts a continuation. */
 export const DEFAULT_RESUME_RATIO = 0.85

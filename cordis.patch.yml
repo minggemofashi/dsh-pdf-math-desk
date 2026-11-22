@@ -1,13 +1,13 @@
-# dsh-pdf-math-desk: a book -> chapter workbench in the main column.
+# dsh-pdf-workbench: a book -> chapter workbench in the main column.
 #
 # Optional: point `libraryDir` at a split-library root that holds `分片/`
 # (and optionally `整本/`, `索引.json`). Without it the plugin starts neutral:
 # the workbench's 书库 page adds libraries on first use. Example:
 #   - insert:
-#       - id: mathdesk
-#         name: dsh-pdf-math-desk
+#       - id: pdfdesk
+#         name: dsh-pdf-workbench
 #         config:
 #           libraryDir: 'D:\数学书库'
 - insert:
-    - id: mathdesk
-      name: dsh-pdf-math-desk
+    - id: pdfdesk
+      name: dsh-pdf-workbench

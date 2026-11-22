@@ -6,7 +6,7 @@
  * the library as `<libraryDir>/工具/`, so the conversation can run them from its
  * own workspace.
  *
- * @module dsh-pdf-math-desk/toolkit
+ * @module dsh-pdf-workbench/toolkit
  */
 import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

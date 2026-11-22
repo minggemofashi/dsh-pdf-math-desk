@@ -1,10 +1,10 @@
-# 给 Agent 的约定（dsh-pdf-math-desk）
+# 给 Agent 的约定（dsh-pdf-workbench）
 
-这个仓库是 **DSH 插件 `dsh-pdf-math-desk`**（“数学工作台”）。以下规则适用于本目录；用户明确要求时以用户为准。
+这个仓库是 **DSH 插件 `dsh-pdf-workbench`**（“PDF阅读”）。以下规则适用于本目录；用户明确要求时以用户为准。
 
 ## 日常改动与发版节奏
 
-**默认只存档，不发版。** 只有用户明确说「更新 / 发版 / 推送 / 发布」时，才做版本号、tag、push、npm、Release、市场这一套。日常改动**不升版本、不打 tag、不 push、不发 npm/Release/市场**。
+**默认只存档，不发版。** 只有用户明确说「更新 / 发版 / 推送 / 发布」时，才做版本号、tag、push、GitHub Release 这一套。日常改动**不升版本、不打 tag、不 push、不发 Release**。从 1.0.0 起**只发布 GitHub Release**（不再发 npm / 插件市场）。
 
 ### 日常改动（每次）
 
@@ -15,13 +15,13 @@
 
 ### 发版（用户明确说“该更新了”之后）
 
+**从 1.0.0 起只发布 GitHub Release，不再发 npm / 插件市场**（npm 冻结在旧包的 0.73.0）。
+
 1. 汇总日常提交，升 `package.json` 版本（修复/文档 +补丁位，新功能 +次版本位）；
 2. 更新 `CHANGELOG.md`、README（必要时 `安装与分发.md`）；
 3. `git tag vX.Y.Z` + `git push origin main && git push --tags origin`；
-4. 构建 `dist` zip，建 GitHub Release 并上传附件；
-5. npm：`npm publish`（staged 时 `npm stage publish` + 2FA 批准）；
-6. npm 成功后更新 `market/index.json` 与 README 安装版本；
-7. 三处一致性检查（npm / Release / market / README / 远程 main）。
+4. `powershell -ExecutionPolicy Bypass -File .\build-dist.ps1` 构建 `dist/dsh-pdf-workbench-X.Y.Z.zip`，建 GitHub Release 并上传附件；
+5. 一致性检查（tag / Release 附件 / zip 内的 package.json 版本 / README 安装说明 / 远程 main）。
 
 ### 检查（日常与发版都跑）
 
@@ -36,12 +36,12 @@
 
 - **进 git**：`index.js`、`client.js`、`src/`、`locale/`、`vendor/`（pdf.js + LICENSE）、`tools/`（拆分工具与规范）、`samples/`（内置示例书库 PDF + manifest）、`README.md`、`安装与分发.md`、`CHANGELOG.md`、`package.json`、`cordis.patch.yml`、`icon.svg`、本文件。
 - **不进 git**：`node_modules/`、`dist/`（构建产物）、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
-- `cordis.patch.yml` 必须保持**中性**：不写具体书库路径，示例只放在注释里。真实书库列表由运行时的 `~/.dsh/mathdesk/libraries.json` 管理。
-- 不要提交任何**个人目录的绝对路径**（真实书库路径只放在运行时的 `~/.dsh/mathdesk/libraries.json`，仓库里一律用示例 `D:\数学书库`）、API key、token 等；提交前 `git diff --cached` 检查一遍。
+- `cordis.patch.yml` 必须保持**中性**：不写具体书库路径，示例只放在注释里。真实书库列表由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
+- 不要提交任何**个人目录的绝对路径**（真实书库路径只放在运行时的 `~/.dsh/pdfdesk/libraries.json`，仓库里一律用示例 `D:\数学书库`）、API key、token 等；提交前 `git diff --cached` 检查一遍。
 
 ## 打包与分发
 
-- 分发副本放在仓库外的 `dist/`，由“复制插件目录 + 把 `cordis.patch.yml` 换成中性版 + 替换文档里的本机路径”生成；文件名 `dsh-pdf-math-desk-<version>.zip`。
+- 分发副本放在仓库外的 `dist/`，由“复制插件目录 + 把 `cordis.patch.yml` 换成中性版 + 替换文档里的本机路径”生成；文件名 `dsh-pdf-workbench-<version>.zip`。
 - 安装方式见 `安装与分发.md`：DSH → Plugins → Add plugin 选目录；或 `plugin_manager install_bundle` 绝对路径。
 - 版本号必须与 tag、zip 文件名、CHANGELOG 一致。
 

@@ -3,7 +3,7 @@
  *
  * One computer may hold several split libraries (different subjects, different
  * drives). Each entry is just the paths the rest of the plugin needs, kept in
- * `$DSH_HOME/mathdesk/libraries.json` together with which one is active. The
+ * `$DSH_HOME/pdfdesk/libraries.json` together with which one is active. The
  * profile config still supplies the first library, so an existing install keeps
  * working without touching its patch.
  *
@@ -11,7 +11,7 @@
  * user how a library must be split and named, and `mode` records that so a later
  * subject layout can be added without migrating.
  *
- * @module dsh-pdf-math-desk/libraries
+ * @module dsh-pdf-workbench/libraries
  */
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'

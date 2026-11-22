@@ -1,25 +1,25 @@
 /**
- * The `/mathdesk/*` surface.
+ * The `/pdfdesk/*` surface.
  *
- *   GET  /mathdesk/bootstrap        catalog + stored position + pending intents + links
- *   GET  /mathdesk/artifacts        one chapter's produced files
- *   GET  /mathdesk/artifact         one produced file's text, for the preview
- *   GET  /mathdesk/pdf              one chapter's PDF, or a produced PDF, for the reader
- *   GET  /mathdesk/pdf-ref          that PDF as a workspace-relative path
- *   GET  /mathdesk/cover            a user-provided book cover image
- *   GET  /mathdesk/context          how full one session's context is
- *   POST /mathdesk/digest           summarize a chapter's conversations
- *   GET  /mathdesk/vendor/<file>    the reader's pdf.js build
- *   POST /mathdesk/links            attach an existing session to a chapter
- *   POST /mathdesk/links/remove     detach one chapter from a session
- *   PUT  /mathdesk/state            persist the position
- *   POST /mathdesk/pending          record a created-but-unused session
- *   POST /mathdesk/pending/remove   forget one pending session
+ *   GET  /pdfdesk/bootstrap        catalog + stored position + pending intents + links
+ *   GET  /pdfdesk/artifacts        one chapter's produced files
+ *   GET  /pdfdesk/artifact         one produced file's text, for the preview
+ *   GET  /pdfdesk/pdf              one chapter's PDF, or a produced PDF, for the reader
+ *   GET  /pdfdesk/pdf-ref          that PDF as a workspace-relative path
+ *   GET  /pdfdesk/cover            a user-provided book cover image
+ *   GET  /pdfdesk/context          how full one session's context is
+ *   POST /pdfdesk/digest           summarize a chapter's conversations
+ *   GET  /pdfdesk/vendor/<file>    the reader's pdf.js build
+ *   POST /pdfdesk/links            attach an existing session to a chapter
+ *   POST /pdfdesk/links/remove     detach one chapter from a session
+ *   PUT  /pdfdesk/state            persist the position
+ *   POST /pdfdesk/pending          record a created-but-unused session
+ *   POST /pdfdesk/pending/remove   forget one pending session
  *
  * The browser half owns no filesystem access, so every read the page needs
  * arrives through `bootstrap` or one of the read routes.
  *
- * @module dsh-pdf-math-desk/routes
+ * @module dsh-pdf-workbench/routes
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -41,7 +41,7 @@ import { renderMarkdown } from './render.js'
 import { readState, writeState } from './state.js'
 
 /** Route prefix owned by this plugin. */
-export const PREFIX = '/mathdesk'
+export const PREFIX = '/pdfdesk'
 
 /** The reader's pdf.js build, by relative name so a path can never escape. */
 function vendorContentType(name) {
@@ -276,7 +276,7 @@ async function activeLibrary() {
           return
         }
         // The Socratic persona is a local workflow file, never shipped with the
-        // plugin: `~/.dsh/mathdesk/qa-persona.md`. A missing file is simply empty.
+        // plugin: `~/.dsh/pdfdesk/qa-persona.md`. A missing file is simply empty.
         try {
           const raw = await readFile(join(config.dataDir, 'qa-persona.md'), 'utf8')
           sendJson(response, 200, { persona: raw })

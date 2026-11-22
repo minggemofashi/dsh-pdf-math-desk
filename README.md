@@ -1,13 +1,13 @@
-# 数学工作台 · dsh-pdf-math-desk
+# PDF 阅读 · 随时问答 · dsh-pdf-workbench
 
-[![npm](https://img.shields.io/npm/v/dsh-pdf-math-desk)](https://www.npmjs.com/package/dsh-pdf-math-desk)
+[![GitHub release](https://img.shields.io/github/v/release/minggemofashi/dsh-pdf-workbench)](https://github.com/minggemofashi/dsh-pdf-workbench/releases)
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-blue)](https://github.com/topics/dsh-plugin)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-> 面向 PDF 阅读的 DSH 插件：以「书 → 章」为骨架，把 **PDF 阅读、章节会话、产物管理** 放进同一个整页工作台。为数学书调得最顺（公式、习题、译文对照），但**任何一本书都能这样读**——教材、讲义、论文、闲书。
+> 面向 PDF 阅读的 DSH 插件：以「书 → 章」为骨架，把 **PDF 阅读、随时问答、标注与产物管理** 放进同一个整页工作台。为数学书调得最顺（公式、习题、译文对照），但**任何一本书都能这样读**——教材、讲义、论文、闲书。
 
 <p align="center">
-  <img src="./icon.svg" width="96" alt="math workbench icon" />
+  <img src="./icon.svg" width="96" alt="PDF reading workbench icon" />
 </p>
 
 ## 为什么
@@ -57,12 +57,12 @@
 
 新建的会话草稿带章节上下文（书名 · 章名 · PDF · 阅读位置）和一块**本地绝对路径**（书库 · 书目录 · 本章 PDF · 产物目录，并注明“路径已给出，不要搜索或列举目录”），模型不必再自己找书，省 token；右侧显示本章 PDF 供对照；每轮对话的 token 用量在底部可见——插件不会自动把整本 PDF 塞进上下文。章节展开后 PDF 行有「复制路径」。
 
-> **答疑人格（可选，本地）**：把苏格拉底式提示写进 `~/.dsh/mathdesk/qa-persona.md`。新建**答疑**会话时，人格会**和章节路径放在同一个初始提示里**（`答疑人格（本会话生效）：` 一段）；打开已有答疑会话（包括从宿主左侧会话列表进入）时也会补一次到输入框（每会话一次）。其他模式不注入。可在**设置 → 答疑苏格拉底人格**关闭。人格文本只在本地，不随插件仓库分发。所有新会话的预填末尾都会加一句「下面是我的问题：」。
+> **答疑人格（可选，本地）**：把苏格拉底式提示写进 `~/.dsh/pdfdesk/qa-persona.md`。新建**答疑**会话时，人格会**和章节路径放在同一个初始提示里**（`答疑人格（本会话生效）：` 一段）；打开已有答疑会话（包括从宿主左侧会话列表进入）时也会补一次到输入框（每会话一次）。其他模式不注入。可在**设置 → 答疑苏格拉底人格**关闭。人格文本只在本地，不随插件仓库分发。所有新会话的预填末尾都会加一句「下面是我的问题：」。
 
 ### 5. 右栏就是同一个阅读器：标注、框选露译文都在这做
 ![右栏预览](./assets/screenshot-side-preview.jpg)
 
-跳到会话后，右侧不是另找一个 PDF 阅读器，而是**数学工作台自己的阅读器**：翻页（`3 / 7`）、缩放（自动适应栏宽，图上 121%）、单页/连续；工具条上的笔、擦、文本框、框选就在这一栏里，画的手写标注与阅读器双向同步，框选出来的虚线框里露出译文。右键菜单里还有跳页、清除、**跳到提取/答疑/习题**、在工作台打开。
+跳到会话后，右侧不是另找一个 PDF 阅读器，而是**PDF阅读自己的阅读器**：翻页（`3 / 7`）、缩放（自动适应栏宽，图上 121%）、单页/连续；工具条上的笔、擦、文本框、框选就在这一栏里，画的手写标注与阅读器双向同步，框选出来的虚线框里露出译文。右键菜单里还有跳页、清除、**跳到提取/答疑/习题**、在工作台打开。
 
 > 框选画出来的框不是一次性的：**拖顶部圆点移动、拖八个角/边改大小、右键删除**；在框上直接拖仍然是画新框（不会把页面“卡住”），Alt+拖动也能移动。删错了点工具条的 **↶ 撤销**（旁边 ↷ 是重做）。撤销/重做对笔迹、文本框、框选一视同仁，按页记录，撤销完两栏都会同步。
 
@@ -111,7 +111,7 @@
 
 ## 不能做什么
 
-- **不把标注写进 PDF**：手写标注、标注色/粗细与译文框选遮罩都会跟着页存起来（浏览器 `localStorage` 是活数据，另外自动镜像到 `<库根>\.mathdesk\annotations\<书>\<章>.json`），能导出成带标注的 PDF 与 sidecar JSON，但不会改写你书库里的原文件；
+- **不把标注写进 PDF**：手写标注、标注色/粗细与译文框选遮罩都会跟着页存起来（浏览器 `localStorage` 是活数据，另外自动镜像到 `<库根>\.pdfdesk\annotations\<书>\<章>.json`），能导出成带标注的 PDF 与 sidecar JSON，但不会改写你书库里的原文件；
 - **不做 OCR/整本拆分**：只按你的分片文件显示，整本只作为一本书；
 - **不是通用 PDF 阅读器的替代品（还差一点）**：书签、目录跳转、搜索、超链接这些还没做；「提取/答疑/习题」的措辞面向数学书，但分数、翻译、标注、导出对任何书都一样能用；
 - **不托管书籍**：书库在你本机，跨机器需重新添加；
@@ -127,17 +127,15 @@
 
 ## 安装
 
-### DSH 插件市场 / Discover
-搜索 `dsh-pdf-math-desk` 安装（收录后）。
+### GitHub Release（推荐）
 
-### npm
-
-```bash
-dsh plugin add dsh-pdf-math-desk@0.73.0
-```
+1. 打开 [Releases](https://github.com/minggemofashi/dsh-pdf-workbench/releases)，下载 `dsh-pdf-workbench-1.0.0.zip`；
+2. 解压到任意目录（不要在压缩包里直接运行）；
+3. DSH → Plugins → Add plugin → 选择解压后的插件目录；
+4. 重启 DSH（Host 路由与侧栏图标在启动时注册）。
 
 ### 本地目录
-DSH → Plugins → Add plugin → 选择本目录。
+DSH → Plugins → Add plugin → 选择本目录（开发时用）。
 
 
 > 可选依赖：Markdown → PDF 需要本机 **Python 3 + TeX（xelatex、ctex）**。插件启动时会检测；**没检测到就不显示「转 PDF」按钮**，读书、会话、预览 md 均不受影响。安装可在书库页说明书里点「下载 TeX Live（约 5 GB）」，装好后把 TeX 的 bin 加入 PATH 并重启 DSH。
@@ -190,19 +188,19 @@ DSH → Plugins → Add plugin → 选择本目录。
 - `deepseekApiKey`：DeepSeek API Key，供翻译使用（也可用环境变量）；
 - 阅读器快捷键：**设置 → 快捷键**，可录制 / 清除 / 恢复默认。默认是 ←/→ 与 PgUp/PgDn 翻页、↑/↓ 滚动、Home 首页、= + - 缩放、Esc 关闭。
 
-运行时数据在 `~/.dsh/mathdesk/`：`libraries.json`、`state.json`、`links.json`、`pending.json`、`pressure.json`、`shelves.json`。
+运行时数据在 `~/.dsh/pdfdesk/`：`libraries.json`、`state.json`、`links.json`、`pending.json`、`pressure.json`、`shelves.json`。
 
 ## 隐私
 
 - 无遥测，不收集数据；
 - 唯一外部请求：点击「检查更新」时访问 GitHub Releases；
 - 书库只读；删除只移动到 `<库根>\回收站\`；
-- 笔记镜像写入 `<库根>\.mathdesk\annotations\`（本地文件，不联网）。
+- 笔记镜像写入 `<库根>\.pdfdesk\annotations\`（本地文件，不联网）。
 
 ## 限制
 
 - 工作流面向「按章拆开的 PDF」；数学书最顺，其它书也能读；
-- 标注/遮罩**不写回 PDF**：浏览器 `localStorage` 是活数据，同时自动镜像到 `<库根>\.mathdesk\annotations\<书>\<章>.json`（随库走、清浏览器数据也能恢复）；需要单独留档仍可用「导出本页/整章」（PDF + sidecar JSON，可再导入）；
+- 标注/遮罩**不写回 PDF**：浏览器 `localStorage` 是活数据，同时自动镜像到 `<库根>\.pdfdesk\annotations\<书>\<章>.json`（随库走、清浏览器数据也能恢复）；需要单独留档仍可用「导出本页/整章」（PDF + sidecar JSON，可再导入）；
 - 标注在**单页、连续、双语**都能写（双语两栏都能画，笔记按页共享；连续模式图层跟着当前页走，不能一笔跨两页）；框选（叠加）在单页和连续视图可用，双语里点「叠加」会先切回单页；
 - Markdown→PDF 需本机 Python + TeX Live（xelatex），插件运行时不依赖；
 - 书 id 由目录/文件名推导，改名会使旧会话/产物失联；

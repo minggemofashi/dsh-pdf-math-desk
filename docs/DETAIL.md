@@ -1,6 +1,6 @@
-# 数学工作台
+# PDF阅读
 
-以「书 → 章」为骨架的整页数学工作台。点左侧栏的工作台图标打开：书架列出书，点书卡进入章节页。
+以「书 → 章」为骨架的整页PDF阅读。点左侧栏的工作台图标打开：书架列出书，点书卡进入章节页。
 
 ## 功能
 
@@ -40,7 +40,7 @@
 当然这个插件不是必须的，我早就在用这套工作流了，只是把这套工作流以插件集成的形式体现出来而已，希望大家用的愉快，有问题也可以随时反馈。
 
 
-GitHub: https://github.com/minggemofashi/dsh-pdf-math-desk
+GitHub: https://github.com/minggemofashi/dsh-pdf-workbench
 
 
 ## Token 消耗

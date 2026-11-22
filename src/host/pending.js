@@ -7,7 +7,7 @@
  * archive it when it is still unused. This registry is the durable intent
  * behind that delay.
  *
- * @module dsh-pdf-math-desk/pending
+ * @module dsh-pdf-workbench/pending
  */
 import { readFile, rename, mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
