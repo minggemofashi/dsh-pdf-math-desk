@@ -217,6 +217,7 @@ window.__ModuleLoader__.load({
       annotErase: '擦',
       annotClear: '清空标注',
       annotTools: '标注工具',
+      toolSettings: '工具设置',
       annotSelect: '选择',
       shapeLine: '直线',
       shapeArrow: '箭头',
@@ -676,6 +677,7 @@ window.__ModuleLoader__.load({
       annotErase: 'Erase',
       annotClear: 'Clear',
       annotTools: 'Annotation tools',
+      toolSettings: 'Tool settings',
       annotSelect: 'Select',
       shapeLine: 'Line',
       shapeArrow: 'Arrow',
@@ -3902,6 +3904,7 @@ window.__ModuleLoader__.load({
         out.push([
           (previous[0] + current[0] * 2 + next[0]) / 4,
           (previous[1] + current[1] * 2 + next[1]) / 4,
+          ((previous[2] ?? 0.5) + (current[2] ?? 0.5) * 2 + (next[2] ?? 0.5)) / 4,
         ])
       }
       out.push(points[points.length - 1])
@@ -3922,7 +3925,7 @@ window.__ModuleLoader__.load({
         }
         return { ...entry, x: entry.x + dx, y: entry.y + dy }
       }
-      return { ...entry, points: (entry.points ?? []).map(point => [point[0] + dx, point[1] + dy]) }
+      return { ...entry, points: (entry.points ?? []).map(point => (point.length > 2 ? [point[0] + dx, point[1] + dy, point[2]] : [point[0] + dx, point[1] + dy])) }
     }
     /**
      * The rough.js paths for one shape, in a fixed virtual pixel space so the
@@ -5719,6 +5722,20 @@ window.__ModuleLoader__.load({
       // unreliable once the rail sits over the scrolling stage, so the section
       // also opens it by position.
       const [railOpen, setRailOpen] = useState(false)
+      const [railPanel, setRailPanel] = useState(false)
+      const railPanelTimer = useRef(null)
+      const enterRail = () => {
+        if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
+        railPanelTimer.current = setTimeout(() => setRailPanel(true), 550)
+      }
+      const leaveRail = () => {
+        if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
+        railPanelTimer.current = null
+        setRailPanel(false)
+      }
+      useEffect(() => () => {
+        if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
+      }, [])
       const onRailPointer = event => {
         const rect = event.currentTarget.getBoundingClientRect()
         const fromEdge = railSide === 'right' ? rect.right - event.clientX : event.clientX - rect.left
@@ -6205,6 +6222,12 @@ window.__ModuleLoader__.load({
         annotBox.current = { width: rect.width, height: rect.height }
         return point
       }
+      // Pen pressure is 0.5 for a mouse and 0..1 for a stylus. Keep it per sample
+      // so the stroke can thin out at the ends of a fast pen stroke.
+      const strokePressure = event => {
+        const value = Number(event.pressure)
+        return Number.isFinite(value) && value > 0 ? Math.min(1, Math.max(0.05, value)) : 0.5
+      }
       // Tolerance in page units: ~8px of slack plus half the stroke's own width,
       // so a thick line is as easy to hit as it looks.
       const toleranceFor = widthPx => inkReach(widthPx, annotBox.current.width)
@@ -6354,7 +6377,7 @@ window.__ModuleLoader__.load({
           openNote(point, side)
           return
         }
-        setDraftStroke({ kind: 'stroke', points: [point], color: annotColor, width: annotWidth })
+        setDraftStroke({ kind: 'stroke', points: [[point[0], point[1], strokePressure(event)]], color: annotColor, width: annotWidth })
       }
       const annotMove = event => {
         if (annotTool === 'erase' && erasing.current) {
@@ -6413,7 +6436,7 @@ window.__ModuleLoader__.load({
           if (current === null) return null
           const last = current.points[current.points.length - 1]
           if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return current
-          return { ...current, points: [...current.points, point] }
+          return { ...current, points: [...current.points, [point[0], point[1], strokePressure(event)]] }
         })
       }
       const annotUp = () => {
@@ -7003,9 +7026,29 @@ window.__ModuleLoader__.load({
           strokes.map((stroke, index) => {
             if (stroke.kind === 'text' || stroke.kind === 'shape') return null
             const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
+            const points = shown.points ?? []
+            if (points.some(point => point.length > 2)) {
+              const base = shown.width ?? 2
+              return h('g', { key: index, opacity: shown.opacity ?? 1 },
+                points.slice(1).map((point, segment) => {
+                  const previous = points[segment]
+                  const pressure = point[2] ?? previous[2] ?? 0.5
+                  return h('line', {
+                    key: segment,
+                    x1: previous[0],
+                    y1: previous[1],
+                    x2: point[0],
+                    y2: point[1],
+                    stroke: shown.color ?? '#e0554a',
+                    strokeWidth: base * (0.35 + pressure * 1.2),
+                    vectorEffect: 'non-scaling-stroke',
+                    strokeLinecap: 'round',
+                  })
+                }))
+            }
             return h('polyline', {
               key: index,
-              points: (shown.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+              points: points.map(point => `${point[0]},${point[1]}`).join(' '),
               fill: 'none',
               stroke: shown.color ?? '#e0554a',
               strokeWidth: shown.width ?? 2,
@@ -7322,31 +7365,6 @@ window.__ModuleLoader__.load({
               h('option', { value: 'import' }, format('importAnnots'))
             ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
-            ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
-              key: color,
-              type: 'button',
-              className: 'md-btn md-btn-small md-annot-swatch',
-              'aria-pressed': annotColor === color ? 'true' : 'false',
-              'aria-label': color,
-              title: format('annotColorHint'),
-              style: { background: color },
-              onClick: () => setAnnotColor(color),
-            })),
-            h('span', { className: 'md-annot-width' },
-              h('input', {
-                type: 'range',
-                min: 1,
-                max: 10,
-                step: 1,
-                value: annotWidth,
-                'aria-label': format('annotWidthHint'),
-                title: `${format('annotWidthHint')}：${annotWidth}px`,
-                onChange: event => setAnnotWidth(Number(event.target.value) || 2),
-              }),
-              h('span', { className: 'md-annot-width-value', 'aria-hidden': true }, `${annotWidth}px`)
-            ),
-            h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
-            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h('select', {
               className: 'md-reader-lang',
               value: translateTarget,
@@ -7576,8 +7594,14 @@ window.__ModuleLoader__.load({
             ],
           })
           : null,
-        h('div', { className: 'md-rail-tab', 'data-side': railSide, 'aria-hidden': true }),
-        h('div', { className: 'md-rail-wrap', 'data-side': railSide },
+        h('div', { className: 'md-rail-tab', 'data-side': railSide, 'aria-hidden': true },
+          railSide === 'right' ? '‹' : '›'),
+        h('div', {
+          className: 'md-rail-wrap',
+          'data-side': railSide,
+          onPointerEnter: enterRail,
+          onPointerLeave: leaveRail,
+        },
           h('div', { className: 'md-rail', 'data-open': railOpen ? 'true' : undefined, role: 'toolbar', 'aria-label': format('annotTools') },
             railTool('select', 'annotSelect', 'M5 3l7 17 2-7 7-2z'),
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
@@ -7607,7 +7631,39 @@ window.__ModuleLoader__.load({
               title: format('annotClearHint'), 'aria-label': format('annotClear'),
               onClick: clearAnnots,
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'))
-          )
+          ),
+          railPanel && selection === null
+            ? h('div', { className: 'md-rail-panel', 'data-side': railSide },
+              h('div', { className: 'md-rail-panel-title' }, format('toolSettings')),
+              annotTool === 'text'
+                ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
+                : h(React.Fragment, null,
+                  h('div', { className: 'md-note-style-row' },
+                    h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                    ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h('button', {
+                      key: color,
+                      type: 'button',
+                      className: 'md-note-color',
+                      style: { background: color },
+                      'data-on': annotColor === color ? 'true' : undefined,
+                      'aria-label': color,
+                      onMouseDown: event => event.preventDefault(),
+                      onClick: () => setAnnotColor(color),
+                    }))
+                  ),
+                  h('div', { className: 'md-note-style-row' },
+                    h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                    h('input', {
+                      type: 'range', min: 1, max: 10, step: 1,
+                      value: annotWidth,
+                      'aria-label': format('annotWidthHint'),
+                      onChange: event => setAnnotWidth(Number(event.target.value) || 2),
+                    }),
+                    h('span', { className: 'md-note-size-value' }, `${annotWidth}px`)
+                  )
+                )
+            )
+            : null
         ),
         selection === null || selectedEntry === undefined
           ? null
@@ -8297,14 +8353,15 @@ window.__ModuleLoader__.load({
 .md-mask-page-image { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
+.md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
 .md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
 .md-annot-text.md-annot-selected { outline: 2px solid #2f6df6; outline-offset: 3px; border-radius: 3px; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
 .md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
-.md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 4px; height: 46px; border-radius: 2px; background: var(--dsw-alias-border-l3); opacity: .55; z-index: 39; pointer-events: none; }
-.md-rail-tab[data-side="right"] { right: 2px; }
-.md-rail-tab[data-side="left"] { left: 2px; }
+.md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 58px; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-right: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); opacity: .9; z-index: 41; pointer-events: none; }
+.md-rail-tab[data-side="right"] { right: 0; }
+.md-rail-tab[data-side="left"] { left: 0; border-radius: 0 6px 6px 0; border-right: 1px solid var(--dsw-alias-border-l3); border-left: none; }
 .md-rail-wrap[data-side="right"] { right: 0; }
 .md-rail-wrap[data-side="left"] { left: 0; }
 .md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: 78vh; overflow-y: auto; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
@@ -8321,6 +8378,13 @@ window.__ModuleLoader__.load({
 .md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
 .md-selection-delete { align-self: flex-start; color: var(--dsw-alias-label-error, #c0392b); }
 .md-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 240px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); z-index: 42; pointer-events: auto; }
+.md-rail-panel[data-side="right"] { right: 44px; }
+.md-rail-panel[data-side="left"] { left: 44px; }
+.md-rail-panel-title { font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+/* The right-side preview gets the same edge rail, but only its core tools. */
+.md-side-rail-wrap { top: 44px; bottom: 0; }
+.md-side-rail-tab { top: calc(50% + 22px); }
 .md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
 .md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid #2f6df6; border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
@@ -9797,6 +9861,48 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: event => openSideMenu(event),
           }, '⋯')),
         h('div', { className: 'md-side-body' }, body),
+        h('div', { className: 'md-rail-tab md-side-rail-tab', 'data-side': 'right', 'aria-hidden': true }, '‹'),
+        h('div', { className: 'md-rail-wrap md-side-rail-wrap', 'data-side': 'right' },
+          h('div', { className: 'md-rail md-side-rail' },
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'pen' ? 'true' : 'false',
+              title: format('annotHint'), 'aria-label': format('annotPen'),
+              onClick: () => toggleTool('pen'),
+            }, annotIcon('M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'erase' ? 'true' : 'false',
+              title: format('annotEraseHint'), 'aria-label': format('annotErase'),
+              onClick: () => toggleTool('erase'),
+            }, annotIcon('m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'text' ? 'true' : 'false',
+              title: format('annotTextHint'), 'aria-label': format('annotText'),
+              onClick: () => toggleTool('text'),
+            }, annotIcon('M4 6h16M12 6v13M9 19h6')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              'aria-pressed': tool === 'mask' ? 'true' : 'false',
+              title: format('overlayHint'), 'aria-label': format('overlayToggle'),
+              onClick: () => toggleTool('mask'),
+            }, annotIcon('M4 4h16v16H4zM8 4v16M16 4v16')),
+            h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              disabled: historyCounts.undo === 0,
+              title: format('undoHint'), 'aria-label': format('undo'),
+              onClick: () => undoPage(),
+            }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
+            h('button', {
+              type: 'button', className: 'md-rail-btn',
+              disabled: historyCounts.redo === 0,
+              title: format('redoHint'), 'aria-label': format('redo'),
+              onClick: () => redoPage(),
+            }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3'))
+          )
+        ),
         diag
           ? h(DiagPanel, {
             lines: [
