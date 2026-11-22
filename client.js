@@ -13032,7 +13032,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 h('div', { className: 'md-tips-line' }, format('tipsLeftClick')),
                 h('div', { className: 'md-tips-line' }, format('tipsRightClick'))
               ),
-              catalog === null || blockingError !== '' ? null : h('details', { className: 'md-details', style: { order: 4 } },
+              catalog === null || blockingError !== '' || work === null || work.view === 'libraries' ? null : h('details', { className: 'md-details', style: { order: 4 } },
                 h('summary', { className: 'md-details-summary' }, format('diagnosticsTitle')),
                 h(Diagnostics, { catalog, books, unresolved: sessionIndex.unresolved })
               )
