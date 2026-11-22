@@ -218,6 +218,10 @@ window.__ModuleLoader__.load({
       annotClear: '清空标注',
       annotTools: '标注工具',
       annotSelect: '选择',
+      shapeLine: '直线',
+      shapeArrow: '箭头',
+      shapeRect: '矩形',
+      shapeEllipse: '椭圆',
       selectionTitle: '已选中',
       selectionDelete: '删除选中',
       annotHint: '手写批注；再点一次退出。按页保存，缩放不跑位',
@@ -388,6 +392,7 @@ window.__ModuleLoader__.load({
       toolRail: '工具条位置',
       railLeft: '左',
       railRight: '右',
+      sketchRoughness: '手绘强度',
       settingsTabReading: '阅读',
       settingsTabKeys: '快捷键',
       settingsTabEnv: '环境',
@@ -654,6 +659,10 @@ window.__ModuleLoader__.load({
       annotClear: 'Clear',
       annotTools: 'Annotation tools',
       annotSelect: 'Select',
+      shapeLine: 'Line',
+      shapeArrow: 'Arrow',
+      shapeRect: 'Rectangle',
+      shapeEllipse: 'Ellipse',
       selectionTitle: 'Selected',
       selectionDelete: 'Delete selection',
       annotHint: 'Write on this page; click again to stop. Saved per page and keeps its place at any zoom',
@@ -825,6 +834,7 @@ window.__ModuleLoader__.load({
       toolRail: 'Tool rail',
       railLeft: 'Left',
       railRight: 'Right',
+      sketchRoughness: 'Sketch strength',
       settingsTabReading: 'Reading',
       settingsTabKeys: 'Shortcuts',
       settingsTabEnv: 'Toolchain',
@@ -2702,6 +2712,16 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onRailSide,
             }, props.railSide === 'left' ? format('railLeft') : format('railRight'))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('sketchRoughness')),
+            h('input', {
+              type: 'range', min: 0, max: 2, step: 0.1,
+              value: props.roughness ?? 1,
+              'aria-label': format('sketchRoughness'),
+              onChange: event => props.onRoughness(Number(event.target.value)),
+            }),
+            h('span', { className: 'md-note-size-value' }, Number(props.roughness ?? 1).toFixed(1))
           )
         ),
         h('div', { className: 'md-settings-section' },
@@ -3819,6 +3839,74 @@ window.__ModuleLoader__.load({
     const NOTE_SIZES = [14, 18, 22, 28]
     /** The note colours offered in the in-place editor. */
     const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
+    /** The shape tools; each saves one `kind: 'shape'` entry per page. */
+    const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse']
+    // rough.js draws the shapes with Excalidraw's wobbly hand. It is bundled
+    // under vendor/ and imported lazily: a missing file only loses the sketch.
+    const ROUGH_VW = 1000
+    const ROUGH_VH = 1414
+    let roughLib = null
+    const roughReady = import('/pdfdesk/vendor/rough/rough.mjs').then(module => {
+      roughLib = module.default ?? module
+    }).catch(() => {})
+    /**
+     * Translate one mark, used while dragging a selection.
+     * @param {object} entry - the stored mark.
+     * @param {number} dx - horizontal page delta.
+     * @param {number} dy - vertical page delta.
+     * @returns {object} the moved copy.
+     */
+    function translateEntry(entry, dx, dy) {
+      if (entry.kind === 'text') return { ...entry, x: entry.x + dx, y: entry.y + dy }
+      if (entry.kind === 'shape') {
+        if (entry.shape === 'line' || entry.shape === 'arrow') {
+          return { ...entry, x0: entry.x0 + dx, y0: entry.y0 + dy, x1: entry.x1 + dx, y1: entry.y1 + dy }
+        }
+        return { ...entry, x: entry.x + dx, y: entry.y + dy }
+      }
+      return { ...entry, points: (entry.points ?? []).map(point => [point[0] + dx, point[1] + dy]) }
+    }
+    /**
+     * The rough.js paths for one shape, in a fixed virtual pixel space so the
+     * wobble has a stable size at any zoom. `null` means "draw clean lines".
+     * @param {object} entry - the shape entry.
+     * @param {number} roughness - 0..2, the settings value.
+     * @returns {Array<{d: string, stroke: string, strokeWidth: number}> | null} the paths.
+     */
+    function sketchPaths(entry, roughness) {
+      if (roughLib === null || roughness <= 0) return null
+      const generator = roughLib.generator()
+      const width = Number.isFinite(entry.width) ? entry.width : 2
+      const options = {
+        stroke: entry.color ?? '#e0554a',
+        strokeWidth: width,
+        roughness: Math.max(0.1, 0.9 * roughness),
+        bowing: 0.8 * roughness,
+        seed: Number.isFinite(entry.seed) ? entry.seed : 1,
+        disableMultiStroke: false,
+      }
+      const px = value => value * ROUGH_VW
+      const py = value => value * ROUGH_VH
+      let drawable
+      if (entry.shape === 'line' || entry.shape === 'arrow') {
+        drawable = generator.line(px(entry.x0), py(entry.y0), px(entry.x1), py(entry.y1), options)
+      } else if (entry.shape === 'rect') {
+        drawable = generator.rectangle(px(entry.x), py(entry.y), px(entry.w), py(entry.h), options)
+      } else {
+        drawable = generator.ellipse(px(entry.x + entry.w / 2), py(entry.y + entry.h / 2), px(entry.w), py(entry.h), options)
+      }
+      const paths = generator.toPaths(drawable)
+      if (entry.shape === 'arrow') {
+        const angle = Math.atan2(py(entry.y1) - py(entry.y0), px(entry.x1) - px(entry.x0))
+        const length = Math.max(10, width * 4)
+        for (const side of [-1, 1]) {
+          const ex = px(entry.x1) - length * Math.cos(angle + side * 0.5)
+          const ey = py(entry.y1) - length * Math.sin(angle + side * 0.5)
+          paths.push(...generator.toPaths(generator.line(px(entry.x1), py(entry.y1), ex, ey, options)))
+        }
+      }
+      return paths
+    }
 
     /**
      * Apply one saved note to a page's annotation list. Shared by the reader and
@@ -3914,9 +4002,89 @@ window.__ModuleLoader__.load({
         return point[0] >= entry.x - reach && point[0] <= entry.x + width + reach
           && point[1] >= entry.y - 0.02 - reach && point[1] <= entry.y + 0.035 + reach
       }
+      if (entry.kind === 'shape') {
+        const reach = reachForWidth(Number(entry.width) || 2) + 0.012
+        if (entry.shape === 'line' || entry.shape === 'arrow') {
+          const x0 = entry.x0
+          const y0 = entry.y0
+          const x1 = entry.x1
+          const y1 = entry.y1
+          const dx = x1 - x0
+          const dy = y1 - y0
+          const length = dx * dx + dy * dy
+          const t = length === 0 ? 0 : Math.max(0, Math.min(1, ((point[0] - x0) * dx + (point[1] - y0) * dy) / length))
+          return Math.hypot(point[0] - (x0 + t * dx), point[1] - (y0 + t * dy)) <= reach
+        }
+        return point[0] >= entry.x - reach && point[0] <= entry.x + entry.w + reach
+          && point[1] >= entry.y - reach && point[1] <= entry.y + entry.h + reach
+      }
       return inkStrokeHits(entry, point, reachForWidth(Number(entry.width) || 2))
     }
 
+
+    /**
+     * One stored shape. rough.js draws the wobbly hand when it is loaded and the
+     * sketch strength is above zero; otherwise the same geometry is drawn clean.
+     * @param {{ entry: object, roughness?: number }} props - the shape and the strength.
+     * @returns {import('react').ReactElement} the SVG mark.
+     */
+    function ShapeMark(props) {
+      const entry = props.entry
+      const paths = sketchPaths(entry, props.roughness ?? 1)
+      if (paths !== null) {
+        return h('g', { transform: 'scale(0.001 0.0007072)' },
+          paths.map((path, index) => h('path', {
+            key: index,
+            d: path.d,
+            fill: 'none',
+            stroke: path.stroke,
+            strokeWidth: path.strokeWidth,
+            vectorEffect: 'non-scaling-stroke',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          })))
+      }
+      const color = entry.color ?? '#e0554a'
+      const width = Number.isFinite(entry.width) ? entry.width : 2
+      const common = {
+        fill: 'none',
+        stroke: color,
+        strokeWidth: width,
+        vectorEffect: 'non-scaling-stroke',
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }
+      if (entry.shape === 'rect') {
+        return h('rect', { x: entry.x, y: entry.y, width: entry.w, height: entry.h, ...common })
+      }
+      if (entry.shape === 'ellipse') {
+        return h('ellipse', {
+          cx: entry.x + entry.w / 2,
+          cy: entry.y + entry.h / 2,
+          rx: entry.w / 2,
+          ry: entry.h / 2,
+          ...common,
+        })
+      }
+      const head = entry.shape === 'arrow'
+        ? (() => {
+          const angle = Math.atan2(entry.y1 - entry.y0, entry.x1 - entry.x0)
+          const length = Math.max(0.012, width * 0.012)
+          return [-0.5, 0.5].map((side, index) => h('line', {
+            key: `head-${index}`,
+            x1: entry.x1,
+            y1: entry.y1,
+            x2: entry.x1 - length * Math.cos(angle + side),
+            y2: entry.y1 - length * Math.sin(angle + side),
+            ...common,
+          }))
+        })()
+        : null
+      return h(React.Fragment, null,
+        h('line', { x1: entry.x0, y1: entry.y0, x2: entry.x1, y2: entry.y1, ...common }),
+        head
+      )
+    }
 
     /**
      * The text style controls (size slider, font family, colour). They live in
@@ -5445,6 +5613,17 @@ window.__ModuleLoader__.load({
       const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f' })
       // Which existing mark the select tool has picked (index into `strokes`).
       const [selection, setSelection] = useState(null)
+      // A shape being dragged out, and a selected mark being moved.
+      const [shapeDraft, setShapeDraft] = useState(null)
+      const [drag, setDrag] = useState(null)
+      const [resize, setResize] = useState(null)
+      const [resizeEntry, setResizeEntry] = useState(null)
+      const [roughTick, setRoughTick] = useState(0)
+      useEffect(() => {
+        let alive = true
+        roughReady.then(() => { if (alive) setRoughTick(value => value + 1) })
+        return () => { alive = false }
+      }, [])
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
@@ -5902,6 +6081,9 @@ window.__ModuleLoader__.load({
         setNoteEdit(null)
         setDraftStroke(null)
         setSelection(null)
+        setDrag(null)
+        setResize(null)
+        setResizeEntry(null)
         // The block pass belongs to one page: keep its signature only while the
         // boxes on screen are still that page's.
         setAutoBoxes(null)
@@ -6018,7 +6200,18 @@ window.__ModuleLoader__.load({
           const found = strokesRef.current.findIndex(entry => annotHit(entry, point))
           setSelection(found < 0
             ? null
-            : { index: found, kind: strokesRef.current[found].kind === 'text' ? 'text' : 'stroke' })
+            : { index: found, kind: strokesRef.current[found].kind === 'text' ? 'text' : strokesRef.current[found].kind === 'shape' ? 'shape' : 'stroke' })
+          if (found >= 0) setDrag({ index: found, start: point, dx: 0, dy: 0 })
+          return
+        }
+        if (SHAPE_TOOLS.includes(annotTool)) {
+          setShapeDraft({
+            shape: annotTool,
+            x0: point[0], y0: point[1],
+            x1: point[0], y1: point[1],
+            color: annotColor,
+            width: annotWidth,
+          })
           return
         }
         if (annotTool === 'erase') {
@@ -6045,6 +6238,46 @@ window.__ModuleLoader__.load({
           savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
           return
         }
+        if (resize !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          const dx = point[0] - resize.start[0]
+          const dy = point[1] - resize.start[1]
+          const original = resize.original
+          if (original.shape === 'line' || original.shape === 'arrow') {
+            setResizeEntry(resize.corner === 'start'
+              ? { ...original, x0: original.x0 + dx, y0: original.y0 + dy }
+              : { ...original, x1: original.x1 + dx, y1: original.y1 + dy })
+          } else {
+            let left = original.x
+            let top = original.y
+            let right = original.x + original.w
+            let bottom = original.y + original.h
+            if (resize.corner.includes('w')) left += dx
+            else right += dx
+            if (resize.corner.includes('n')) top += dy
+            else bottom += dy
+            const width = Math.max(0.01, Math.abs(right - left))
+            const height = Math.max(0.01, Math.abs(bottom - top))
+            setResizeEntry({ ...original, x: Math.min(left, right), y: Math.min(top, bottom), w: width, h: height })
+          }
+          return
+        }
+        if (shapeDraft !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setShapeDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          return
+        }
+        if (drag !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setDrag(current => (current === null ? null : { ...current, dx: point[0] - current.start[0], dy: point[1] - current.start[1] }))
+          return
+        }
         if (draftStroke === null) return
         const point = annotPoint(event)
         if (point === null) return
@@ -6057,6 +6290,42 @@ window.__ModuleLoader__.load({
       }
       const annotUp = () => {
         erasing.current = false
+        if (resizeEntry !== null && resize !== null) {
+          savePageAnnots(strokesRef.current.map((entry, index) => (index === resize.index ? resizeEntry : entry)))
+          setResize(null)
+          setResizeEntry(null)
+          return
+        }
+        if (shapeDraft !== null) {
+          const draft = shapeDraft
+          setShapeDraft(null)
+          const x = Math.min(draft.x0, draft.x1)
+          const y = Math.min(draft.y0, draft.y1)
+          const w = Math.abs(draft.x1 - draft.x0)
+          const h = Math.abs(draft.y1 - draft.y0)
+          if (w > 0.008 || h > 0.008) {
+            savePageAnnots([...strokesRef.current, {
+              kind: 'shape',
+              shape: draft.shape,
+              x, y, w, h,
+              x0: draft.x0, y0: draft.y0, x1: draft.x1, y1: draft.y1,
+              color: draft.color,
+              width: draft.width,
+              seed: Math.floor(Math.random() * 2147483647),
+            }])
+          }
+          return
+        }
+        if (drag !== null) {
+          const moved = drag
+          setDrag(null)
+          if (Math.hypot(moved.dx, moved.dy) > 0.003) {
+            savePageAnnots(strokesRef.current.map((entry, index) => (
+              index === moved.index ? translateEntry(entry, moved.dx, moved.dy) : entry
+            )))
+          }
+          return
+        }
         if (draftStroke === null) return
         if (draftStroke.points.length > 1) savePageAnnots([...strokesRef.current, draftStroke])
         setDraftStroke(null)
@@ -6575,7 +6844,7 @@ window.__ModuleLoader__.load({
           preserveAspectRatio: 'none',
           'aria-hidden': true,
         },
-          selection !== null && selectedEntry !== undefined && selectedEntry.kind !== 'text'
+          selection !== null && selectedEntry !== undefined && selectedEntry.kind !== 'text' && selectedEntry.kind !== 'shape'
             ? h('polyline', {
               key: 'selection',
               points: (selectedEntry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
@@ -6588,16 +6857,56 @@ window.__ModuleLoader__.load({
               strokeLinejoin: 'round',
             })
             : null,
-          strokes.filter(entry => entry.kind !== 'text').map((stroke, index) => h('polyline', {
-            key: index,
-            points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
-            fill: 'none',
-            stroke: stroke.color ?? '#e0554a',
-            strokeWidth: stroke.width ?? 2,
-            vectorEffect: 'non-scaling-stroke',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          })),
+          selection !== null && selectedEntry !== undefined && selectedEntry.kind === 'shape'
+            ? h('rect', {
+              x: selectedEntry.x,
+              y: selectedEntry.y,
+              width: selectedEntry.w,
+              height: selectedEntry.h,
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: 1.5,
+              strokeDasharray: '5 4',
+              vectorEffect: 'non-scaling-stroke',
+            })
+            : null,
+          strokes.map((stroke, index) => {
+            if (stroke.kind === 'text' || stroke.kind === 'shape') return null
+            const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
+            return h('polyline', {
+              key: index,
+              points: (shown.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: shown.color ?? '#e0554a',
+              strokeWidth: shown.width ?? 2,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+          }),
+          strokes.map((entry, index) => (entry.kind === 'shape'
+            ? h(ShapeMark, {
+              key: `shape-${index}`,
+              entry: resizeEntry !== null && resize !== null && resize.index === index
+                ? resizeEntry
+                : drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry,
+              roughness: props.roughness,
+            })
+            : null)),
+          shapeDraft === null
+            ? null
+            : h('g', { opacity: 0.8 },
+              h(ShapeMark, {
+                entry: {
+                  kind: 'shape',
+                  ...shapeDraft,
+                  x: Math.min(shapeDraft.x0, shapeDraft.x1),
+                  y: Math.min(shapeDraft.y0, shapeDraft.y1),
+                  w: Math.abs(shapeDraft.x1 - shapeDraft.x0),
+                  h: Math.abs(shapeDraft.y1 - shapeDraft.y0),
+                },
+                roughness: props.roughness,
+              })),
           draftStroke === null
             ? null
             : h('polyline', {
@@ -6646,6 +6955,33 @@ window.__ModuleLoader__.load({
               : undefined,
           }, entry.text)
           : null)),
+        selection !== null && selectedEntry !== undefined && selectedEntry.kind === 'shape' && annotTool === 'select'
+          ? h('div', { className: 'md-shape-handles' },
+            (selectedEntry.shape === 'line' || selectedEntry.shape === 'arrow'
+              ? [['start', selectedEntry.x0, selectedEntry.y0], ['end', selectedEntry.x1, selectedEntry.y1]]
+              : [
+                ['nw', selectedEntry.x, selectedEntry.y],
+                ['ne', selectedEntry.x + selectedEntry.w, selectedEntry.y],
+                ['sw', selectedEntry.x, selectedEntry.y + selectedEntry.h],
+                ['se', selectedEntry.x + selectedEntry.w, selectedEntry.y + selectedEntry.h],
+              ]).map(item => h('div', {
+              key: item[0],
+              className: 'md-shape-handle',
+              style: { left: `${item[1] * 100}%`, top: `${item[2] * 100}%` },
+              onPointerDown: event => {
+                event.preventDefault()
+                event.stopPropagation()
+                const box = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
+                if (box === undefined || box === null) return
+                const point = [
+                  Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)),
+                  Math.min(1, Math.max(0, (event.clientY - box.top) / box.height)),
+                ]
+                setResize({ index: selection.index, corner: item[0], start: point, original: selectedEntry })
+                setResizeEntry(selectedEntry)
+              },
+            })))
+          : null,
         noteEdit === null || noteEdit.side !== side
           ? null
           : h(NoteEditor, {
@@ -7112,6 +7448,10 @@ window.__ModuleLoader__.load({
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             railTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            railTool('line', 'shapeLine', 'M4 20 20 4'),
+            railTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
+            railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
+            railTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
             railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
             h('button', {
@@ -7752,7 +8092,7 @@ window.__ModuleLoader__.load({
 .md-rail-hot { position: absolute; top: 0; bottom: 0; width: 16px; z-index: 13; }
 .md-rail-hot[data-side="right"] { right: 0; }
 .md-rail-hot[data-side="left"] { left: 0; }
-.md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
+.md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: 78vh; overflow-y: auto; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
 .md-rail-wrap[data-side="left"] .md-rail { transform: translateX(-10px); }
 .md-rail-hot:hover + .md-rail-wrap .md-rail, .md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within { opacity: 1; transform: none; pointer-events: auto; }
 .md-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
@@ -7765,6 +8105,8 @@ window.__ModuleLoader__.load({
 .md-selection-panel[data-side="left"] { left: 58px; }
 .md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
 .md-selection-delete { align-self: flex-start; color: var(--dsw-alias-label-error, #c0392b); }
+.md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
+.md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid #2f6df6; border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
 .md-annot[data-tool="text"] { cursor: text; }
 .md-annot[data-tool="erase"] { cursor: cell; }
@@ -9456,6 +9798,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return window.localStorage.getItem('pdfdesk:rail-side') === 'left' ? 'left' : 'right'
         } catch {
           return 'right'
+        }
+      })
+      // rough.js hand-drawn strength for shapes; 0 draws clean geometry.
+      const [roughness, setRoughness] = useState(() => {
+        try {
+          const value = Number(window.localStorage.getItem('pdfdesk:roughness'))
+          return Number.isFinite(value) ? Math.max(0, Math.min(2, value)) : 1
+        } catch {
+          return 1
         }
       })
       const [socratic, setSocratic] = useState(() => socraticEnabled())
@@ -12090,6 +12441,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
               return next
             }),
+            roughness,
+            onRoughness: value => {
+              const next = Math.max(0, Math.min(2, Number(value) || 0))
+              setRoughness(next)
+              try {
+                window.localStorage.setItem('pdfdesk:roughness', String(next))
+              } catch {
+                // storage unavailable
+              }
+            },
             onPreview: () => setPreviewPdf(value => {
               const next = !value
               try {
@@ -12125,6 +12486,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : h(ReaderView, {
             reader,
             railSide,
+            roughness,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,

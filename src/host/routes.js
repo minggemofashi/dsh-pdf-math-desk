@@ -54,6 +54,8 @@ function vendorContentType(name) {
   if (name === 'fonts/excalifont/OFL.txt') return 'text/plain; charset=utf-8'
   if (name === 'fonts/zhhand/Xiaolai-Regular.ttf') return 'font/ttf'
   if (name === 'fonts/zhhand/OFL.txt') return 'text/plain; charset=utf-8'
+  if (/^rough\/[^/]+\.mjs$/.test(name)) return 'text/javascript; charset=utf-8'
+  if (name === 'rough/LICENSE') return 'text/plain; charset=utf-8'
   return null
 }
 
