@@ -3020,16 +3020,17 @@ window.__ModuleLoader__.load({
           className: 'md-workflow-card',
           'data-active': props.activeWorkflow === item.id ? 'true' : 'false',
           title: props.activeWorkflow === item.id ? format('workflowActiveHint') : undefined,
-          onClick: () => {
-            if (props.activeWorkflow === item.id && typeof props.onWorkflowChange === 'function') {
-              props.onWorkflowChange('')
-            }
-          },
         },
           h('input', {
             type: 'radio',
             name: 'pdfdesk-workflow',
             checked: props.activeWorkflow === item.id,
+            onClick: event => {
+              if (props.activeWorkflow === item.id) {
+                event.preventDefault()
+                if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange('')
+              }
+            },
             onChange: () => {
               if (typeof props.onWorkflowChange === 'function') props.onWorkflowChange(item.id)
             },
