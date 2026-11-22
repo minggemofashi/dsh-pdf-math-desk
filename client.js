@@ -3432,11 +3432,13 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-primary', disabled: busy,
               onClick: scrollToAdd,
             }, format('libraryAddTitle')),
-            h('button', {
-              type: 'button', className: 'md-btn',
-              disabled: props.sampleBusy || busy || props.sample?.book == null,
-              onClick: props.onLoadSample,
-            }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad')),
+            props.libraries.length === 0
+              ? null
+              : h('button', {
+                type: 'button', className: 'md-btn',
+                disabled: props.sampleBusy || busy || props.sample?.book == null,
+                onClick: props.onLoadSample,
+              }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad')),
             h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: scrollToManual }, format('manualTitle'))
           ),
           stuck
@@ -3607,26 +3609,28 @@ window.__ModuleLoader__.load({
           },
         },
         h('h3', { className: 'md-subheading' }, format('toolbarTitle')),
-        h('div', { className: 'md-library-samples md-tool-card' },
-          h('h3', { className: 'md-subheading' }, format('sampleTitle')),
-          props.sample === null
-            ? h('p', { className: 'md-shelf-sub' }, format('sampleLoading'))
-            : props.sample.book === null || props.sample.book === undefined
-              ? h('p', { className: 'md-shelf-sub' }, format('sampleEmpty'))
-              : h(React.Fragment, null,
-                h('p', { className: 'md-shelf-sub' },
-                  `${props.sample.book.title} · ${format('sampleMeta', {
-                    chapters: props.sample.book.chapters,
-                    size: formatBytes(props.sample.book.bytes),
-                  })}`),
-                h('p', { className: 'md-shelf-sub' }, format('sampleHint')),
-                h('button', {
-                  type: 'button', className: 'md-btn',
-                  disabled: props.sampleBusy || props.busy,
-                  onClick: props.onLoadSample,
-                }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad'))
-              )
-        ),
+        props.libraries.length === 0
+          ? null
+          : h('div', { className: 'md-library-samples md-tool-card' },
+            h('h3', { className: 'md-subheading' }, format('sampleTitle')),
+            props.sample === null
+              ? h('p', { className: 'md-shelf-sub' }, format('sampleLoading'))
+              : props.sample.book === null || props.sample.book === undefined
+                ? h('p', { className: 'md-shelf-sub' }, format('sampleEmpty'))
+                : h(React.Fragment, null,
+                  h('p', { className: 'md-shelf-sub' },
+                    `${props.sample.book.title} · ${format('sampleMeta', {
+                      chapters: props.sample.book.chapters,
+                      size: formatBytes(props.sample.book.bytes),
+                    })}`),
+                  h('p', { className: 'md-shelf-sub' }, format('sampleHint')),
+                  h('button', {
+                    type: 'button', className: 'md-btn',
+                    disabled: props.sampleBusy || props.busy,
+                    onClick: props.onLoadSample,
+                  }, props.sampleBusy ? format('sampleBusy') : format('sampleLoad'))
+                )
+          ),
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
           h('p', { className: 'md-shelf-sub' }, format('splitHint')),

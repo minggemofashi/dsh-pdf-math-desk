@@ -204,8 +204,7 @@ async function deepseekKey() {
 
 async function activeLibrary() {
     if (libraries !== undefined && typeof libraries.active === 'function') {
-      const active = await libraries.active()
-      if (active !== null && active !== undefined) return active
+      return await libraries.active()
     }
     return {
       id: 'default',
@@ -274,6 +273,25 @@ async function activeLibrary() {
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname.replace(/\/+$/, '')
 
+      // Features that need a catalog stop at a clear 409 instead of inventing a
+      // default library. Library management, settings, static assets and session
+      // bookkeeping remain available so the user can add the first library.
+      const libraryFree = path === `${PREFIX}/bootstrap`
+        || path.startsWith(`${PREFIX}/libraries`)
+        || path === `${PREFIX}/update`
+        || path === `${PREFIX}/qa-persona`
+        || path === `${PREFIX}/deepseek-key`
+        || path.startsWith(`${PREFIX}/vendor/`)
+        || path === `${PREFIX}/state`
+        || path === `${PREFIX}/pending`
+        || path === `${PREFIX}/pending/remove`
+        || path === `${PREFIX}/context`
+        || path === `${PREFIX}/purge`
+      if (!libraryFree && (libraries === undefined || (await libraries.active()) === null)) {
+        fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
+        return
+      }
+
       if (path === `${PREFIX}/qa-persona`) {
         if (request.method !== 'GET') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
@@ -296,9 +314,41 @@ async function activeLibrary() {
           return
         }
         // The Refresh button is a deliberate look: bypass the short reuse window.
-        // A first run may have no library yet: an unreadable catalog must still
-        // reach the browser so it can show the "add a library" page instead of a
-        // dead error screen.
+        // A first run has no library: return an explicit empty payload so the
+        // browser shows the add-a-library page instead of a fabricated default.
+        const libraryList = libraries === undefined || typeof libraries.list !== 'function'
+          ? { items: [], activeId: null }
+          : await libraries.list()
+        const library = libraryList.items.length === 0 ? null : await activeLibrary()
+        const state = await readState(config.statePath)
+        if (library === null) {
+          sendJson(response, 200, {
+            ok: true,
+            version: PLUGIN_VERSION,
+            source: 'missing',
+            indexIgnored: false,
+            problem: null,
+            library: null,
+            libraries: libraryList,
+            libraryDir: '',
+            fragmentDir: '',
+            artifactDir: '',
+            indexPath: '',
+            covers: [],
+            target: { workspaceId: null, cwd: '' },
+            environment: { ...detectEnvironment(), apiKey: (await deepseekKey()) !== '' },
+            workspaces: typeof options.listWorkspaces === 'function' ? await options.listWorkspaces() : [],
+            resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
+            pending: pending === undefined ? {} : await pending.list(),
+            links: links === undefined ? {} : await links.list(),
+            shelves: { hidden: [], shelves: [] },
+            books: [],
+            skipped: [],
+            warnings: [],
+            state,
+          })
+          return
+        }
         let fresh
         try {
           fresh = await catalog(true)
@@ -312,14 +362,9 @@ async function activeLibrary() {
             warnings: [],
           }
         }
-        const library = await activeLibrary()
-        const state = await readState(config.statePath)
         const target = typeof options.resolveTarget === 'function'
           ? await options.resolveTarget()
           : { workspaceId: null, cwd: library.libraryDir }
-        const libraryList = libraries === undefined || typeof libraries.list !== 'function'
-          ? { items: [library], activeId: library.id }
-          : await libraries.list()
         // Every chapter carries its absolute PDF path once. A new conversation's
         // prompt can then name the file directly instead of paying for a search;
         // an unplaceable chapter (hand-edited catalog) simply has no path.

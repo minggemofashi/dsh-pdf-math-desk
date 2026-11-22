@@ -3,9 +3,9 @@
  *
  * One computer may hold several split libraries (different subjects, different
  * drives). Each entry is just the paths the rest of the plugin needs, kept in
- * `$DSH_HOME/pdfdesk/libraries.json` together with which one is active. The
- * profile config still supplies the first library, so an existing install keeps
- * working without touching its patch.
+ * `$DSH_HOME/pdfdesk/libraries.json` together with which one is active. An empty
+ * file means no library: the profile config is only a fallback for migration and
+ * tests, never a generated first library.
  *
  * Only the math layout is supported for now: the manual in the workbench tells a
  * user how a library must be split and named, and `mode` records that so a later
@@ -90,7 +90,7 @@ export class LibrariesStore {
     this.queue = Promise.resolve()
   }
 
-  /** Load once; a damaged file falls back to the configured library. */
+  /** Load once; no libraries means an empty list, never a generated default. */
   async load() {
     let parsed = null
     try {
@@ -105,15 +105,12 @@ export class LibrariesStore {
       if (entry !== null && !items.some(item => item.id === entry.id)) items.push(entry)
       if (items.length >= MAX_LIBRARIES) break
     }
-    if (items.length === 0) {
-      items.push(this.fallbackEntry())
-    }
     this.items = items
     const storedActive = parsed !== null && typeof parsed === 'object' && typeof parsed.activeId === 'string' ? parsed.activeId : null
-    this.activeId = items.some(item => item.id === storedActive) ? storedActive : items[0].id
+    this.activeId = items.some(item => item.id === storedActive) ? storedActive : (items[0]?.id ?? null)
   }
 
-  /** The profile's configured library, as the first entry. */
+  /** The profile's configured library. Kept for explicit migration/tests only. */
   fallbackEntry() {
     return {
       id: 'lib-default',
@@ -130,7 +127,7 @@ export class LibrariesStore {
 
   /**
    * Snapshot for bootstrap.
-   * @returns {Promise<{ items: object[], activeId: string }>} the list and the active id.
+   * @returns {Promise<{ items: object[], activeId: string | null }>} the list and the active id.
    */
   async list() {
     await this.ready
@@ -207,8 +204,8 @@ export class LibrariesStore {
     await this.ready
     const next = this.items.filter(item => item.id !== id)
     if (next.length === this.items.length) return false
-    this.items = next.length === 0 ? [this.fallbackEntry()] : next
-    if (!this.items.some(item => item.id === this.activeId)) this.activeId = this.items[0].id
+    this.items = next
+    if (!this.items.some(item => item.id === this.activeId)) this.activeId = this.items[0]?.id ?? null
     await this.flush()
     return true
   }
