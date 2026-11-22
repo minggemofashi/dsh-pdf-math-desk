@@ -6118,9 +6118,10 @@ window.__ModuleLoader__.load({
       // Freehand layer: SVG in page coordinates, above the masks. It only takes
       // pointer events while a tool is picked, so masks and the page stay usable.
       // One layer per view: the single page uses "main", the bilingual columns
-      // use one each. Both columns write to the same page, so a note made beside
-      // the original is there beside the translation too; the draft remembers
-      // which column opened it and only that column shows the editor.
+      // use one each. The left column edits the page's shared notes; the
+      // translated column has its own store (ColumnInk), so a note made beside
+      // the translation does not travel back to the original. The draft
+      // remembers which column opened it and only that column shows the editor.
       const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
@@ -7854,6 +7855,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const saveNote = id => {
         const draft = noteEditRef.current
         if (draft === null || draft.id !== id) return
+        // Clear first: a blur that lands after this save must not save (or
+        // delete) the same note a second time.
+        noteEditRef.current = null
         setNoteEdit(null)
         if (draft.index < 0 && noteText.current.trim() === '') return
         commitStrokes(applyNote(strokesRef.current, draft, noteText.current))
@@ -7876,8 +7880,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (tool === 'text') {
+          // A click always starts a note where it lands: an editor left open is
+          // saved first, so a page can hold as many notes as the reader places.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          else openNote(point)
+          openNote(point)
           return
         }
         draftRef.current = { kind: 'stroke', points: [point], color: '#1f1f1f', width: 2 }
