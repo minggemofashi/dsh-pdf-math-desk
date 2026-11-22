@@ -11554,7 +11554,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useEffect(() => {
         if (!settingsOpen) return undefined
         const onDown = event => {
-          if (event.target instanceof Element && event.target.closest('.md-settings, .md-settings-page, .md-picker') !== null) return
+          if (event.target instanceof Element && event.target.closest('.md-settings, .md-settings-modal, .md-settings-content, .md-settings-page, .md-picker') !== null) return
           setSettingsOpen(false)
         }
         const onKey = event => {
@@ -14334,17 +14334,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               book === null ? null : h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-ghost', onClick: backToShelf,
               }, `‹ ${format('back')}`),
-              h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-ghost',
-                title: GITHUB_URL,
-                onClick: () => {
-                  try {
-                    window.open(GITHUB_URL, '_blank', 'noopener')
-                  } catch {
-                    // popup blocked: ignore
-                  }
-                },
-              }, 'GitHub'),
               h('div', { className: 'md-settings' },
                 h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-ghost',
