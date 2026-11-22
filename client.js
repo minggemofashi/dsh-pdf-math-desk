@@ -129,6 +129,17 @@ window.__ModuleLoader__.load({
       modeMath: '数学',
       manualTitle: '书库说明书',
       manualSummary: '结构 · 命名 · 环境 · 来源',
+      manualLead: '书库就是一个文件夹。把 PDF 按章放好，工作台负责书架、会话、标注和导出。',
+      manualStep1: '添加书库：选择一个包含「分片」或「整本」的目录。',
+      manualStep2: '放书：一章一个 PDF 放进 分片\\<书名>\\；整本 PDF 放进 整本\\。',
+      manualStep3: '开始读：双击书卡，展开章节，打开 PDF 或新建会话。',
+      manualTree: '{root}/\n  分片/\n    <书名>/\n      c01 第一章.pdf\n      c02 第二章.pdf\n  整本/\n    <整本书>.pdf\n  产物/<书名>/<章>/\n  索引.json（可选）',
+      manualNaming1: '书 id 就是目录名；添加后不要改，旧会话和产物靠它关联。',
+      manualNaming2: '一章一个 PDF，保留目录；文件名带页码范围或 cNN 即可，工作台自动编号。',
+      manualNaming3: '不想拆：整本 PDF 放进 整本\\，会作为只有一章的一本书。',
+      manualSessionLine: '会话按「书 / 章 / 模式」归档，已有会话也可以导入。',
+      manualEnvLead: 'Markdown 转 PDF 需要 Python 3 + TeX（xelatex、ctex）。没装只是不显示「转 PDF」，阅读、会话和预览不受影响。',
+      aiPromptTitle: '给 AI 的拆分提示词',
       manualStructureTitle: '书库结构',
       manualNamingTitle: '拆分与命名',
       manualEnvTitle: '导出环境',
@@ -605,6 +616,17 @@ window.__ModuleLoader__.load({
       modeMath: 'Math',
       manualTitle: 'Library manual',
       manualSummary: 'Structure · naming · export · source',
+      manualLead: 'A library is just a folder. Put the PDFs in chapter order; the workbench handles the shelf, conversations, annotations and export.',
+      manualStep1: 'Add a library: pick a folder that contains 分片/ or 整本/.',
+      manualStep2: 'Add books: one PDF per chapter under 分片\\<book>\\; whole books under 整本\\.',
+      manualStep3: 'Start reading: double-click a book, expand a chapter, open the PDF or start a conversation.',
+      manualTree: '{root}/\n  分片/\n    <book>/\n      c01 chapter 1.pdf\n      c02 chapter 2.pdf\n  整本/\n    <whole book>.pdf\n  产物/<book>/<chapter>/\n  索引.json (optional)',
+      manualNaming1: 'The book id is the folder name; keep it stable because old conversations and artifacts are linked by it.',
+      manualNaming2: 'One PDF per chapter, keep the contents; a page range or cNN in the file name is enough, the workbench numbers it.',
+      manualNaming3: 'Do not want to split? Put a whole PDF under 整本\\ and it becomes a one-chapter book.',
+      manualSessionLine: 'Conversations are filed by book / chapter / mode, and existing ones can be imported.',
+      manualEnvLead: 'Markdown-to-PDF needs Python 3 + TeX (xelatex, ctex). Without it the PDF button is hidden; reading, conversations and preview still work.',
+      aiPromptTitle: 'Prompt for an AI splitter',
       manualStructureTitle: 'Library structure',
       manualNamingTitle: 'Splitting and naming',
       manualEnvTitle: 'Export environment',
@@ -3112,21 +3134,29 @@ window.__ModuleLoader__.load({
             ),
             h('span', { className: 'md-manual-chevron', 'aria-hidden': true }, '⌄')
           ),
-          h('div', { className: 'md-manual-grid' },
-            h('section', { className: 'md-manual-group' },
+          h('div', { className: 'md-manual-body' },
+            h('p', { className: 'md-manual-lead' }, format('manualLead')),
+            h('ol', { className: 'md-manual-steps' },
+              h('li', null, format('manualStep1')),
+              h('li', null, format('manualStep2')),
+              h('li', null, format('manualStep3'))
+            ),
+            h('section', { className: 'md-manual-block' },
               h('h4', { className: 'md-manual-heading' }, format('manualStructureTitle')),
-              h('p', { className: 'md-manual-text' }, format('manualWhy')),
-              h('p', { className: 'md-manual-text' }, format('manualStructure', { root: props.libraryDir })),
-              h('p', { className: 'md-manual-text' }, format('manualIdNote'))
+              h('pre', { className: 'md-manual-tree' }, format('manualTree', { root: props.libraryDir || '<库根>' }))
             ),
-            h('section', { className: 'md-manual-group' },
+            h('section', { className: 'md-manual-block' },
               h('h4', { className: 'md-manual-heading' }, format('manualNamingTitle')),
-              h('p', { className: 'md-manual-text' }, format('manualSplit')),
-              h('p', { className: 'md-manual-text' }, format('manualWhole', { root: props.libraryDir })),
-              h('p', { className: 'md-manual-text' }, format('manualSession'))
+              h('ul', { className: 'md-manual-list' },
+                h('li', null, format('manualNaming1')),
+                h('li', null, format('manualNaming2')),
+                h('li', null, format('manualNaming3')),
+                h('li', null, format('manualSessionLine'))
+              )
             ),
-            h('section', { className: 'md-manual-group' },
+            h('section', { className: 'md-manual-block' },
               h('h4', { className: 'md-manual-heading' }, format('manualEnvTitle')),
+              h('p', { className: 'md-manual-text' }, format('manualEnvLead')),
               h('p', { className: 'md-manual-text' }, `${format('envTitle')}：${props.canRender ? format('envReady') : format('envMissing')}`),
               h('div', { className: 'md-manual-actions' },
                 props.canRender ? null : h('button', {
@@ -3141,14 +3171,17 @@ window.__ModuleLoader__.load({
                 }, format('envDownload')),
                 h('span', { className: 'md-manual-text' }, format('envHint'))
               ),
-              h('p', { className: 'md-manual-text' }, format('aiPromptHint')),
-              h('code', { className: 'md-manual-code' }, format('aiPromptText')),
-              h('button', {
-                type: 'button', className: 'md-btn md-btn-small',
-                onClick: props.onCopyPrompt,
-              }, format('aiPromptCopy'))
+              h('details', { className: 'md-manual-sub' },
+                h('summary', { className: 'md-manual-sub-summary' }, format('aiPromptTitle')),
+                h('p', { className: 'md-manual-text' }, format('aiPromptHint')),
+                h('code', { className: 'md-manual-code' }, format('aiPromptText')),
+                h('button', {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  onClick: props.onCopyPrompt,
+                }, format('aiPromptCopy'))
+              )
             ),
-            h('section', { className: 'md-manual-group' },
+            h('section', { className: 'md-manual-block' },
               h('h4', { className: 'md-manual-heading' }, format('manualSourceTitle')),
               h('div', { className: 'md-manual-path' },
                 h('span', { className: 'md-manual-label' }, format('libraryPath')),
@@ -8448,8 +8481,19 @@ window.__ModuleLoader__.load({
 .md-manual[open] .md-manual-chevron { transform: rotate(180deg); }
 .md-manual-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; padding: 18px 22px 26px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .md-manual-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.md-manual-heading { margin: 0; font-size: 11px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--dsw-alias-label-secondary); }
-.md-manual-text { margin: 0; font-size: 12.5px; line-height: 1.75; color: var(--dsw-alias-label-secondary); }
+.md-manual-body { display: flex; flex-direction: column; gap: 24px; padding: 20px 22px 28px; border-top: 1px solid var(--dsw-alias-border-l2); max-width: 880px; }
+.md-manual-lead { margin: 0; font-size: 14px; line-height: 1.85; color: var(--dsw-alias-label-primary); }
+.md-manual-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; counter-reset: mdstep; }
+.md-manual-steps li { position: relative; padding-left: 34px; font-size: 14px; line-height: 1.75; color: var(--dsw-alias-label-secondary); }
+.md-manual-steps li::before { counter-increment: mdstep; content: counter(mdstep); position: absolute; left: 0; top: 3px; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-inverse, #fff); background: var(--dsw-alias-brand-primary); }
+.md-manual-block { display: flex; flex-direction: column; gap: 10px; padding-top: 22px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.md-manual-heading { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--dsw-alias-label-primary); }
+.md-manual-text { margin: 0; font-size: 13.5px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
+.md-manual-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
+.md-manual-tree { margin: 0; padding: 14px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: auto; white-space: pre; }
+.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
+.md-manual-sub-summary { cursor: pointer; font-size: 12.5px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-manual-sub[open] .md-manual-sub-summary { margin-bottom: 8px; }
 .md-manual-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .md-manual-code { display: block; max-height: 130px; overflow: auto; margin: 0; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.6; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
 .md-manual-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
