@@ -574,6 +574,17 @@ window.__ModuleLoader__.load({
       workflowMathDesc: '提取 / 答疑 / 习题三种会话、数学提示词与 LaTeX 模板。',
       workflowOnlyOne: '同一时间只能启用一个模式；以后会增加其它工作流，结构已经按单选写好。',
       workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
+      workspaceTitle: '需要工作区',
+      workspaceBody: '会话需要一个工作区来存放。工作区只保存对话，不会移动、复制或删除书库文件。',
+      workspaceSelect: '选择已有工作区',
+      workspaceEmpty: '还没有工作区',
+      workspaceNew: '为书库目录新建工作区',
+      workspacePath: '工作区目录',
+      workspaceCreate: '创建并继续',
+      workspaceCancel: '取消',
+      workspaceUnavailable: '当前 DSH 不支持从插件创建工作区；请先在 DSH 的工作区页新建，再回来重试。',
+      workspaceCreateFailed: '创建工作区失败',
+      workspaceRequired: '请先选择或新建一个工作区，再开始会话。',
       envDownload: '下载 TeX Live（约 5 GB）',
       envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
@@ -1096,6 +1107,17 @@ window.__ModuleLoader__.load({
       workflowMathDesc: 'Extract / Q&A / exercise sessions, math prompts and LaTeX templates.',
       workflowOnlyOne: 'Only one mode can be active at a time; the single-select structure is ready for more workflows.',
       workflowActiveHint: 'Enabled; click this card again to return to General.',
+      workspaceTitle: 'Workspace required',
+      workspaceBody: 'A conversation needs a workspace. The workspace stores conversations only; it never moves, copies or deletes library files.',
+      workspaceSelect: 'Choose an existing workspace',
+      workspaceEmpty: 'No workspaces yet',
+      workspaceNew: 'Create a workspace for the library folder',
+      workspacePath: 'Workspace folder',
+      workspaceCreate: 'Create and continue',
+      workspaceCancel: 'Cancel',
+      workspaceUnavailable: 'This DSH cannot create a workspace from the plugin; create one on the DSH Workspaces page and retry.',
+      workspaceCreateFailed: 'Could not create the workspace',
+      workspaceRequired: 'Choose or create a workspace before starting a conversation.',
       envDownload: 'Download TeX Live (~5 GB)',
       envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
@@ -2916,6 +2938,81 @@ window.__ModuleLoader__.load({
                 if (typeof props.onOpenSettings === 'function') props.onOpenSettings()
               },
             }, format('envPromptKey')) : null
+          )
+        )
+      )
+    }
+
+    /**
+     * Ask the user which workspace should own the next conversation. General
+     * mode never creates one silently.
+     * @param {{ workspaces: object[], defaultPath: string, onPick: Function, onCreate: Function, onCancel: Function }} props - options and callbacks.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function WorkspacePrompt(props) {
+      const [path, setPath] = React.useState(props.defaultPath ?? '')
+      const [busy, setBusy] = React.useState(false)
+      const [error, setError] = React.useState('')
+      const create = async () => {
+        if (busy) return
+        setBusy(true)
+        setError('')
+        try {
+          await props.onCreate(path)
+        } catch (reason) {
+          setError(errorText(reason))
+        } finally {
+          setBusy(false)
+        }
+      }
+      return h('div', {
+        className: 'md-env-backdrop',
+        role: 'presentation',
+        onClick: event => {
+          if (event.target === event.currentTarget) props.onCancel()
+        },
+      },
+        h('div', {
+          className: 'md-env-dialog md-workspace-dialog',
+          role: 'dialog', 'aria-modal': 'true', 'aria-label': format('workspaceTitle'),
+        },
+          h('h3', { className: 'md-env-title' }, format('workspaceTitle')),
+          h('p', { className: 'md-env-body' }, format('workspaceBody')),
+          h('div', { className: 'md-workspace-list' },
+            h('span', { className: 'md-workspace-label' }, format('workspaceSelect')),
+            props.workspaces.length === 0
+              ? h('span', { className: 'md-shelf-sub' }, format('workspaceEmpty'))
+              : props.workspaces.map(item => h('button', {
+                key: item.id,
+                type: 'button', className: 'md-workspace-item',
+                onClick: () => props.onPick(item),
+              },
+                h('strong', null, item.title === '' ? item.path : item.title),
+                h('span', null, item.path)
+              ))
+          ),
+          h('div', { className: 'md-workspace-new' },
+            h('span', { className: 'md-workspace-label' }, format('workspaceNew')),
+            h('span', { className: 'md-shelf-sub' }, format('workspacePath')),
+            h('input', {
+              className: 'md-settings-input',
+              value: path,
+              onChange: event => setPath(event.target.value),
+              onKeyDown: event => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                void create()
+              },
+            })
+          ),
+          error === '' ? null : h('p', { className: 'md-settings-note' }, error),
+          h('div', { className: 'md-env-actions' },
+            h('button', { type: 'button', className: 'md-btn', onClick: props.onCancel }, format('workspaceCancel')),
+            h('button', {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: busy || path.trim() === '',
+              onClick: () => { void create() },
+            }, busy ? format('creating') : format('workspaceCreate'))
           )
         )
       )
@@ -8622,6 +8719,15 @@ window.__ModuleLoader__.load({
 .md-env-title { margin: 0; font-size: 15px; }
 .md-env-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 .md-env-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.md-workspace-dialog { width: min(520px, 100%); }
+.md-workspace-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+.md-workspace-label { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.md-workspace-item { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: left; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-l1); cursor: pointer; }
+.md-workspace-item:hover { border-color: var(--dsw-alias-brand-primary); }
+.md-workspace-item strong { font-size: 12.5px; }
+.md-workspace-item span { font-size: 11.5px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; }
+.md-workspace-new { display: flex; flex-direction: column; gap: 4px; }
+.md-workspace-new .md-settings-input { width: 100%; box-sizing: border-box; }
 .md-head-actions { display: flex; align-items: center; gap: 8px; }
 .md-settings { position: relative; }
 .md-settings-version { padding: 4px 8px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
@@ -10799,6 +10905,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const activeWorkflow = useWorkflowMode()
       const mathMode = activeWorkflow === 'math'
       const [envPrompt, setEnvPrompt] = useState('')
+      const [workspaces, setWorkspaces] = useState([])
+      const [workspacePrompt, setWorkspacePrompt] = useState(null)
+      const workspaceTarget = useRef(null)
       const [reloadKey, setReloadKey] = useState(0)
       // A chapter the right column asked to open, held until the catalog knows it.
       const [deskRequest, setDeskRequest] = useState(null)
@@ -11792,6 +11901,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             ? groups.shelves.filter(item => item !== null && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string')
             : []
           setEnvTools(data.environment !== null && typeof data.environment === 'object' ? { python: data.environment.python === true, tex: data.environment.tex === true, apiKey: data.environment.apiKey === true } : { python: false, tex: false, apiKey: false })
+          setWorkspaces(Array.isArray(data.workspaces)
+            ? data.workspaces.filter(item => item !== null && typeof item === 'object'
+              && typeof item.id === 'string' && typeof item.path === 'string')
+            : [])
           setShelfGroups({ hidden, shelves })
           // Refresh re-reads data; it must not lose the shelf you are looking at.
           setGroup(previous => {
@@ -12286,7 +12399,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         for (const [id, entry] of Object.entries(pendingRef.current ?? {})) {
           if (entry.bookId !== bookId || entry.code !== code || entry.mode !== mode) continue
           const summary = sessionList === null || sessionList.byId === undefined ? undefined : sessionList.byId[id]
-          if (summary === undefined || summary.blank !== true) continue
+          if (summary !== undefined && summary.blank !== true) continue
           if (archivedIds.has(id)) continue
           return { id, pending: true }
         }
@@ -12451,9 +12564,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       const createSession = useCallback(async (chapter, mode, options) => {
         if (book === null || catalog === null || creatingRef.current) return
-        const target = catalog.target
-        if (target.workspaceId === null && target.cwd === '') {
-          setCreateError({ bookId: book.id, code: chapter.code, message: format('targetMissing') })
+        const target = options !== undefined && options.target !== undefined ? options.target : catalog.target
+        if (target.workspaceId === null || target.workspaceId === '') {
+          setCreateError({ bookId: book.id, code: chapter.code, message: format('workspaceRequired') })
           return
         }
         creatingRef.current = true
@@ -12619,6 +12732,56 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        *   does; the chapter page does not); `forceNew` skips continuing on purpose.
        * @returns {Promise<void>} completion.
        */
+      const resolveWorkspacePrompt = useCallback(target => {
+        setWorkspacePrompt(current => {
+          if (current !== null) current.resolve(target)
+          return null
+        })
+      }, [])
+
+      /**
+       * A session needs an explicit workspace. Never silently fall back to a
+       * cwd: when the library has no owning workspace, ask the user.
+       * @returns {Promise<{ workspaceId: string, cwd: string } | null>} the chosen target, or null when cancelled.
+       */
+      const ensureWorkspaceTarget = useCallback(async () => {
+        const chosen = workspaceTarget.current
+        if (chosen !== null && typeof chosen.workspaceId === 'string' && chosen.workspaceId !== '') return chosen
+        if (catalog !== null && catalog.target !== null && typeof catalog.target.workspaceId === 'string' && catalog.target.workspaceId !== '') {
+          return { workspaceId: catalog.target.workspaceId, cwd: typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '' }
+        }
+        return await new Promise(resolve => setWorkspacePrompt({ resolve }))
+      }, [catalog])
+
+      const createWorkspace = useCallback(async path => {
+        const service = clientContext === null || clientContext === undefined ? null : clientContext.get('workspaces')
+        if (service === null || service === undefined || typeof service.create !== 'function') {
+          throw new Error(format('workspaceUnavailable'))
+        }
+        let view
+        try {
+          view = await service.create({ path })
+        } catch (error) {
+          throw new Error(`${format('workspaceCreateFailed')} (${errorText(error)})`)
+        }
+        const target = { workspaceId: String(view.id), cwd: typeof view.path === 'string' ? view.path : path }
+        workspaceTarget.current = target
+        setCatalog(current => current === null ? current : { ...current, target })
+        setWorkspaces(current => {
+          const entry = { id: target.workspaceId, title: typeof view.title === 'string' ? view.title : '', path: target.cwd }
+          return [entry, ...current.filter(item => item.id !== entry.id)]
+        })
+        resolveWorkspacePrompt(target)
+        return target
+      }, [resolveWorkspacePrompt])
+
+      const pickWorkspace = useCallback(workspace => {
+        const target = { workspaceId: String(workspace.id), cwd: workspace.path }
+        workspaceTarget.current = target
+        setCatalog(current => current === null ? current : { ...current, target })
+        resolveWorkspacePrompt(target)
+      }, [resolveWorkspacePrompt])
+
       const resumeOrCreate = useCallback(async (chapter, mode, options) => {
         if (book === null || catalog === null || creatingRef.current) return
         const limit = typeof catalog.resumeRatio === 'number' ? catalog.resumeRatio : 0.85
@@ -12650,20 +12813,26 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             return
           }
           const continuation = nextContinuation(book.id, chapter.code, mode)
+          const target = await ensureWorkspaceTarget()
+          if (target === null) return
           showNotice(format('sessionContinued', { pct: Math.round(ratio * 100) }))
           await createSession(chapter, mode, {
             jump: options !== undefined && options.jumpOnCreate === true,
             continuation,
+            target,
           })
           return
         }
         // No session to continue (or the caller asked for a fresh one): number the
         // new session after whatever chain the chapter already has.
+        const target = await ensureWorkspaceTarget()
+        if (target === null) return
         await createSession(chapter, mode, {
           jump: options !== undefined && options.jumpOnCreate === true,
           continuation: nextContinuation(book.id, chapter.code, mode),
+          target,
         })
-      }, [book, catalog, createSession, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
+      }, [book, catalog, createSession, ensureWorkspaceTarget, findCurrentSession, flushSave, nextContinuation, openPdfInSession, previewPdf, showNotice])
 
       /**
        * The toolbar's universal session: a tracked chapter session of the
@@ -13678,6 +13847,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               setSettingsTab('env')
               setSettingsOpen(true)
             },
+          }),
+        workspacePrompt === null
+          ? null
+          : h(WorkspacePrompt, {
+            workspaces,
+            defaultPath: catalog === null ? '' : catalog.libraryDir,
+            onPick: pickWorkspace,
+            onCreate: createWorkspace,
+            onCancel: () => resolveWorkspacePrompt(null),
           })
       )
     }

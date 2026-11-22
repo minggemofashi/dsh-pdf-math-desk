@@ -124,6 +124,24 @@ export function apply(ctx, rawConfig) {
     digest: digestChapter,
     installToolkit: libraryDir => installToolkit(config.toolsDir, libraryDir),
     /**
+     * The Workspaces a user can choose for conversations. The browser never
+     * creates one silently; it shows these and a create action.
+     * @returns {Promise<Array<{ id: string, title: string, path: string }>>} the list.
+     */
+    async listWorkspaces() {
+      const registry = ctx.get('workspaceRegistry')
+      if (registry === undefined) return []
+      try {
+        return registry.list().map(workspace => ({
+          id: String(workspace.id),
+          title: typeof workspace.title === 'string' ? workspace.title : '',
+          path: typeof workspace.path === 'string' ? workspace.path : '',
+        }))
+      } catch {
+        return []
+      }
+    },
+    /**
      * Resolve the Workspace that owns the library directory, so the browser
      * creates sessions inside it instead of into an ungrouped cwd.
      * @returns {Promise<{ workspaceId: string | null, cwd: string }>} the create target.

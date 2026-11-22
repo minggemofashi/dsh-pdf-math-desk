@@ -108,7 +108,7 @@ async function mutationBody(request, response) {
 /**
  * Build the prefix handler for the plugin's routes.
  * @param {{ libraryDir: string, fragmentDir: string, artifactDir: string, coverDir: string, indexPath: string, statePath: string, resumeRatio?: number, toolsDir?: string }} config - resolved paths and behavior (the profile's library is the fallback).
- * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, pending?: { list: () => Promise<object>, put: Function, remove: Function }, links?: { list: () => Promise<Record<string, object[]>>, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object> }} [options] - host capabilities the routes expose.
+ * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object> }} [options] - host capabilities the routes expose.
  * @returns {(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<void>} the handler.
  */
 export function createHandler(config, options = {}) {
@@ -356,6 +356,7 @@ async function activeLibrary() {
           covers: await coverIds(library.coverDir),
           target,
           environment: { ...detectEnvironment(), apiKey: (await deepseekKey()) !== '' },
+          workspaces: typeof options.listWorkspaces === 'function' ? await options.listWorkspaces() : [],
           resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
           pending: pending === undefined ? {} : await pending.list(),
           links: links === undefined ? {} : await links.list(),
