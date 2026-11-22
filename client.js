@@ -3759,7 +3759,7 @@ window.__ModuleLoader__.load({
 
     /** The font families a note can use, mapped to system stacks for now. */
     const NOTE_FONTS = {
-      hand: '"KaiTi", "STKaiti", "Kaiti SC", "Segoe Print", "Comic Sans MS", cursive',
+      hand: '"Excalifont", "KaiTi", "STKaiti", "Kaiti SC", "Segoe Print", "Comic Sans MS", cursive',
       normal: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
       mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       song: '"SimSun", "Songti SC", "Noto Serif SC", serif',
@@ -3890,6 +3890,7 @@ window.__ModuleLoader__.load({
       const color = typeof draft.color === 'string' && draft.color !== '' ? draft.color : NOTE_COLORS[0]
       const [value, setValue] = useState(String(draft.text ?? ''))
       const areaRef = useRef(null)
+      const editorRef = useRef(null)
       const closed = useRef(false)
       useEffect(() => {
         const node = areaRef.current
@@ -3910,33 +3911,38 @@ window.__ModuleLoader__.load({
       // The editor sits on the PDF page: keep the box inside the page even when
       // the click lands near the right edge (the note itself stays at its point).
       const left = Math.min(0.66, Math.max(0, draft.x)) * 100
-      const styleButtons = []
-      const sizeLabels = ['S', 'M', 'L', 'XL']
-      for (let index = 0; index < NOTE_SIZES.length; index += 1) {
-        const sizeValue = NOTE_SIZES[index]
-        styleButtons.push(h('button', {
-          key: `size-${sizeValue}`,
-          type: 'button',
-          className: 'md-note-style-btn md-note-size',
-          'data-on': size === sizeValue ? 'true' : undefined,
+      const keepFocus = event => event.preventDefault()
+      const styleControls = [
+        h('input', {
+          key: 'size',
+          type: 'range',
+          className: 'md-note-size-range',
+          min: 12, max: 48, step: 1,
+          value: size,
+          'aria-label': format('annotFontSize'),
           title: format('annotFontSize'),
-          onClick: () => props.onStyle({ fontSize: sizeValue }),
-        }, sizeLabels[index] ?? String(sizeValue)))
-      }
-      styleButtons.push(h('span', { key: 'sep-font', className: 'md-note-style-sep', 'aria-hidden': true }))
+          onChange: event => props.onStyle({ fontSize: Number(event.target.value) }),
+          // The slider is the one control that takes focus; hand it back to the
+          // textarea after the drag so typing can continue without a click.
+          onPointerUp: () => { if (areaRef.current !== null) areaRef.current.focus() },
+        }),
+        h('span', { key: 'size-value', className: 'md-note-size-value' }, `${size}px`),
+        h('span', { key: 'sep-font', className: 'md-note-style-sep', 'aria-hidden': true }),
+      ]
       for (const key of Object.keys(NOTE_FONTS)) {
-        styleButtons.push(h('button', {
+        styleControls.push(h('button', {
           key: `font-${key}`,
           type: 'button',
           className: 'md-note-style-btn md-note-font',
           'data-on': family === key ? 'true' : undefined,
           title: format('annotFontFamily'),
+          onMouseDown: keepFocus,
           onClick: () => props.onStyle({ fontFamily: key }),
         }, format(`annotFont.${key}`)))
       }
-      styleButtons.push(h('span', { key: 'sep-color', className: 'md-note-style-sep', 'aria-hidden': true }))
+      styleControls.push(h('span', { key: 'sep-color', className: 'md-note-style-sep', 'aria-hidden': true }))
       for (const value of NOTE_COLORS) {
-        styleButtons.push(h('button', {
+        styleControls.push(h('button', {
           key: `color-${value}`,
           type: 'button',
           className: 'md-note-color',
@@ -3944,24 +3950,28 @@ window.__ModuleLoader__.load({
           'data-on': color === value ? 'true' : undefined,
           title: format('annotColor'),
           'aria-label': format('annotColor'),
+          onMouseDown: keepFocus,
           onClick: () => props.onStyle({ color: value }),
         }))
       }
       return h('div', {
         className: 'md-note-editor',
+        ref: editorRef,
         style: { left: `${left}%`, top: `${Math.max(0, draft.y) * 100}%`, maxWidth: `calc(100% - ${left}% - 6px)` },
         onPointerDown: event => event.stopPropagation(),
         onPointerMove: event => event.stopPropagation(),
         onDoubleClick: event => event.stopPropagation(),
-        onContextMenu: event => event.stopPropagation(),
+        // No native menu: this build's textarea menu is dead, so suppress it
+        // rather than leave a menu whose rows cannot be clicked.
+        onContextMenu: event => { event.preventDefault(); event.stopPropagation() },
       },
-        // The style row must not take focus: a focus change would blur the
-        // textarea and save the note mid-edit.
+        // Buttons keep the textarea focused (a blur would save mid-edit); the
+        // size slider is the one control that may take focus, and the blur
+        // guard below keeps the editor open for it.
         h('div', {
           className: 'md-note-style',
-          onMouseDown: event => { event.preventDefault(); event.stopPropagation() },
           onPointerDown: event => event.stopPropagation(),
-        }, styleButtons),
+        }, styleControls),
         h('textarea', {
           ref: areaRef,
           className: 'md-note-input',
@@ -3974,6 +3984,11 @@ window.__ModuleLoader__.load({
             fontSize: `${size}px`,
             fontFamily: NOTE_FONTS[family],
             color,
+            background: 'transparent',
+            border: 'none',
+            boxShadow: 'none',
+            outline: 'none',
+            resize: 'none',
           },
           onChange: event => {
             setValue(event.target.value)
@@ -3993,10 +4008,32 @@ window.__ModuleLoader__.load({
               finish(true)
             }
           },
-          onBlur: () => finish(true),
+          onBlur: event => {
+            const next = event.relatedTarget
+            if (next !== null && next !== undefined && editorRef.current !== null && editorRef.current.contains(next)) return
+            finish(true)
+          },
         }),
         h('span', { className: 'md-note-hint', 'aria-hidden': true }, format('annotTextEditorHint'))
       )
+    }
+
+    /**
+     * An invisible seat in the conversation composer. It sees every session the
+     * host opens — including the sidebar list, which no workbench click passes
+     * through — and puts the local persona into a Q&A session's input once.
+     * @param {{ sessionId: string }} props - standard slot props.
+     * @returns {null} nothing to draw.
+     */
+    function QaPersonaSeat(props) {
+      const list = useSessionList()
+      const summary = list === null || list.byId === undefined ? undefined : list.byId[props.sessionId]
+      const title = summary === undefined ? '' : summary.title
+      useEffect(() => {
+        const parsed = parseSessionTitle(title)
+        if (parsed !== null && parsed.mode === 'qa') void seedQaPersona(props.sessionId)
+      }, [props.sessionId, title])
+      return null
     }
 
     /* ------------------------------------------------------------ history -- */
@@ -7243,6 +7280,15 @@ window.__ModuleLoader__.load({
     /* ----------------------------------------------------------------- css -- */
 
     const CSS = `
+/* Excalidraw's hand-drawn text face (SIL OFL 1.1, see vendor/fonts/excalifont/OFL.txt).
+   Served by the Host, split into the same unicode-range subsets as upstream. */
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+20-7e,U+a0-a3,U+a5-a6,U+a8-ab,U+ad-b1,U+b4,U+b6-b8,U+ba-ff,U+131,U+152-153,U+2bc,U+2c6,U+2da,U+2dc,U+304,U+308,U+2013-2014,U+2018-201a,U+201c-201e,U+2020,U+2022,U+2024-2026,U+2030,U+2039-203a,U+20ac,U+2122,U+2212; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-be310b9bcd4f1a43f571c46df7809174.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+100-130,U+132-137,U+139-149,U+14c-151,U+154-17e,U+192,U+1fc-1ff,U+218-21b,U+237,U+1e80-1e85,U+1ef2-1ef3,U+2113; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-b9dcf9d2e50a1eaf42fc664b50a3fd0d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+400-45f,U+490-491,U+2116; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-41b173a47b57366892116a575a43e2b6.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+37e,U+384-38a,U+38c,U+38e-393,U+395-3a1,U+3a3-3a8,U+3aa-3cf,U+3d7; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
+@font-face { font-family: 'Excalifont'; src: url('/mathdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
 .md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: mathdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
 .md-inner { height: 100%; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 clamp(18px, 4cqw, 40px); box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; }
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
@@ -7536,18 +7582,18 @@ window.__ModuleLoader__.load({
 /* The in-place editor is transparent too: only the text and the caret show.
    The style row never takes focus, so changing a font cannot blur-save. */
 .md-note-editor { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 2px; width: 280px; min-width: 160px; pointer-events: auto; }
-.md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px; border-radius: 6px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-border-l3) 55%, transparent); }
-.md-note-style-btn { min-width: 20px; height: 20px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
-.md-note-style-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 0; background: transparent; box-shadow: none; }
+.md-note-style-btn { min-width: 20px; height: 20px; padding: 0 4px; font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
+.md-note-style-btn:hover { background: color-mix(in srgb, var(--dsw-alias-bg-base) 70%, transparent); }
 .md-note-style-btn[data-on="true"] { color: var(--dsw-alias-label-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
-.md-note-style-sep { width: 1px; height: 14px; margin: 0 2px; background: var(--dsw-alias-border-l3); }
+.md-note-size-range { width: 74px; height: 16px; margin: 0; padding: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
+.md-note-size-value { min-width: 30px; font-size: 10px; line-height: 1; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
+.md-note-style-sep { width: 1px; height: 14px; margin: 0 2px; background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
 .md-note-color { width: 14px; height: 14px; padding: 0; border: 1px solid color-mix(in srgb, #000 25%, transparent); border-radius: 50%; cursor: pointer; }
 .md-note-color[data-on="true"] { box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3px var(--dsw-alias-brand-primary); }
-.md-note-input { box-sizing: border-box; width: 100%; min-height: 28px; max-height: 240px; resize: vertical; line-height: 1.35; padding: 2px; border-radius: 4px; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; }
+.md-note-input { box-sizing: border-box; width: 100%; min-height: 28px; max-height: 240px; overflow: auto; line-height: 1.35; padding: 2px; border-radius: 4px; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; }
 .md-note-input::placeholder { color: var(--dsw-alias-label-secondary); opacity: 0.85; }
-/* A faint ring is the only chrome: it shows where typing goes, without a box. */
-.md-note-editor:focus-within .md-note-input { box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent); }
-.md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 0 2px; color: var(--dsw-alias-label-secondary); }
+.md-note-hint { align-self: flex-start; font-size: 11px; line-height: 1.4; padding: 0 2px; color: var(--dsw-alias-label-secondary); text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 /* A picked tool must look picked: these are icon-only buttons outside the
    mode group, and without this the text tool read as a dead click. */
@@ -12021,6 +12067,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         name: 'main',
         key: PANEL_ID,
       }, WorkbenchRoot)), 'mathdesk: page')
+
+      // The Q&A persona must reach sessions opened from the sidebar too, where no
+      // workbench click happens. This seat lives in the composer for every
+      // session and seeds only Q&A ones, once each.
+      ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+        name: 'conversation.composer.dock',
+        id: 'mathdesk-qa-persona',
+        order: 40,
+      }, QaPersonaSeat)), 'mathdesk: qa persona seat')
 
       // The right column's chapter tab. It is optional wiring: without that
       // column the reader keeps opening the plain file tab instead.

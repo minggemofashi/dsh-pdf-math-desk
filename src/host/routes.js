@@ -49,6 +49,9 @@ function vendorContentType(name) {
   if (/^wasm\/[A-Za-z0-9._-]+\.wasm$/.test(name)) return 'application/wasm'
   if (/^wasm\/[A-Za-z0-9._-]+_nowasm_fallback\.js$/.test(name)) return 'text/javascript; charset=utf-8'
   if (/^cmaps\/[A-Za-z0-9._-]+\.bcmap$/.test(name)) return 'application/octet-stream'
+  // The hand-drawn text face, split into upstream's unicode-range subsets.
+  if (/^fonts\/excalifont\/Excalifont-Regular-[a-f0-9]+\.woff2$/.test(name)) return 'font/woff2'
+  if (name === 'fonts/excalifont/OFL.txt') return 'text/plain; charset=utf-8'
   return null
 }
 
