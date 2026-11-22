@@ -20,6 +20,7 @@ window.__ModuleLoader__.load({
     const useState = React.useState
     const useEffect = React.useEffect
     const useCallback = React.useCallback
+    const useMemo = React.useMemo
     const useRef = React.useRef
 
     const PANEL_ID = 'mathdesk'
@@ -3991,6 +3992,88 @@ window.__ModuleLoader__.load({
       return bucket === undefined ? { undo: 0, redo: 0 } : { undo: bucket.undo.length, redo: bucket.redo.length }
     }
 
+    /**
+     * One chapter's page marks: where a page's ink and boxes live, what
+     * "before this edit" means, and the one revision counter both ends read.
+     * The reader and the right column edit the same pages, so these rules live
+     * here instead of being re-derived in each component.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'reader'|'side'} origin - which end reports its edits.
+     * @returns {{ historyKeyOf: Function, readList: Function, load: Function, save: Function, restore: Function, undo: Function, redo: Function, depth: Function }} the store.
+     */
+    function createAnnotationStore(bookId, code, origin) {
+      const storageKey = (kind, page) => `mathdesk:${kind}:${bookId}:${code}:${page}`
+      const historyKeyOf = page => `mathdesk:history:${bookId}:${code}:${page}`
+      const readList = (kind, page) => {
+        try {
+          const raw = window.localStorage.getItem(storageKey(kind, page))
+          const parsed = raw === null ? [] : JSON.parse(raw)
+          return Array.isArray(parsed) ? parsed : []
+        } catch {
+          return []
+        }
+      }
+      const writeList = (kind, page, list) => {
+        try {
+          window.localStorage.setItem(storageKey(kind, page), JSON.stringify(list))
+        } catch {
+          // storage unavailable: the edit stays on screen only
+        }
+      }
+      const announce = () => bumpAnnotRev(bookId, code, origin)
+      return {
+        storageKey,
+        historyKeyOf,
+        readList,
+        /**
+         * Both lists of one page, as this end should show them.
+         * @param {number} page - 1-based page number.
+         * @returns {{annots: object[], masks: object[]}} the page's marks.
+         */
+        load(page) {
+          return { annots: readList('annots', page), masks: readList('masks', page) }
+        },
+        /**
+         * Commit one changed list: file the previous state, persist it, mirror
+         * it and announce a new revision.
+         * @param {number} page - page number.
+         * @param {'annots'|'masks'} kind - which list changed.
+         * @param {object[]} next - the new list.
+         * @param {{annots: object[], masks: object[]}} current - state before the edit.
+         * @returns {number | null} the new revision, or null when nothing changed.
+         */
+        save(page, kind, next, current) {
+          if (sameList(next, current[kind])) return null
+          recordHistory(historyKeyOf(page), snapshotOf(current.annots, current.masks))
+          writeList(kind, page, next)
+          mirrorPageAnnotations(bookId, code, page)
+          return announce()
+        },
+        /**
+         * Put both lists back (undo/redo) without filing another history step.
+         * @param {number} page - page number.
+         * @param {{annots: object[], masks: object[]}} snapshot - the state to restore.
+         * @returns {number} the new revision.
+         */
+        restore(page, snapshot) {
+          writeList('annots', page, snapshot.annots)
+          writeList('masks', page, snapshot.masks)
+          mirrorPageAnnotations(bookId, code, page)
+          return announce()
+        },
+        undo(page, current) {
+          return undoHistory(historyKeyOf(page), current)
+        },
+        redo(page, current) {
+          return redoHistory(historyKeyOf(page), current)
+        },
+        depth(page) {
+          return historyDepth(historyKeyOf(page))
+        },
+      }
+    }
+
     const MASK_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
     /**
@@ -5120,6 +5203,8 @@ window.__ModuleLoader__.load({
       const seenAnnotRev = useRef(0)
       const strokesRef = useRef([])
       const masksRef = useRef([])
+      // Page marks live in the shared store: the side preview writes the same keys.
+      const inkStore = useMemo(() => createAnnotationStore(reader.bookId, reader.code, 'reader'), [reader.bookId, reader.code])
       strokesRef.current = strokes
       masksRef.current = masks
       useEffect(() => {
@@ -5132,39 +5217,27 @@ window.__ModuleLoader__.load({
           setRemoteAnnotRev(value => value + 1)
         })
       }, [reader.bookId, reader.code])
-      // Every edit goes through these: state, storage and the announcement stay in
-      // step, and a page's own load never writes anything back. Each one first
-      // files the page as it was, so the toolbar's undo has something to go back
-      // to; an edit that changes nothing is not filed and not written.
-      const historyKeyOf = pageNumber => `mathdesk:history:${reader.bookId}:${reader.code}:${pageNumber}`
+      // Every edit goes through the shared store: state, storage, the library
+      // mirror and the announcement stay in step, and a page's own load never
+      // writes anything back. Each commit first files the page as it was, so the
+      // toolbar's undo has something to go back to.
+      const historyKeyOf = inkStore.historyKeyOf
       const [, bumpHistory] = useState(0)
       const savePageAnnots = next => {
-        if (sameList(next, strokesRef.current)) return
-        recordHistory(historyKeyOf(reader.page), snapshotOf(strokesRef.current, masksRef.current))
+        const rev = inkStore.save(reader.page, 'annots', next, currentSnapshot())
+        if (rev === null) return
         bumpHistory(value => value + 1)
         strokesRef.current = next
         setStrokes(next)
-        try {
-          window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(next))
-        } catch {
-          // storage unavailable: the ink stays on screen only
-        }
-        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
-        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+        seenAnnotRev.current = rev
       }
       const savePageMasks = next => {
-        if (sameList(next, masksRef.current)) return
-        recordHistory(historyKeyOf(reader.page), snapshotOf(strokesRef.current, masksRef.current))
+        const rev = inkStore.save(reader.page, 'masks', next, currentSnapshot())
+        if (rev === null) return
         bumpHistory(value => value + 1)
         masksRef.current = next
         setMasks(next)
-        try {
-          window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(next))
-        } catch {
-          // storage unavailable: the boxes stay on screen only
-        }
-        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
-        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+        seenAnnotRev.current = rev
       }
       // Undo/redo restore both lists at once: one step is one action, even when
       // it touched ink and boxes together.
@@ -5173,29 +5246,22 @@ window.__ModuleLoader__.load({
         masksRef.current = snapshot.masks
         setStrokes(snapshot.annots)
         setMasks(snapshot.masks)
-        try {
-          window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(snapshot.annots))
-          window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`, JSON.stringify(snapshot.masks))
-        } catch {
-          // storage unavailable: the restored page lasts this session only
-        }
-        mirrorPageAnnotations(reader.bookId, reader.code, reader.page)
-        seenAnnotRev.current = bumpAnnotRev(reader.bookId, reader.code, 'reader')
+        seenAnnotRev.current = inkStore.restore(reader.page, snapshot)
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
-        const previous = undoHistory(historyKeyOf(reader.page), currentSnapshot())
+        const previous = inkStore.undo(reader.page, currentSnapshot())
         if (previous === null) return
         restorePage(previous)
         bumpHistory(value => value + 1)
       }
       const redoPage = () => {
-        const next = redoHistory(historyKeyOf(reader.page), currentSnapshot())
+        const next = inkStore.redo(reader.page, currentSnapshot())
         if (next === null) return
         restorePage(next)
         bumpHistory(value => value + 1)
       }
-      const historyCounts = historyDepth(historyKeyOf(reader.page))
+      const historyCounts = inkStore.depth(reader.page)
       // Reconcile with the library mirror on open: a cleared browser gets its
       // pages back, a browser that predates the mirror hands them over.
       useEffect(() => {
@@ -5369,17 +5435,10 @@ window.__ModuleLoader__.load({
       }, [reader.bookId, reader.code, reader.fileName])
       const maskKey = `mathdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
-        try {
-          const raw = window.localStorage.getItem(maskKey)
-          const parsed = raw === null ? [] : JSON.parse(raw)
-          const list = Array.isArray(parsed) ? parsed : []
-          masksRef.current = list
-          setMasks(list)
-        } catch {
-          masksRef.current = []
-          setMasks([])
-        }
-      }, [maskKey, remoteAnnotRev])
+        const list = inkStore.readList('masks', reader.page)
+        masksRef.current = list
+        setMasks(list)
+      }, [inkStore, maskKey, remoteAnnotRev])
       useEffect(() => {
         if (!overlay || dualDoc === null) {
           setTranslatedImage('')
@@ -5524,17 +5583,10 @@ window.__ModuleLoader__.load({
 
       const annotKey = `mathdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
-        try {
-          const raw = window.localStorage.getItem(annotKey)
-          const parsed = raw === null ? [] : JSON.parse(raw)
-          const list = Array.isArray(parsed) ? parsed : []
-          strokesRef.current = list
-          setStrokes(list)
-        } catch {
-          strokesRef.current = []
-          setStrokes([])
-        }
-      }, [annotKey, remoteAnnotRev])
+        const list = inkStore.readList('annots', reader.page)
+        strokesRef.current = list
+        setStrokes(list)
+      }, [inkStore, annotKey, remoteAnnotRev])
       // Turning the page (or taking the other end's edit) moves the ink under
       // the editor: a draft left open would save itself onto the wrong page.
       // An in-flight stroke is dropped for the same reason.
@@ -5658,8 +5710,8 @@ window.__ModuleLoader__.load({
             const pageMasks = Array.isArray(item.masks) ? item.masks : []
             const pageAnnots = Array.isArray(item.annots) ? item.annots : []
             try {
-              window.localStorage.setItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${page}`, JSON.stringify(pageMasks))
-              window.localStorage.setItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${page}`, JSON.stringify(pageAnnots))
+              window.localStorage.setItem(inkStore.storageKey('masks', page), JSON.stringify(pageMasks))
+              window.localStorage.setItem(inkStore.storageKey('annots', page), JSON.stringify(pageAnnots))
             } catch {
               continue
             }
@@ -5692,22 +5744,10 @@ window.__ModuleLoader__.load({
           const total = reader.count > 0 ? reader.count : 1
           const pages = []
           for (let page = 1; page <= total; page += 1) {
-            let pageMasks = []
-            let pageAnnots = []
-            try {
-              const raw = window.localStorage.getItem(`mathdesk:masks:${reader.bookId}:${reader.code}:${page}`)
-              if (raw !== null) pageMasks = JSON.parse(raw)
-            } catch {
-              pageMasks = []
-            }
-            try {
-              const raw = window.localStorage.getItem(`mathdesk:annots:${reader.bookId}:${reader.code}:${page}`)
-              if (raw !== null) pageAnnots = JSON.parse(raw)
-            } catch {
-              pageAnnots = []
-            }
-            const hasMasks = Array.isArray(pageMasks) && pageMasks.length > 0
-            const hasAnnots = Array.isArray(pageAnnots) && pageAnnots.length > 0
+            const pageMasks = inkStore.readList('masks', page)
+            const pageAnnots = inkStore.readList('annots', page)
+            const hasMasks = pageMasks.length > 0
+            const hasAnnots = pageAnnots.length > 0
             if (hasMasks || hasAnnots) pages.push({ page, masks: pageMasks, annots: pageAnnots })
           }
           const started = await request('POST', 'export-chapter', {
@@ -7469,6 +7509,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The chapter's shared state, for the diagnostic overlay.
       const storeView = useChapterView(bookId, code)
       const diag = useDiag()
+      // Page marks live in one shared store: the reader writes the same keys.
+      const inkStore = useMemo(() => createAnnotationStore(bookId, code, 'side'), [bookId, code])
       const revision = navigation.revision ?? 0
       // The chapter's conversations, for the 提取/答疑/习题 jumps.
       const sessionList = useSessionList()
@@ -7661,30 +7703,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The page's annotations: the reader's storage is the single source.
       useEffect(() => {
         if (bookId === '' || code === '') return
-        try {
-          const raw = window.localStorage.getItem(`mathdesk:annots:${bookId}:${code}:${page}`)
-          const parsed = raw === null ? [] : JSON.parse(raw)
-          setStrokes(Array.isArray(parsed) ? parsed : [])
-        } catch {
-          setStrokes([])
-        }
-      }, [bookId, code, page, annotRev])
+        setStrokes(inkStore.readList('annots', page))
+      }, [inkStore, bookId, code, page, annotRev])
 
       // The page's overlay boxes: same storage, same keys as the reader. A box
       // is only useful with the translated page inside it, so the second
       // document is loaded on demand (below) and never for a page without boxes.
       useEffect(() => {
         if (bookId === '' || code === '') return
-        try {
-          const raw = window.localStorage.getItem(`mathdesk:masks:${bookId}:${code}:${page}`)
-          const parsed = raw === null ? [] : JSON.parse(raw)
-          setMasks(Array.isArray(parsed)
-            ? parsed.filter(mask => Number(mask.w) > 0 && Number(mask.h) > 0)
-            : [])
-        } catch {
-          setMasks([])
-        }
-      }, [bookId, code, page, annotRev])
+        setMasks(inkStore.readList('masks', page).filter(mask => Number(mask.w) > 0 && Number(mask.h) > 0))
+      }, [inkStore, bookId, code, page, annotRev])
 
       // A new file version or another chapter invalidates the translated page.
       // Declared before the loader below: its setup clears the ready marker the
@@ -7749,65 +7777,48 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [wantsMaskDoc, bookId, code, docRev])
 
       /* ------------------------------------------------------- editing -- */
-      // Both ends write the same keys, so every local edit persists first and
-      // then announces itself; the other end re-reads that page.
-      const commitPage = (kind, list, pageNumber) => {
-        try {
-          window.localStorage.setItem(`mathdesk:${kind}:${bookId}:${code}:${pageNumber}`, JSON.stringify(list))
-        } catch {
-          // storage unavailable: the edit stays on screen only
-        }
-        mirrorPageAnnotations(bookId, code, pageNumber)
-        seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
-      }
-      const historyKeyOf = pageNumber => `mathdesk:history:${bookId}:${code}:${pageNumber}`
+      // Both ends write the same keys through the shared annotation store, so
+      // every local edit persists first and then announces itself.
+      const historyKeyOf = inkStore.historyKeyOf
       const [, bumpHistory] = useState(0)
       const commitStrokes = next => {
-        if (sameList(next, strokesRef.current)) return
-        recordHistory(historyKeyOf(pageRef.current), snapshotOf(strokesRef.current, masksRef.current))
+        const rev = inkStore.save(pageRef.current, 'annots', next, currentSnapshot())
+        if (rev === null) return
         bumpHistory(value => value + 1)
         strokesRef.current = next
         setStrokes(next)
-        commitPage('annots', next, pageRef.current)
+        seenAnnotRev.current = rev
       }
       const commitMasks = next => {
-        if (sameList(next, masksRef.current)) return
-        recordHistory(historyKeyOf(pageRef.current), snapshotOf(strokesRef.current, masksRef.current))
+        const rev = inkStore.save(pageRef.current, 'masks', next, currentSnapshot())
+        if (rev === null) return
         bumpHistory(value => value + 1)
         masksRef.current = next
         setMasks(next)
-        commitPage('masks', next, pageRef.current)
+        seenAnnotRev.current = rev
       }
       // Undo/redo restore ink and boxes together, then announce once.
       const restorePage = snapshot => {
-        const pageNumber = pageRef.current
         strokesRef.current = snapshot.annots
         masksRef.current = snapshot.masks
         setStrokes(snapshot.annots)
         setMasks(snapshot.masks)
-        try {
-          window.localStorage.setItem(`mathdesk:annots:${bookId}:${code}:${pageNumber}`, JSON.stringify(snapshot.annots))
-          window.localStorage.setItem(`mathdesk:masks:${bookId}:${code}:${pageNumber}`, JSON.stringify(snapshot.masks))
-        } catch {
-          // storage unavailable: the restored page lasts this session only
-        }
-        mirrorPageAnnotations(bookId, code, pageNumber)
-        seenAnnotRev.current = bumpAnnotRev(bookId, code, 'side')
+        seenAnnotRev.current = inkStore.restore(pageRef.current, snapshot)
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
-        const previous = undoHistory(historyKeyOf(pageRef.current), currentSnapshot())
+        const previous = inkStore.undo(pageRef.current, currentSnapshot())
         if (previous === null) return
         restorePage(previous)
         bumpHistory(value => value + 1)
       }
       const redoPage = () => {
-        const next = redoHistory(historyKeyOf(pageRef.current), currentSnapshot())
+        const next = inkStore.redo(pageRef.current, currentSnapshot())
         if (next === null) return
         restorePage(next)
         bumpHistory(value => value + 1)
       }
-      const historyCounts = historyDepth(historyKeyOf(page))
+      const historyCounts = inkStore.depth(page)
 
       // A draft belongs to the page it was started on: a page change (or the
       // reader's edit) would otherwise save it into the new page's list. An
