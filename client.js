@@ -3651,16 +3651,15 @@ window.__ModuleLoader__.load({
           : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message),
         h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
       )
-      return h(React.Fragment, null,
-        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
-        h('div', { className: 'md-picker md-settings-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('settings') },
-          h('div', { className: 'md-picker-head' },
-            h('span', { className: 'md-picker-title' }, format('settings')),
+      return h(KitModal, {
+        title: format('settings'),
+        onClose: props.onClose,
+        className: 'md-settings-modal',
+        contentClassName: 'md-settings-content',
+        children: h(React.Fragment, null,
+          h('div', { className: 'md-settings-meta' },
             h('span', { className: 'md-settings-version' }, `${format('version')} ${props.version}`),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              'aria-label': format('previewClose'), onClick: props.onClose,
-            }, '×')
+            h('span', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
           ),
           h('div', { className: 'md-settings-tabs', role: 'tablist' },
             tabs.map(item => h('button', {
@@ -3674,8 +3673,8 @@ window.__ModuleLoader__.load({
             }, item.label))
           ),
           tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : about
-        )
-      )
+        ),
+      })
     }
 
     /**
@@ -9137,6 +9136,10 @@ window.__ModuleLoader__.load({
 .md-settings-actions { display: flex; gap: 8px; padding-top: 4px; }
 .md-update-box { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: .5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); }
 .md-update-box .md-btn { align-self: flex-start; }
+.md-settings-modal { width: min(720px, 92vw); max-height: 86vh; }
+.md-settings-modal .md-modal-body { max-height: calc(86vh - 110px); overflow-y: auto; }
+.md-settings-content { max-height: calc(86vh - 110px); overflow-y: auto; }
+.md-settings-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 4px; }
 .md-shortcut-list { display: flex; flex-direction: column; gap: 4px; }
 .md-shortcut-row { gap: 8px; }
 .md-shortcut-name { flex: 1 1 auto; min-width: 0; }
