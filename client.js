@@ -726,6 +726,7 @@ window.__ModuleLoader__.load({
       updateMarketFailed: '更新失败：{message}',
       updateRetry: '重试',
       updateDownload: '下载新版本 zip',
+      modalClose: '关闭',
       hostUiLoaded: '界面组件：官方宿主 primitives',
       hostUiFallback: '界面组件：本地回退（宿主 primitives 未加载）',
       updateNoRelease: '仓库还没有发布版本',
@@ -1269,6 +1270,7 @@ window.__ModuleLoader__.load({
       updateMarketFailed: 'Update failed: {message}',
       updateRetry: 'Retry',
       updateDownload: 'Download the new zip',
+      modalClose: 'Close',
       hostUiLoaded: 'UI components: official host primitives',
       hostUiFallback: 'UI components: local fallback (host primitives not loaded)',
       updateNoRelease: 'The repository has no release yet',
@@ -3053,41 +3055,31 @@ window.__ModuleLoader__.load({
           // popup blocked
         }
       }
-      return h('div', {
-        className: 'md-env-backdrop',
-        role: 'presentation',
-        onClick: event => {
-          if (event.target === event.currentTarget) props.onClose()
-        },
-      },
-        h('div', {
-          className: 'md-env-dialog', role: 'dialog', 'aria-modal': 'true',
-          'aria-label': format('envPromptTitle'),
-        },
-          h('h3', { className: 'md-env-title' }, format('envPromptTitle')),
-          h('p', { className: 'md-env-body' }, format('envPromptBody', {
-            needs: needs.join(' + '),
-            use: format(useKey),
-          })),
-          h('div', { className: 'md-env-actions' },
-            h('button', { type: 'button', className: 'md-btn', onClick: props.onClose }, format('envPromptBack')),
-            python ? h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: () => open(PYTHON_URL),
-            }, format('envPromptDownloadPython')) : null,
-            tex ? h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: () => open(TEXLIVE_URL),
-            }, format('envPromptDownloadTex')) : null,
-            key ? h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: () => {
-                if (typeof props.onOpenSettings === 'function') props.onOpenSettings()
-              },
-            }, format('envPromptKey')) : null
-          )
-        )
-      )
+      return h(KitModal, {
+        title: format('envPromptTitle'),
+        onClose: props.onClose,
+        children: h('p', { className: 'md-env-body' }, format('envPromptBody', {
+          needs: needs.join(' + '),
+          use: format(useKey),
+        })),
+        footer: [
+          h(KitButton, { key: 'back', variant: 'outline', onClick: props.onClose }, format('envPromptBack')),
+          python ? h(KitButton, {
+            key: 'python', variant: 'outline',
+            onClick: () => open(PYTHON_URL),
+          }, format('envPromptDownloadPython')) : null,
+          tex ? h(KitButton, {
+            key: 'tex', variant: 'outline',
+            onClick: () => open(TEXLIVE_URL),
+          }, format('envPromptDownloadTex')) : null,
+          key ? h(KitButton, {
+            key: 'key', variant: 'primary',
+            onClick: () => {
+              if (typeof props.onOpenSettings === 'function') props.onOpenSettings()
+            },
+          }, format('envPromptKey')) : null,
+        ],
+      })
     }
 
     /**
@@ -3112,31 +3104,21 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }
-      return h('div', {
-        className: 'md-env-backdrop',
-        role: 'presentation',
-        onClick: event => {
-          if (event.target === event.currentTarget) props.onCancel()
-        },
-      },
-        h('div', {
-          className: 'md-env-dialog md-workspace-dialog',
-          role: 'dialog', 'aria-modal': 'true', 'aria-label': format('workspaceTitle'),
-        },
-          h('h3', { className: 'md-env-title' }, format('workspaceTitle')),
+      return h(KitModal, {
+        title: format('workspaceTitle'),
+        className: 'md-workspace-dialog',
+        onClose: props.onCancel,
+        children: h(React.Fragment, null,
           h('p', { className: 'md-env-body' }, format('workspaceBody')),
           h('div', { className: 'md-workspace-list' },
             h('span', { className: 'md-workspace-label' }, format('workspaceSelect')),
             props.workspaces.length === 0
               ? h('span', { className: 'md-shelf-sub' }, format('workspaceEmpty'))
-              : props.workspaces.map(item => h('button', {
+              : props.workspaces.map(item => h(KitButton, {
                 key: item.id,
-                type: 'button', className: 'md-workspace-item',
+                variant: 'outline',
                 onClick: () => props.onPick(item),
-              },
-                h('strong', null, item.title === '' ? item.path : item.title),
-                h('span', null, item.path)
-              ))
+              }, item.title === '' ? item.path : `${item.title} · ${item.path}`))
           ),
           h('div', { className: 'md-workspace-new' },
             h('span', { className: 'md-workspace-label' }, format('workspaceNew')),
@@ -3152,17 +3134,18 @@ window.__ModuleLoader__.load({
               },
             })
           ),
-          error === '' ? null : h('p', { className: 'md-settings-note' }, error),
-          h('div', { className: 'md-env-actions' },
-            h('button', { type: 'button', className: 'md-btn', onClick: props.onCancel }, format('workspaceCancel')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small',
-              disabled: busy || path.trim() === '',
-              onClick: () => { void create() },
-            }, busy ? format('creating') : format('workspaceCreate'))
-          )
-        )
-      )
+          error === '' ? null : h('p', { className: 'md-settings-note' }, error)
+        ),
+        footer: [
+          h(KitButton, { key: 'cancel', variant: 'ghost', onClick: props.onCancel }, format('workspaceCancel')),
+          h(KitButton, {
+            key: 'create',
+            variant: 'primary',
+            disabled: busy || path.trim() === '',
+            onClick: () => { void create() },
+          }, busy ? format('creating') : format('workspaceCreate')),
+        ],
+      })
     }
 
     /**
@@ -3186,7 +3169,11 @@ window.__ModuleLoader__.load({
         : className.includes('md-btn-small')
           ? 'sm'
           : 'md'
-      const HostButton = ui !== null && ui !== undefined && typeof ui.Button === 'function' ? ui.Button : null
+      const HostButton = ui !== null && ui !== undefined && ui.Button !== undefined
+        && ui.Button !== null
+        && (typeof ui.Button === 'function' || (typeof ui.Button === 'object' && ui.Button.$$typeof))
+        ? ui.Button
+        : null
       if (HostButton !== null) {
         return h(HostButton, {
           variant,
@@ -3222,7 +3209,11 @@ window.__ModuleLoader__.load({
       const change = event => {
         if (typeof props.onChange === 'function') props.onChange(event.target.value, event)
       }
-      const HostInput = ui !== null && ui !== undefined && typeof ui.Input === 'object' ? ui.Input : null
+      const HostInput = ui !== null && ui !== undefined && ui.Input !== undefined
+        && ui.Input !== null
+        && (typeof ui.Input === 'function' || (typeof ui.Input === 'object' && ui.Input.$$typeof))
+        ? ui.Input
+        : null
       if (HostInput !== null) {
         return h(HostInput, {
           ref,
@@ -3266,6 +3257,57 @@ window.__ModuleLoader__.load({
         })
       )
     })
+
+    /**
+     * Modal adapter: host Modal owns the portal, focus trap, Escape and scrim;
+     * the fallback keeps the workbench shell.
+     */
+    function KitModal(props) {
+      const ui = useHostUi()
+      const HostModal = ui !== null && ui !== undefined && typeof ui.Modal === 'function' ? ui.Modal : null
+      if (HostModal !== null) {
+        return h(HostModal, {
+          open: true,
+          onClose: props.onClose,
+          title: props.title,
+          closeLabel: format('modalClose'),
+          headless: props.headless === true,
+          className: props.className,
+          contentClassName: props.contentClassName,
+          children: props.children,
+          footer: props.footer,
+        })
+      }
+      return h('div', {
+        className: 'md-env-backdrop',
+        role: 'presentation',
+        onClick: event => {
+          if (event.target === event.currentTarget && typeof props.onClose === 'function') props.onClose()
+        },
+      },
+        h('div', {
+          className: `md-env-dialog${props.className === undefined ? '' : ` ${props.className}`}`,
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': props.title ?? '',
+        },
+          h('div', { className: 'md-modal-head' },
+            h('h3', { className: 'md-env-title' }, props.title ?? ''),
+            typeof props.onClose !== 'function'
+              ? null
+              : h('button', {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                'aria-label': format('modalClose'), title: format('modalClose'),
+                onClick: props.onClose,
+              }, '×')
+          ),
+          h('div', { className: 'md-modal-body' }, props.children),
+          props.footer === undefined || props.footer === null
+            ? null
+            : h('div', { className: 'md-modal-foot' }, props.footer)
+        )
+      )
+    }
 
     function SettingsDialog(props) {
       const hostUi = useHostUi()
@@ -4042,16 +4084,10 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the dialog.
      */
     function ShelfNameDialog(props) {
-      return h(React.Fragment, null,
-        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
-        h('div', { className: 'md-picker', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('shelfName') },
-          h('div', { className: 'md-picker-head' },
-            h('span', { className: 'md-picker-title' }, format('shelfName')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              'aria-label': format('previewClose'), onClick: props.onClose,
-            }, '×')
-          ),
+      return h(KitModal, {
+        title: format('shelfName'),
+        onClose: props.onClose,
+        children: h(React.Fragment, null,
           h(KitInput, {
             className: 'md-input', value: props.name, autoFocus: true,
             placeholder: format('shelfName'),
@@ -4060,13 +4096,13 @@ window.__ModuleLoader__.load({
               if (event.key === 'Enter') props.onConfirm()
             },
           }),
-          props.error === '' ? null : h('div', { className: 'md-state-error', role: 'alert' }, props.error),
-          h('div', { className: 'md-library-tools', style: { order: 3 } },
-            h('button', { type: 'button', className: 'md-btn', onClick: props.onConfirm }, format('shelfCreate')),
-            h('button', { type: 'button', className: 'md-btn md-btn-ghost', onClick: props.onClose }, format('previewClose'))
-          )
-        )
-      )
+          props.error === '' ? null : h('div', { className: 'md-state-error', role: 'alert' }, props.error)
+        ),
+        footer: [
+          h(KitButton, { key: 'cancel', variant: 'ghost', onClick: props.onClose }, format('previewClose')),
+          h(KitButton, { key: 'save', variant: 'primary', onClick: props.onConfirm }, format('shelfCreate')),
+        ],
+      })
     }
 
     /**
@@ -4243,17 +4279,10 @@ window.__ModuleLoader__.load({
       const needle = query.trim().toLowerCase()
       const filtered = needle === '' ? props.candidates : props.candidates.filter(item => item.label.toLowerCase().includes(needle))
       const shown = filtered.slice(0, 300)
-      return h(React.Fragment, null,
-        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
-        h('div', { className: 'md-picker', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('importTitle') },
-          h('div', { className: 'md-picker-head' },
-            h('span', { className: 'md-picker-title' }, format('importTitle')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              'aria-label': format('previewClose'), title: format('previewClose'),
-              onClick: props.onClose,
-            }, '×')
-          ),
+      return h(KitModal, {
+        title: format('importTitle'),
+        onClose: props.onClose,
+        children: h(React.Fragment, null,
           h('div', { className: 'md-picker-sub' },
             format('importChapter', { code: props.target.code, title: props.target.title })),
           h(KitInput, {
@@ -4294,8 +4323,9 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'md-picker-note' }, format('importTruncated', { n: shown.length }))
             : null,
           h('div', { className: 'md-picker-note' }, format('importHint'))
-        )
-      )
+        ),
+        footer: [h(KitButton, { key: 'close', variant: 'ghost', onClick: props.onClose }, format('previewClose'))],
+      })
     }
 
     /**
@@ -4305,17 +4335,10 @@ window.__ModuleLoader__.load({
      */
     function DigestDialog(props) {
       const digest = props.digest
-      return h(React.Fragment, null,
-        h('div', { className: 'md-picker-backdrop', 'aria-hidden': true, onClick: props.onClose }),
-        h('div', { className: 'md-picker md-digest', role: 'dialog', 'aria-modal': 'true', 'aria-label': format('digestTitle') },
-          h('div', { className: 'md-picker-head' },
-            h('span', { className: 'md-picker-title' }, format('digestTitle')),
-            h('button', {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              'aria-label': format('previewClose'), title: format('previewClose'),
-              onClick: props.onClose,
-            }, '×')
-          ),
+      return h(KitModal, {
+        title: format('digestTitle'),
+        onClose: props.onClose,
+        children: h(React.Fragment, null,
           digest.phase === 'working'
             ? h('div', { className: 'md-picker-empty', role: 'status' }, format('digestWorking'))
             : digest.phase === 'error'
@@ -4324,16 +4347,17 @@ window.__ModuleLoader__.load({
               : h(React.Fragment, null,
                 h('pre', { className: 'md-digest-text' }, digest.text),
                 h('div', { className: 'md-digest-actions' },
-                  h('button', {
-                    type: 'button', className: 'md-btn md-btn-small',
+                  h(KitButton, {
+                    variant: 'outline',
                     onClick: () => props.onCopy(digest.text),
                   }, format('digestCopy')),
                   digest.path === '' ? null : h('code', { className: 'md-path' }, digest.path)
                 )
               ),
           h('div', { className: 'md-picker-note' }, format('digestHint'))
-        )
-      )
+        ),
+        footer: [h(KitButton, { key: 'close', variant: 'ghost', onClick: props.onClose }, format('previewClose'))],
+      })
     }
 
     /**
@@ -8998,6 +9022,9 @@ window.__ModuleLoader__.load({
 .md-env-title { margin: 0; font-size: 15px; }
 .md-env-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 .md-env-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.md-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.md-modal-body { display: flex; flex-direction: column; gap: 12px; }
+.md-modal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .md-workspace-dialog { width: min(520px, 100%); }
 .md-workspace-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
 .md-workspace-label { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
