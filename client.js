@@ -1201,10 +1201,10 @@ window.__ModuleLoader__.load({
       readerJumpPage: '跳页',
       readerJumpPageHint: '跳到指定页：聚焦页码框输入',
       questionTool: '疑问框',
-      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放。改名：双击框上的名称；删除：先选中疑问框工具，再右键框（可撤回）',
+      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放。改名：双击框或名称；删除：先选中疑问框工具，再右键框（可撤回）',
       questionJump: '疑问跳转',
       questionJumpEmpty: '本章没有疑问',
-      questionNameHint: '双击改名；删除须先选中疑问框工具再右键',
+      questionNameHint: '双击框或名称改名；删除须先选中疑问框工具再右键',
       questionRename: '疑问名称',
       questionsTitle: '疑问',
       questionsEmpty: '本章还没有疑问标记',
@@ -1878,10 +1878,10 @@ window.__ModuleLoader__.load({
       readerLastHint: 'Go to the last page',
       readerJumpPage: 'Jump to page',
       readerJumpPageHint: 'Jump to a page: focus the page box and type',
-      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize. Rename: double-click the name. Delete: pick the question tool first, then right-click the box (undo puts it back)',
+      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize. Rename: double-click the box or its name. Delete: pick the question tool first, then right-click the box (undo puts it back)',
       questionJump: 'Jump to a question',
       questionJumpEmpty: 'No questions in this chapter',
-      questionNameHint: 'Double-click to rename; to delete, pick the question tool first and right-click',
+      questionNameHint: 'Double-click the box or its name to rename; to delete, pick the question tool first and right-click',
       questionRename: 'Question name',
       questionsTitle: 'Questions',
       questionsEmpty: 'No questions marked in this chapter yet',
@@ -7743,6 +7743,18 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = useState(null)
       const active = props.active === true
       const create = props.create === true
+      // No tool picked: the page is a reading surface, so a mark may take the
+      // pointer itself and a double-click on the box renames it. With a tool
+      // picked the capture layer sits above, so drawing across a mark still wins.
+      const reading = props.reading === true
+      /**
+       * Whether a pointer landed on a part of the mark that owns its gestures.
+       * @param {EventTarget | null} target - the event target.
+       * @param {string} selector - the part's selector.
+       * @returns {boolean} true when the part (or a descendant) was hit.
+       */
+      const insideOf = (target, selector) => target !== null && target !== undefined
+        && typeof target.closest === 'function' && target.closest(selector) !== null
       const pointOf = event => {
         const node = layer.current
         if (node === null) return null
@@ -7788,10 +7800,11 @@ window.__ModuleLoader__.load({
       }
       const beginDrag = (event, question, mode) => {
         if (!active || event.button !== 0) return
-        // The rename field is a field first: a press in it must focus and place
-        // the caret, not start moving the mark (which also dismissed the field).
-        if (event.target !== null && event.target !== undefined && typeof event.target.closest === 'function'
-          && event.target.closest('.md-question-input') !== null) return
+        // The field and the name are not drag handles: a press in the field must
+        // focus it, and a press on the name must leave the double-click that
+        // renames it alone. Capturing the pointer here retargets the click to
+        // the mark, so the label never sees the gesture.
+        if (insideOf(event.target, '.md-question-input') || insideOf(event.target, '.md-question-name')) return
         event.preventDefault()
         event.stopPropagation()
         const at = pointOf(event)
@@ -7837,6 +7850,7 @@ window.__ModuleLoader__.load({
       return h('div', {
         className: 'md-questions',
         'data-active': active ? 'true' : undefined,
+        'data-reading': reading ? 'true' : undefined,
         ref: layer,
         onPointerDown: beginCreate,
         onPointerMove: moveCreate,
@@ -7855,13 +7869,29 @@ window.__ModuleLoader__.load({
             onPointerDown: event => beginDrag(event, question, 'move'),
             onPointerMove: moveDrag,
             onPointerUp: endDrag,
-            onContextMenu: event => {
+            // Double-clicking the mark itself opens its name: the label above
+            // the box is a small target and must not be the only way in. While a
+            // tool has the pointer captured, its clicks are reported on the mark,
+            // which is exactly where this handler sits.
+            onDoubleClick: event => {
+              if (insideOf(event.target, '.md-question-input')) return
               event.preventDefault()
               event.stopPropagation()
+              setEditing({ id: question.id, value: question.name })
+            },
+            onContextMenu: event => {
               // A right press in the rename field belongs to the field.
-              if (event.target !== null && event.target !== undefined && typeof event.target.closest === 'function'
-                && event.target.closest('.md-question-input') !== null) return
-              if (active) props.onDelete(question.id)
+              if (insideOf(event.target, '.md-question-input')) {
+                event.preventDefault()
+                event.stopPropagation()
+                return
+              }
+              // Reading mode keeps the page's own menu; a mark only deletes with
+              // the question tool picked.
+              if (!active) return
+              event.preventDefault()
+              event.stopPropagation()
+              props.onDelete(question.id)
             },
           },
             editing !== null && editing.id === question.id
@@ -7886,15 +7916,11 @@ window.__ModuleLoader__.load({
                 onBlur: commitRename,
               }))
               : h('span', {
+                // A label, not a handle: the double-click that renames it is
+                // handled by the mark it sits on, because a captured pointer
+                // reports its clicks there, not on the label.
                 className: 'md-question-name',
                 title: format('questionNameHint'),
-                onDoubleClick: event => {
-                  // Renaming is a reading gesture too: the name appears on
-                  // hover, so double-clicking it works without picking the tool.
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setEditing({ id: question.id, value: question.name })
-                },
               }, question.name),
             ['nw', 'ne', 'sw', 'se'].map(corner => h('span', {
               key: corner,
@@ -12146,6 +12172,7 @@ window.__ModuleLoader__.load({
         questions: pageQuestions,
         active: annotTool === 'question',
         create: annotTool === 'question',
+        reading: annotTool === '',
         flash: questionFlash,
         onCreate: rect => createQuestion(rect),
         onCommit: (id, rect) => commitQuestionRect(id, rect),
@@ -13758,12 +13785,13 @@ window.__ModuleLoader__.load({
 .md-questions[data-active="true"] { pointer-events: auto; cursor: crosshair; }
 .md-question { position: absolute; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); border-radius: 2px; pointer-events: none; }
 .md-questions[data-active="true"] .md-question { pointer-events: auto; cursor: move; }
+.md-questions[data-reading="true"] .md-question { pointer-events: auto; touch-action: pan-y; cursor: default; }
 .md-question[data-flash="true"] { border-width: 2px; animation: md-question-flash 1.8s ease-out; }
 @keyframes md-question-flash { 0% { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent); } 100% { background: transparent; } }
 .md-question-name { position: absolute; left: -1px; bottom: 100%; transform: translateY(-3px); max-width: 240px; padding: 1px 6px; font-size: 11px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 4px; box-shadow: var(--dsw-elevation-soft); opacity: 0; transition: opacity .12s ease; pointer-events: auto; }
 .md-question:hover .md-question-name, .md-question[data-flash="true"] .md-question-name, .md-question:focus-within .md-question-name { opacity: 1; }
 .md-question-handle { position: absolute; width: 9px; height: 9px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 2px; opacity: 0; pointer-events: auto; z-index: 2; }
-.md-question:hover .md-question-handle, .md-question[data-flash="true"] .md-question-handle { opacity: 1; }
+.md-questions[data-active="true"] .md-question:hover .md-question-handle, .md-questions[data-active="true"] .md-question[data-flash="true"] .md-question-handle { opacity: 1; }
 .md-question-nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .md-question-ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
@@ -15268,6 +15296,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         questions: questions.filter(item => Number(item.page) === displayPage),
         active: tool === 'question',
         create: tool === 'question',
+        reading: tool === '',
         flash: questionFlash,
         onCreate: rect => createQuestion(rect),
         onCommit: (id, rect) => commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, rect } : item)), questionsNext.current),
