@@ -387,7 +387,11 @@ window.__ModuleLoader__.load({
     function readGlobalMode() {
       try {
         const raw = window.localStorage.getItem(MODE_KEY)
-        if (raw === 'single' || raw === 'continuous' || raw === 'canvas') return raw
+        // "canvas" was a third mode for one release. The shared annotation layer
+        // replaced it, so an old stored value reads as the single page it looks
+        // like, without touching the notes themselves.
+        if (raw === 'single' || raw === 'continuous') return raw
+        if (raw === 'canvas') return 'single'
         return null
       } catch {
         return null
@@ -396,11 +400,11 @@ window.__ModuleLoader__.load({
 
     /**
      * Remember the reading mode for every book.
-     * @param {string} mode - `single`, `continuous` or `canvas`.
+     * @param {string} mode - `single` or `continuous`.
      * @returns {void}
      */
     function writeGlobalMode(mode) {
-      if (mode !== 'single' && mode !== 'continuous' && mode !== 'canvas') return
+      if (mode !== 'single' && mode !== 'continuous') return
       try {
         window.localStorage.setItem(MODE_KEY, mode)
       } catch {
@@ -745,11 +749,11 @@ window.__ModuleLoader__.load({
       readerMode: '阅读模式',
       readerModeSingle: '单页',
       readerModeContinuous: '连续',
-      readerModeCanvas: '画布',
-      readerModeCanvasHint: '无限画布：页外也能写；空白处拖动平移',
       canvasCenter: '居中',
       canvasCenterHint: '回到当前页居中',
-      canvasOffPageHint: '本章有 {n} 处页外笔记，切到画布模式查看',
+      canvasOffPageHint: '本章有 {n} 处页外笔记，切到单页查看',
+      annotHand: '手（平移）',
+      handPanelHint: '拖动页面平移，页外笔记也能看到；也可按住空格临时切手；「居中」回到当前页',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: '在工作台打开',
       sideOpenInDeskHint: '回到阅读器，停在同一页',
@@ -1087,6 +1091,11 @@ window.__ModuleLoader__.load({
       pressureNoPen: '当前设备没有压感，按默认线宽书写（{width}px）',
       pressureReading: '压感 {pressure} · 线宽 {width}px',
       pressureClear: '清除',
+      readerLast: '末页',
+      readerLastHint: '最后一页',
+      readerJumpPage: '跳页',
+      readerJumpPageHint: '跳到指定页：聚焦页码框输入',
+      printNoArtifact: '本章没有可打印的 Markdown 产物',
       questionTool: '疑问框',
       questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放、双击名称改名、右键删除',
       questionJump: '疑问跳转',
@@ -1353,11 +1362,11 @@ window.__ModuleLoader__.load({
       readerMode: 'Reading mode',
       readerModeSingle: 'Single page',
       readerModeContinuous: 'Continuous',
-      readerModeCanvas: 'Canvas',
-      readerModeCanvasHint: 'Infinite canvas: write outside the page too; drag empty space to pan',
       canvasCenter: 'Center',
       canvasCenterHint: 'Center the current page again',
-      canvasOffPageHint: '{n} off-page marks in this chapter; open Canvas mode to see them',
+      canvasOffPageHint: '{n} off-page marks in this chapter; switch to single page to see them',
+      annotHand: 'Hand (pan)',
+      handPanelHint: 'Drag the page to pan, even to marks outside it; hold Space for the same gesture; “Center” returns to the current page',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: 'Open in workbench',
       sideOpenInDeskHint: 'Return to the workbench reader at the same page',
@@ -1697,6 +1706,11 @@ window.__ModuleLoader__.load({
       pressureReading: 'Pressure {pressure} · width {width}px',
       pressureClear: 'Clear',
       questionTool: 'Question mark',
+      readerLast: 'Last page',
+      readerLastHint: 'Go to the last page',
+      readerJumpPage: 'Jump to page',
+      readerJumpPageHint: 'Jump to a page: focus the page box and type',
+      printNoArtifact: 'No printable Markdown product in this chapter',
       questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize, double-click the name to rename, right-click to delete',
       questionJump: 'Jump to a question',
       questionJumpEmpty: 'No questions in this chapter',
@@ -3184,18 +3198,48 @@ window.__ModuleLoader__.load({
      * Every reader action that can take keys, with the shortcuts it has always
      * had. An action may hold several keys (`PageUp` and `←` both turn back);
      * `fallback: null` means the action ships unbound.
+     *
+     * The page actions are handled by the workbench (it owns the page, zoom and
+     * mode); the tool actions are handled by the reader itself, because only it
+     * owns the picked tool. `READER_ACTIONS` below is the split.
      */
     const SHORTCUT_ACTIONS = [
       { id: 'prevPage', labelKey: 'readerPrev', fallback: [{ key: 'ArrowLeft' }, { key: 'PageUp' }] },
       { id: 'nextPage', labelKey: 'readerNext', fallback: [{ key: 'ArrowRight' }, { key: 'PageDown' }] },
       { id: 'firstPage', labelKey: 'readerFirst', fallback: [{ key: 'Home' }] },
+      { id: 'lastPage', labelKey: 'readerLast', fallback: [{ key: 'End' }] },
       { id: 'scrollUp', labelKey: 'shortcutScrollUp', fallback: [{ key: 'ArrowUp' }] },
       { id: 'scrollDown', labelKey: 'shortcutScrollDown', fallback: [{ key: 'ArrowDown' }] },
-      { id: 'zoomIn', labelKey: 'readerZoomIn', fallback: [{ key: '=' }, { key: '+' }] },
-      { id: 'zoomOut', labelKey: 'readerZoomOut', fallback: [{ key: '-' }] },
-      { id: 'toggleMode', labelKey: 'readerMode', fallback: null },
+      { id: 'zoomIn', labelKey: 'readerZoomIn', fallback: [{ key: '=', ctrl: true }, { key: '+', ctrl: true }] },
+      { id: 'zoomOut', labelKey: 'readerZoomOut', fallback: [{ key: '-', ctrl: true }] },
+      { id: 'fitWidth', labelKey: 'readerFit', fallback: [{ key: 'f' }] },
+      { id: 'toggleMode', labelKey: 'readerMode', fallback: [{ key: 't' }] },
+      { id: 'jumpPage', labelKey: 'readerJumpPage', fallback: [{ key: 'g' }] },
+      { id: 'handTool', labelKey: 'annotHand', fallback: [{ key: 'h' }] },
+      { id: 'penTool', labelKey: 'annotPen', fallback: [{ key: 'p' }] },
+      { id: 'eraseTool', labelKey: 'annotErase', fallback: [{ key: 'e' }] },
+      { id: 'textTool', labelKey: 'annotText', fallback: [{ key: 'x' }] },
+      { id: 'questionTool', labelKey: 'questionTool', fallback: [{ key: 'q' }] },
+      { id: 'questionJump', labelKey: 'questionJump', fallback: [{ key: 'Q', shift: true }] },
+      { id: 'printArtifact', labelKey: 'printAction', fallback: [{ key: 'p', ctrl: true }] },
       { id: 'closeReader', labelKey: 'shortcutClose', fallback: [{ key: 'Escape' }] },
     ]
+
+    /**
+     * Actions whose state lives in the reader, not the workbench: the tool
+     * picker, the page box and the question jump. The workbench's keyboard
+     * listener must leave them to the reader so they are not swallowed.
+     */
+    const READER_ACTIONS = new Set(['jumpPage', 'questionJump', 'handTool', 'penTool', 'eraseTool', 'textTool', 'questionTool'])
+
+    /** Tool action → the rail tool it picks. */
+    const TOOL_SHORTCUTS = {
+      handTool: 'hand',
+      penTool: 'pen',
+      eraseTool: 'erase',
+      textTool: 'text',
+      questionTool: 'question',
+    }
 
     /**
      * Normalize one captured keyboard event into a binding.
@@ -5506,6 +5550,7 @@ window.__ModuleLoader__.load({
     const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse', 'diamond']
     /** Locale label for each rail tool, used by the hover settings panel. */
     const TOOL_LABELS = {
+      hand: 'annotHand',
       select: 'annotSelect',
       pen: 'annotPen',
       erase: 'annotErase',
@@ -6781,6 +6826,104 @@ window.__ModuleLoader__.load({
     const MASK_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
     /**
+     * The marks one page already committed, read synchronously. Continuous mode
+     * paints a read-only copy under every page around the reader, so the copy
+     * must be available in the same render as the page itself.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'annots'|'masks'} kind - which list.
+     * @param {number} page - 1-based page.
+     * @returns {object[]} the stored list (empty when unreadable).
+     */
+    function readStoredList(bookId, code, kind, page) {
+      try {
+        const raw = window.localStorage.getItem(`pdfdesk:${kind}:${bookId}:${code}:${page}`)
+        const parsed = raw === null ? [] : JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    }
+
+    /**
+     * A page's committed marks, drawn read-only. Continuous mode renders one of
+     * these under every page around the reader, so a page keeps its ink while the
+     * reader turns: only the page being read owns the interactive layer, and the
+     * others never lose their strokes for a frame (which is what made the ink
+     * flicker when a page turn moved the one shared overlay).
+     * @param {{ bookId: string, code: string, page: number, rev: number }} props - the page and the reload signal.
+     * @returns {import('react').ReactElement | null} the layer, or null when the page has nothing.
+     */
+    function StaticInk(props) {
+      const entries = useMemo(
+        () => readStoredList(props.bookId, props.code, 'annots', props.page),
+        [props.bookId, props.code, props.page, props.rev],
+      )
+      if (entries.length === 0) return null
+      return h('div', { className: 'md-annot md-annot-static', 'aria-hidden': true },
+        h('svg', { className: 'md-annot-ink', viewBox: '0 0 1 1', preserveAspectRatio: 'none' },
+          entries.map((entry, index) => {
+            if (entry.kind === 'text') return null
+            if (entry.kind === 'shape') return h(ShapeMark, { key: `shape-${index}`, entry })
+            const points = Array.isArray(entry.points) ? entry.points : []
+            if (points.length < 2) return null
+            if (points.some(point => point.length > 2)) {
+              const base = entry.width ?? 2
+              return h('g', { key: index, opacity: entry.opacity ?? 1 },
+                points.slice(1).map((point, segment) => {
+                  const previous = points[segment]
+                  const pressure = point[2] ?? previous[2] ?? 0.5
+                  return h('line', {
+                    key: segment,
+                    x1: previous[0],
+                    y1: previous[1],
+                    x2: point[0],
+                    y2: point[1],
+                    stroke: entry.color ?? '#e0554a',
+                    strokeWidth: base * (0.35 + pressure * 1.2),
+                    vectorEffect: 'non-scaling-stroke',
+                    strokeLinecap: 'round',
+                  })
+                }))
+            }
+            return h('polyline', {
+              key: index,
+              points: points.map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: entry.color ?? '#e0554a',
+              strokeWidth: entry.width ?? 2,
+              opacity: entry.opacity ?? 1,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+          })
+        ),
+        entries.map((entry, index) => {
+          if (entry.kind !== 'text') return null
+          const box = noteBox(entry)
+          const hasBox = Number.isFinite(entry.w) && entry.w > 0 && Number.isFinite(entry.h) && entry.h > 0
+          return h('div', {
+            key: `text-${index}`,
+            className: 'md-annot-text',
+            style: {
+              left: `${box.x * 100}%`,
+              top: `${box.y * 100}%`,
+              ...(hasBox ? { width: `${box.w * 100}%`, height: `${box.h * 100}%` } : { maxWidth: '70%' }),
+              color: entry.color ?? '#e0554a',
+              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+              opacity: entry.opacity ?? 1,
+              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+              fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+              fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
+            },
+          }, entry.text)
+        })
+      )
+    }
+
+    /**
      * Editable translation boxes: drag a box to move it, drag one of its eight
      * handles to resize, right-click to delete (undo puts it back). The frame is
      * a clipping wrapper so the page image is cut to the box while the handles
@@ -7562,6 +7705,12 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(page))))
           continue
         }
+        // The page being read owns the interactive layer; every other painted
+        // page carries its committed marks so scrolling never strips a page of
+        // its ink (the old single overlay moved page to page as a flash).
+        const overlay = page === props.overlayPage
+          ? props.overlay
+          : (typeof props.overlayFor === 'function' ? props.overlayFor(page) : null)
         pages.push(h(ReaderPage, {
           key: page,
           doc: props.doc,
@@ -7574,8 +7723,8 @@ window.__ModuleLoader__.load({
           bookId: props.bookId,
           code: props.code,
           onError: props.onError,
-          overlay: props.overlay,
-          overlayPage: props.overlayPage,
+          overlay,
+          overlayPage: page,
         }))
       }
       return h('div', { className: 'md-reader-continuous' }, pages)
@@ -7940,15 +8089,15 @@ window.__ModuleLoader__.load({
         return () => { cancelled = true }
       }, [props.doc, props.mode, props.scale, props.fitScale, props.onScale])
 
-      // Canvas mode: the page is panned by dragging the empty stage. The
-      // capture layer (when a tool is picked) owns the pointers instead, so a
-      // stroke started outside the page keeps drawing rather than panning.
-      const canvasMode = props.mode === 'canvas'
-      const hasCapture = props.captureLayer !== null && props.captureLayer !== undefined
-      const pan = props.canvasPan !== null && props.canvasPan !== undefined ? props.canvasPan : null
+      // Panning the shared annotation plane. Any mode that has no room of its
+      // own (continuous scrolls its own column) pans by dragging the stage; the
+      // hand tool and the space bar are the only gestures that move the page, so
+      // a drawing tool never fights a drag.
+      const pan = props.pan !== null && props.pan !== undefined ? props.pan : null
+      const panEnabled = props.panEnabled === true
       const panDrag = useRef(null)
       const beginPan = event => {
-        if (!canvasMode || hasCapture || event.button !== 0) return
+        if (!panEnabled || event.button !== 0) return
         panDrag.current = { start: [event.clientX, event.clientY], origin: pan ?? { x: 0, y: 0 } }
         try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
       }
@@ -7956,8 +8105,8 @@ window.__ModuleLoader__.load({
         if (panDrag.current === null) return
         const dx = event.clientX - panDrag.current.start[0]
         const dy = event.clientY - panDrag.current.start[1]
-        if (typeof props.onCanvasPan === 'function') {
-          props.onCanvasPan({ x: panDrag.current.origin.x + dx, y: panDrag.current.origin.y + dy })
+        if (typeof props.onPan === 'function') {
+          props.onPan({ x: panDrag.current.origin.x + dx, y: panDrag.current.origin.y + dy })
         }
       }
       const endPan = () => { panDrag.current = null }
@@ -7975,20 +8124,20 @@ window.__ModuleLoader__.load({
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
           onError: props.onError,
-          // Continuous mode paints many pages; a layer passed from outside can
-          // only belong to the page being read, so it lands there.
+          // The page being read gets the interactive layer; the others get a
+          // read-only copy of their own marks, so a turn never blanks them.
           overlay: props.overlay,
+          overlayFor: props.overlayFor,
           overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
         })
         : h('div', {
-          className: canvasMode ? 'md-reader-single md-reader-canvas-plane' : 'md-reader-single',
-          'data-grab': canvasMode && !hasCapture ? 'true' : undefined,
-          style: canvasMode && pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
+          className: 'md-reader-single',
+          style: pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
         },
           h('div', {
             className: 'md-reader-single-page',
             ref: node => {
-              if (canvasMode && typeof props.onPageNode === 'function') props.onPageNode(node)
+              if (typeof props.onPageNode === 'function') props.onPageNode(node)
             },
           },
             h('canvas', { className: 'md-reader-canvas', ref: canvas }),
@@ -7999,13 +8148,15 @@ window.__ModuleLoader__.load({
       return h('div', {
         className: 'md-reader-stage',
         'data-mode': props.mode,
+        'data-grab': panEnabled && panDrag.current === null ? 'true' : undefined,
+        'data-panning': panDrag.current !== null ? 'true' : undefined,
         ref: attachStage,
-        onPointerDown: canvasMode ? beginPan : undefined,
-        onPointerMove: canvasMode ? movePan : undefined,
-        onPointerUp: canvasMode ? endPan : undefined,
-        onPointerCancel: canvasMode ? endPan : undefined,
-        onPointerLeave: canvasMode ? endPan : undefined,
-      }, content, canvasMode ? props.captureLayer : null)
+        onPointerDown: panEnabled ? beginPan : undefined,
+        onPointerMove: panEnabled ? movePan : undefined,
+        onPointerUp: panEnabled ? endPan : undefined,
+        onPointerCancel: panEnabled ? endPan : undefined,
+        onPointerLeave: panEnabled ? endPan : undefined,
+      }, content, props.captureLayer === undefined ? null : props.captureLayer)
     }
 
     /**
@@ -8023,13 +8174,18 @@ window.__ModuleLoader__.load({
       const diag = useDiag()
       const railSide = props.railSide === 'left' ? 'left' : 'right'
       const [pageText, setPageText] = useState(String(reader.page))
+      const pageInput = useRef(null)
       const [showBlocks, setShowBlocks] = useState(false)
-      // Canvas mode: the page sits on an unbounded, pannable plane. Pan is a
-      // per-visit value (not page position) and resets when the document changes.
-      const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
+      // The single page and its annotations sit on one shared, pannable plane:
+      // marks may live outside the page, and the hand tool (or a held space)
+      // moves the plane. Pan is a per-visit value and resets with the document.
+      const [inkPan, setInkPan] = useState({ x: 0, y: 0 })
       useEffect(() => {
-        setCanvasPan({ x: 0, y: 0 })
+        setInkPan({ x: 0, y: 0 })
       }, [reader.bookId, reader.code, reader.name, reader.variant])
+      // Holding the space bar switches to the hand tool for as long as it is
+      // held; releasing it gives the previous tool back without a mode change.
+      const [spaceHeld, setSpaceHeld] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
       const [overlay, setOverlay] = useState(false)
       const [masks, setMasks] = useState([])
@@ -8040,12 +8196,59 @@ window.__ModuleLoader__.load({
       // Freehand annotations, one array of strokes per page, normalized so they
       // follow the page box through any zoom.
       const [annotTool, setAnnotTool] = useState('')
+      // The single page is the shared annotation plane: a mark may live past the
+      // page edge and stays visible, because single and continuous are two views
+      // of the same notes. Continuous keeps marks inside their own page (they
+      // would otherwise overlap the next page) and draws a read-only copy per
+      // page instead, so no page loses its ink while the reader turns.
+      const extended = reader.mode !== 'continuous'
+      // The hand is the only tool that moves the plane; holding the space bar is
+      // the same gesture without changing the picked tool.
+      const handActive = annotTool === 'hand' || spaceHeld
+      // The tools that leave marks. Only these get the stage-sized capture layer
+      // (so a stroke can start outside the page); the question box keeps its own
+      // page-sized layer and the mask layer keeps its own pointers.
+      const inkTool = annotTool !== '' && annotTool !== 'hand' && annotTool !== 'question' && annotTool !== 'mask'
+      useEffect(() => {
+        if (!spaceHeld) return undefined
+        // A window that loses focus never delivers the keyup: drop the hold.
+        const release = () => setSpaceHeld(false)
+        window.addEventListener('blur', release)
+        return () => window.removeEventListener('blur', release)
+      }, [spaceHeld])
+      // Hold the space bar to pan. A keypress inside a field or the open note
+      // editor belongs to that field, so it is ignored there.
+      useEffect(() => {
+        const isTyping = target => target !== null && target !== undefined
+          && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true
+            || (typeof target.closest === 'function' && target.closest('.md-note-editor') !== null))
+        const down = event => {
+          if (event.code !== 'Space' || event.repeat === true || isTyping(event.target)) return
+          event.preventDefault()
+          setSpaceHeld(true)
+        }
+        const up = event => {
+          if (event.code !== 'Space') return
+          setSpaceHeld(false)
+        }
+        window.addEventListener('keydown', down)
+        window.addEventListener('keyup', up)
+        return () => {
+          window.removeEventListener('keydown', down)
+          window.removeEventListener('keyup', up)
+        }
+      }, [])
       // Which column the undo/redo buttons act on: the original layer or the
       // translated column's own ink (see ColumnInk).
       const [activeSide, setActiveSide] = useState('main')
       const [annotColor, setAnnotColor] = useState('#1f1f1f')
       const [annotWidth, setAnnotWidth] = useState(2)
       const [strokes, setStrokes] = useState([])
+      // Which page `strokes` belongs to. The interactive layer is only drawn
+      // once the list matches the page on screen; until then the page shows its
+      // committed marks through a read-only copy, so a page turn never paints
+      // the previous page's ink on top of the new one for a frame.
+      const [inkPage, setInkPage] = useState(reader.page)
       const [draftStroke, setDraftStroke] = useState(null)
       // The note being typed in place: `index` is its slot in `strokes`, or -1
       // for one that does not exist yet. `id` keeps a stale save (a blur that
@@ -8586,6 +8789,7 @@ window.__ModuleLoader__.load({
         const list = prefetched === undefined ? inkStore.readList('annots', reader.page) : prefetched.annots
         strokesRef.current = list
         setStrokes(list)
+        setInkPage(reader.page)
       }, [inkStore, annotKey, remoteAnnotRev])
       // Warm the neighbouring pages' marks: the reader usually turns one page,
       // and a page must not appear bare while its ink is read.
@@ -8641,15 +8845,15 @@ window.__ModuleLoader__.load({
         // boxes on screen are still that page's.
         setAutoBoxes(null)
       }, [annotKey, remoteAnnotRev, pageDrafts, reader.page])
-      // Point in page coordinates (0..1). The SVG layer is exactly the page box,
-      // so the same numbers work at any zoom. The canvas mode measures against
-      // the page node (the capture layer is stage-sized) and does not clamp.
+      // Point in page coordinates (0..1). The ink layer is exactly the page box,
+      // so the same numbers work at any zoom. A stage-sized capture layer (the
+      // single page, where the shared plane can be drawn outside the page) is
+      // measured against the page node and does not clamp.
       const annotBox = useRef({ width: 400, height: 600 })
       const canvasPage = useRef(null)
       const annotPoint = event => {
-        const canvas = reader.mode === 'canvas'
-        const node = canvas && canvasPage.current !== null ? canvasPage.current : event.currentTarget
-        const point = canvas ? inkPointOfFree(event, node) : inkPointOf(event, node)
+        const node = extended && canvasPage.current !== null ? canvasPage.current : event.currentTarget
+        const point = extended ? inkPointOfFree(event, node) : inkPointOf(event, node)
         if (point === null) return null
         const rect = node.getBoundingClientRect()
         annotBox.current = { width: rect.width, height: rect.height }
@@ -8701,19 +8905,19 @@ window.__ModuleLoader__.load({
           return
         }
         const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
-        // The canvas mode lets a note live outside the page; the page modes keep
-        // the box on the page, as they always have.
-        const canvas = reader.mode === 'canvas'
-        const x = canvas
+        // The shared plane lets a note live outside the page; continuous keeps
+        // the box on the page, as page views always have.
+        const free = extended
+        const x = free
           ? (box === undefined ? point[0] : box.x)
           : (box === undefined
             ? Math.min(point[0], Math.max(0, 1 - fallbackWidth - 0.02))
             : Math.max(0, Math.min(1 - 0.02, box.x)))
-        const y = canvas
+        const y = free
           ? (box === undefined ? point[1] : box.y)
           : (box === undefined ? Math.min(point[1], 1 - 0.04) : Math.max(0, Math.min(1 - 0.02, box.y)))
-        const w = box === undefined ? fallbackWidth : Math.max(0.04, canvas ? box.w : Math.min(1 - x, box.w))
-        const h = box === undefined ? 0.09 : Math.max(0.035, canvas ? box.h : Math.min(1 - y, box.h))
+        const w = box === undefined ? fallbackWidth : Math.max(0.04, free ? box.w : Math.min(1 - x, box.w))
+        const h = box === undefined ? 0.09 : Math.max(0.035, free ? box.h : Math.min(1 - y, box.h))
         noteText.current = ''
         setNoteEdit({
           id: noteSeq.current,
@@ -8812,6 +9016,9 @@ window.__ModuleLoader__.load({
       const erasing = useRef(false)
       const annotDown = (event, side) => {
         if (event.button !== 0) return
+        // The page's list is not loaded yet: a stroke must not land on the
+        // previous page's marks while the page is changing.
+        if (inkPage !== reader.page) return
         if (annotTool === '') return
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
@@ -9588,14 +9795,16 @@ window.__ModuleLoader__.load({
       const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
-        'data-canvas': reader.mode === 'canvas' ? 'true' : undefined,
-        // The canvas paints the same layer but captures input on a stage-sized
-        // overlay (below), because off-page marks need pointer coordinates
-        // outside the page box.
-        onPointerDown: reader.mode === 'canvas' ? undefined : event => annotDown(event, side),
-        onPointerMove: reader.mode === 'canvas' ? undefined : annotMove,
-        onPointerUp: reader.mode === 'canvas' ? undefined : annotUp,
-        onPointerLeave: reader.mode === 'canvas' ? undefined : annotUp,
+        // Single page: the layer is the shared plane, so its SVG is allowed to
+        // paint past the page edge and the off-page marks stay visible.
+        'data-extended': extended ? 'true' : undefined,
+        // In the single page a stage-sized capture layer (below) owns the
+        // pointers while a mark tool is picked, because off-page marks need
+        // coordinates outside the page box; otherwise this layer takes them.
+        onPointerDown: event => annotDown(event, side),
+        onPointerMove: annotMove,
+        onPointerUp: annotUp,
+        onPointerLeave: annotUp,
         onDoubleClick: event => editNoteAt(event, side),
         onContextMenu: openStylePanelOnLayer,
       },
@@ -9646,7 +9855,7 @@ window.__ModuleLoader__.load({
             : null,
           strokes.map((stroke, index) => {
             if (stroke.kind === 'text' || stroke.kind === 'shape') return null
-            if (reader.mode !== 'canvas' && !entryInsidePage(stroke)) return null
+            if (!extended && !entryInsidePage(stroke)) return null
             const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
             const points = shown.points ?? []
             if (points.some(point => point.length > 2)) {
@@ -9681,7 +9890,7 @@ window.__ModuleLoader__.load({
             })
           }),
           strokes.map((entry, index) => (entry.kind === 'shape'
-            ? (reader.mode !== 'canvas' && !entryInsidePage(entry) ? null : h(ShapeMark, {
+            ? (!extended && !entryInsidePage(entry) ? null : h(ShapeMark, {
               key: `shape-${index}`,
               entry: resizeEntry !== null && resize !== null && resize.index === index
                 ? resizeEntry
@@ -9719,7 +9928,7 @@ window.__ModuleLoader__.load({
         // with the stored list, so a double-click edits the right entry.
         strokes.map((entry, index) => (entry.kind === 'text'
           ? (() => {
-            if (reader.mode !== 'canvas' && !entryInsidePage(entry)) return null
+            if (!extended && !entryInsidePage(entry)) return null
             const live = resizeEntry !== null && resize !== null && resize.index === index ? resizeEntry : entry
             const shown = drag !== null && drag.index === index ? translateEntry(live, drag.dx, drag.dy) : live
             const bounds = noteBox(shown)
@@ -9796,7 +10005,7 @@ window.__ModuleLoader__.load({
                     (event.clientX - annot.left) / annot.width,
                     (event.clientY - annot.top) / annot.height,
                   ]
-                  const point = reader.mode === 'canvas'
+                  const point = extended
                     ? raw
                     : [Math.min(1, Math.max(0, raw[0])), Math.min(1, Math.max(0, raw[1]))]
                   const original = selectedEntry.kind === 'text' ? { ...selectedEntry, ...box } : box
@@ -9811,13 +10020,53 @@ window.__ModuleLoader__.load({
           : h(NoteEditor, {
             key: `note-${noteEdit.id}`,
             draft: noteEdit,
-            // The canvas lets a note box live off the page; page modes keep it on.
-            unbounded: reader.mode === 'canvas',
+            // The shared plane lets a note box live off the page; continuous
+            // keeps it on the page.
+            unbounded: extended,
             onChange: changeNote,
             onSave: () => saveNote(noteEdit.id),
             onCancel: cancelNote,
           })
       )
+
+      // Reader-local shortcuts: the tools, the page box and the question jump.
+      // The workbench handles page/zoom/mode/close; these belong here because
+      // only the reader owns the picked tool. The workbench listener lets these
+      // actions through untouched (see READER_ACTIONS).
+      useEffect(() => {
+        const onKeyDown = event => {
+          const target = event.target
+          if (target !== null && target !== undefined && typeof target.closest === 'function'
+            && target.closest('.md-note-editor') !== null) return
+          const typing = target !== null && target !== undefined
+            && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)
+          if (typing) return
+          const action = shortcutActionOf(event)
+          if (action === '') return
+          if (action === 'jumpPage') {
+            event.preventDefault()
+            const node = pageInput.current
+            if (node !== null && node !== undefined) {
+              node.focus()
+              if (typeof node.select === 'function') node.select()
+            }
+            return
+          }
+          if (action === 'questionJump') {
+            event.preventDefault()
+            const pane = props.paneRef === null || props.paneRef === undefined ? null : props.paneRef.current
+            const trigger = pane === null ? null : pane.querySelector('.md-question-jump')
+            if (trigger !== null && typeof trigger.focus === 'function') trigger.focus()
+            return
+          }
+          const tool = TOOL_SHORTCUTS[action]
+          if (tool === undefined) return
+          event.preventDefault()
+          setAnnotTool(current => (current === tool ? '' : tool))
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [props.paneRef])
 
       // Question marks: page positions shared with the right preview and the
       // chapter's question list. `questionsNext` is the number the next default
@@ -9940,17 +10189,20 @@ window.__ModuleLoader__.load({
         onDelete: id => deleteQuestion(id),
         onRename: (id, name) => renameQuestion(id, name),
       })
-      // Page modes hide off-page marks; the canvas shows them. Tell the user
-      // there is something to see instead of silently dropping it.
-      const offPageMarks = reader.mode === 'canvas'
+      // Single page shows the whole shared plane, off-page marks included.
+      // Continuous keeps marks inside their own page, so it only says how many
+      // there are instead of letting them bleed over the next page.
+      const offPageMarks = extended
         ? 0
         : strokes.filter(entry => !entryInsidePage(entry)).length
-      // In canvas mode a stage-sized overlay captures the pointers, because ink
-      // may continue outside the page box. Questions stay page-area marks, so
-      // the question tool keeps its own page-sized layer instead.
-      const canvasCapture = reader.mode !== 'canvas' || annotTool === '' || annotTool === 'question'
-        ? null
-        : h('div', {
+      // In the single page a stage-sized layer captures the pointers while a mark
+      // tool is picked, because ink may continue outside the page box. Questions
+      // stay page-area marks and keep their own page-sized layer, the mask tool
+      // keeps its own pointer handling, and the open note editor needs the
+      // pointer for itself.
+      const captureInk = extended && inkTool && noteEdit === null
+      const canvasCapture = captureInk
+        ? h('div', {
           className: 'md-canvas-capture',
           onPointerDown: event => annotDown(event, 'main'),
           onPointerMove: annotMove,
@@ -9958,7 +10210,9 @@ window.__ModuleLoader__.load({
           onPointerLeave: annotUp,
           onPointerCancel: annotUp,
           onDoubleClick: event => editNoteAt(event, 'main'),
+          onContextMenu: openStylePanelOnLayer,
         })
+        : null
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -9996,6 +10250,7 @@ window.__ModuleLoader__.load({
             }, '‹'),
             h(KitInput, {
               className: 'md-reader-page',
+              ref: pageInput,
               type: 'number', min: 1, max: reader.count > 0 ? reader.count : undefined,
               value: pageText,
               'aria-label': format('readerPage'),
@@ -10077,16 +10332,11 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous')),
-            h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('canvas') ? 'true' : 'false',
-              title: format('readerModeCanvasHint'),
-              onClick: () => props.onMode('canvas'),
-            }, format('readerModeCanvas')),
-            modeOf('canvas')
+            extended && (inkPan.x !== 0 || inkPan.y !== 0 || annotTool === 'hand')
               ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
                 title: format('canvasCenterHint'),
-                onClick: () => setCanvasPan({ x: 0, y: 0 }),
+                onClick: () => setInkPan({ x: 0, y: 0 }),
               }, format('canvasCenter'))
               : null,
             offPageMarks > 0
@@ -10386,8 +10636,9 @@ window.__ModuleLoader__.load({
                 onVisible: notifyVisible,
                 registerSlot,
                 onError: props.onError,
-                canvasPan: reader.mode === 'canvas' ? canvasPan : null,
-                onCanvasPan: setCanvasPan,
+                pan: extended ? inkPan : null,
+                onPan: setInkPan,
+                panEnabled: extended && handActive && noteEdit === null,
                 captureLayer: canvasCapture,
                 onPageNode: node => { canvasPage.current = node },
                 children: [
@@ -10396,10 +10647,31 @@ window.__ModuleLoader__.load({
                   questionLayer,
                   h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
                 ],
-                // Continuous mode paints the same layers on the page being read.
-                overlay: masksLayer === null
-                  ? [annotLayer('main'), questionLayer]
-                  : [masksLayer, annotLayer('main'), questionLayer],
+                // Only the page whose list is loaded gets the interactive layer.
+                // Every other page shows its committed marks read-only, so a
+                // page turn never paints the previous page's ink on the new page
+                // for a frame (the flicker) and never leaves a page bare.
+                overlay: inkPage === reader.page
+                  ? (masksLayer === null
+                    ? [annotLayer('main'), questionLayer]
+                    : [masksLayer, annotLayer('main'), questionLayer])
+                  : h(StaticInk, {
+                    key: `ink-${reader.page}`,
+                    bookId: reader.bookId,
+                    code: reader.code,
+                    page: reader.page,
+                    rev: remoteAnnotRev,
+                  }),
+                // Every other page keeps a read-only copy of its own marks, so a
+                // page turn never shows a page bare or drags the previous page's
+                // ink onto it for a frame.
+                overlayFor: page => h(StaticInk, {
+                  key: `ink-${page}`,
+                  bookId: reader.bookId,
+                  code: reader.code,
+                  page,
+                  rev: remoteAnnotRev,
+                }),
                 overlayPage: visiblePage,
               }),
         diag
@@ -10424,6 +10696,7 @@ window.__ModuleLoader__.load({
           onPointerLeave: leaveRail,
         },
           h('div', { className: 'md-rail', 'data-open': railOpen ? 'true' : undefined, role: 'toolbar', 'aria-label': format('annotTools') },
+            railTool('hand', 'annotHand', 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'),
             railTool('select', 'annotSelect', 'M5 3l7 17 2-7 7-2z'),
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
@@ -10460,7 +10733,9 @@ window.__ModuleLoader__.load({
                 `${format('toolSettings')} · ${format(TOOL_LABELS[panelTool] ?? 'annotPen')}`),
               panelTool === 'text'
                 ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
-                : panelTool === 'question'
+                : panelTool === 'hand'
+                  ? h('p', { className: 'md-rail-panel-hint' }, format('handPanelHint'))
+                  : panelTool === 'question'
                   ? h('p', { className: 'md-rail-panel-hint' }, format('questionPanelHint'))
                   : panelTool === 'select'
                   ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelSelectHint'))
@@ -11359,17 +11634,16 @@ window.__ModuleLoader__.load({
 .md-reader-of { font-size: 12px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
-.md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
+.md-reader-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
-/* Canvas mode: the page rides on a pannable plane. Nothing scrolls: dragging
-   the empty stage moves the page, and the capture layer takes over when a tool
-   is picked so a stroke may continue outside the page. */
-.md-reader-stage[data-mode="canvas"] { position: relative; overflow: hidden; }
-.md-reader-canvas-plane[data-grab="true"] { cursor: grab; }
-.md-reader-canvas-plane[data-grab="true"]:active { cursor: grabbing; }
+/* The single page rides on the shared annotation plane: the hand tool (or a
+   held space) pans it, and a stage-sized capture layer takes the pointer while
+   a mark tool is picked so a stroke may continue outside the page. */
+.md-reader-stage[data-grab="true"] { cursor: grab; }
+.md-reader-stage[data-panning="true"] { cursor: grabbing; }
 .md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
-.md-annot[data-canvas="true"] { pointer-events: none; }
-.md-annot[data-canvas="true"] .md-annot-ink { overflow: visible; }
+.md-annot[data-extended="true"] .md-annot-ink { overflow: visible; }
+.md-annot-static { pointer-events: none; }
 .md-canvas-hint { font-size: 11.5px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
 .md-reader-single { display: flex; justify-content: safe center; flex: 0 0 auto; width: max-content; margin: 0 auto; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
@@ -11447,7 +11721,7 @@ window.__ModuleLoader__.load({
 .md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); }
 .md-rail-btn:disabled { opacity: .35; cursor: default; }
 .md-rail-sep { height: 1px; margin: 3px 4px; background: var(--dsw-alias-border-l2); }
-.md-selection-panel { position: absolute; z-index: 15; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: var(--dsw-elevation-prominent); }
+.md-selection-panel { position: absolute; z-index: 30; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: var(--dsw-elevation-prominent); }
 .md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); cursor: grab; user-select: none; touch-action: none; }
 .md-selection-head:active { cursor: grabbing; }
 .md-selection-close { cursor: pointer; }
@@ -12463,12 +12737,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [jump, mode, phase, scrollToPage])
 
       // Where this preview is, for the reader; its zoom never travels back. The
-      // page does not travel this way: it moves through setChapterPage. The
-      // canvas mode is a reader-only view, so this column shows one page and
-      // does not publish the reader's canvas choice back as `single`.
+      // page does not travel this way: it moves through setChapterPage. A
+      // preview always shows one page, so it never publishes a mode of its own.
       useEffect(() => {
         if (!started || bookId === '' || code === '') return
-        if (modeAdopted.current === 'canvas') return
         syncView(bookId, code, { mode }, 'side')
       }, [started, bookId, code, mode])
 
@@ -12488,11 +12760,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (state.mode === 'single' || state.mode === 'continuous') {
             modeAdopted.current = state.mode
             setMode(state.mode)
-          } else if (state.mode === 'canvas') {
-            // The reader is on the plane; this column keeps a readable page and
-            // must not write `single` back over the reader's canvas mode.
-            modeAdopted.current = 'canvas'
-            setMode('single')
           }
           if (state.variant === '' || state.variant === 'translated') setShownVariant(state.variant)
           if (typeof state.docRev === 'number') setDocRev(current => (state.docRev > current ? state.docRev : current))
@@ -13447,6 +13714,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [picker, setPicker] = useState(null)
       // The HTML print page of one produced Markdown file (built on demand).
       const [printPage, setPrintPage] = useState(null)
+      // The keyboard handler is registered before the print callback exists, so
+      // Ctrl+P reaches it through a ref instead of a stale closure.
+      const printShortcut = useRef(null)
       const [digest, setDigest] = useState(null)
       const [libs, setLibs] = useState({ items: [], activeId: '' })
       const [library, setLibrary] = useState(null)
@@ -14047,10 +14317,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       const readerMode = useCallback(mode => {
-        if (mode === 'single' || mode === 'continuous' || mode === 'canvas') writeGlobalMode(mode)
+        // Two modes only: single and continuous are two views of the same notes.
+        const next = mode === 'continuous' ? 'continuous' : 'single'
+        writeGlobalMode(next)
         setReader(previous => previous === null
           ? null
-          : { ...previous, mode, jump: (previous.jump ?? 0) + 1 })
+          : { ...previous, mode: next, jump: (previous.jump ?? 0) + 1 })
       }, [])
 
       /** A continuous page failed to paint: surface it like a document error. */
@@ -14115,7 +14387,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               return { ...previous, page: next, jump: jumpTo ? (previous.jump ?? 0) + 1 : (previous.jump ?? 0) }
             })
           }
-          if (state.mode === 'single' || state.mode === 'continuous' || state.mode === 'canvas') {
+          if (state.mode === 'single' || state.mode === 'continuous') {
             setReader(previous => (previous === null || previous.mode === state.mode
               ? previous
               : { ...previous, mode: state.mode, jump: (previous.jump ?? 0) + 1 }))
@@ -14142,22 +14414,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const typing = target !== null && target !== undefined
             && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)
           if (typing && action !== 'closeReader') return
+          // Tool and page-box keys belong to the reader, which owns their state;
+          // leaving them alone here lets that listener run unswallowed.
+          if (READER_ACTIONS.has(action)) return
           event.preventDefault()
           if (action === 'closeReader') event.stopPropagation()
           if (action === 'closeReader') closeReader()
           else if (action === 'firstPage') readerPage(1)
-          else if (action === 'prevPage') readerPrev()
+          else if (action === 'lastPage') {
+            const shown = readerRef.current
+            if (shown !== null && shown.count > 0) readerPage(shown.count)
+          } else if (action === 'prevPage') readerPrev()
           else if (action === 'nextPage') readerNext()
           else if (action === 'scrollUp' || action === 'scrollDown') {
             const node = stage === undefined ? null : stage.current
             if (node !== null) node.scrollBy({ top: action === 'scrollDown' ? 96 : -96, behavior: 'auto' })
           } else if (action === 'zoomIn') readerZoom(1.2)
           else if (action === 'zoomOut') readerZoom(1 / 1.2)
+          else if (action === 'fitWidth') readerFit()
           else if (action === 'toggleMode') readerMode(reader.mode === 'single' ? 'continuous' : 'single')
+          else if (action === 'printArtifact') {
+            const run = printShortcut.current
+            if (typeof run === 'function') run()
+          }
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-      }, [closeReader, reader, readerMode, readerNext, readerPage, readerPrev, readerZoom])
+      }, [closeReader, reader, readerFit, readerMode, readerNext, readerPage, readerPrev, readerZoom])
 
       // Opening the reader moves focus into it; closing returns it to the chapter.
       useEffect(() => {
@@ -14242,6 +14525,41 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               : { ...current, html: '', busy: false, error: errorText(reason) }))
           })
       }, [work])
+
+      /**
+       * Print the chapter's newest Markdown product. Ctrl+P in the reader has no
+       * "current product" of its own, so the most recently written one is the
+       * one the reader is looking at. Nothing printable is a notice, not a
+       * silent key.
+       * @param {string} code - chapter code.
+       * @returns {Promise<void>} resolves after the print page is requested.
+       */
+      const printLatestArtifact = useCallback(async code => {
+        if (work === null || work.bookId === null) return
+        const key = `${work.bookId}|${code}`
+        try {
+          const cached = artifactsRef.current[key]
+          let items = cached !== undefined && cached.phase === 'ready' ? cached.items : []
+          if (!(cached !== undefined && cached.phase === 'ready')) {
+            const data = await request('GET', `artifacts?book=${encodeURIComponent(work.bookId)}&code=${encodeURIComponent(code)}`)
+            items = Array.isArray(data.artifacts) ? data.artifacts : []
+          }
+          const target = items
+            .filter(item => /\.(md|markdown)$/i.test(String(item.name ?? '')))
+            .sort((left, right) => (Number(right.mtime) || 0) - (Number(left.mtime) || 0))[0]
+          if (target === undefined) {
+            showNotice(format('printNoArtifact'))
+            return
+          }
+          printArtifact(target, code)
+        } catch (error) {
+          showNotice(errorText(error))
+        }
+      }, [printArtifact, showNotice, work])
+      printShortcut.current = () => {
+        const shown = readerRef.current
+        if (shown !== null) void printLatestArtifact(shown.code)
+      }
 
       /** Right-click a hidden book: move its chapter PDFs to the recycle bin. */
       const trashBook = useCallback(async bookId => {
@@ -14588,7 +14906,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 scale: rememberedWidth !== null
                   ? rememberedWidth.scale
                   : (typeof storedReader.scale === 'number' ? storedReader.scale : null),
-                mode: readGlobalMode() ?? (storedReader.mode === 'canvas' ? 'canvas' : storedReader.mode === 'continuous' ? 'continuous' : 'single'),
+                mode: readGlobalMode() ?? (storedReader.mode === 'continuous' ? 'continuous' : 'single'),
                 jump: 0,
                 phase: 'loading',
                 error: '',

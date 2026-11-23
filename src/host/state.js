@@ -23,8 +23,8 @@ const MAX_BOOKS = 400
 /** A safe chapter code: `c` plus digits, or a plain short token. */
 const SAFE_CODE = /^[\w-]{1,16}$/
 
-/** Reading modes the reader offers. */
-const MODES = new Set(['single', 'continuous', 'canvas'])
+/** Reading modes the reader offers. `canvas` (one release) reads back as `single`. */
+const MODES = new Set(['single', 'continuous'])
 
 /**
  * Keep the reader's last position if it is usable.
