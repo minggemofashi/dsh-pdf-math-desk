@@ -9091,6 +9091,38 @@ window.__ModuleLoader__.load({
     function ContinuousView(props) {
       const total = Math.max(0, Number(props.count) || 0)
       const current = total === 0 ? 1 : Math.max(1, Math.min(total, Number(props.page) || 1))
+      // The plane extends to both sides of the column exactly like the single
+      // page. Without symmetric padding the right overhang was scrollable but
+      // the left one was clipped at scrollLeft=0, which made the page look
+      // off-centre and left no paper to move into on the left.
+      const columnRef = useRef(null)
+      const [pageWidth, setPageWidth] = useState(0)
+      useEffect(() => {
+        const column = columnRef.current
+        const canvas = column === null ? null : column.querySelector('.md-reader-canvas')
+        if (canvas === null || canvas === undefined) return undefined
+        const measure = () => setPageWidth(canvas.getBoundingClientRect().width)
+        measure()
+        if (typeof ResizeObserver !== 'function') return undefined
+        const observer = new ResizeObserver(measure)
+        observer.observe(canvas)
+        return () => observer.disconnect()
+      }, [props.doc, props.scale, props.page, props.count])
+      const margins = props.margins === null || props.margins === undefined ? null : props.margins
+      const padLeft = margins === null || pageWidth <= 0 ? 0 : Math.round(pageWidth * margins.left)
+      const padRight = margins === null || pageWidth <= 0 ? 0 : Math.round(pageWidth * margins.right)
+      useEffect(() => {
+        if (padLeft === 0 && padRight === 0) return
+        const column = columnRef.current
+        const stage = column === null ? null : column.closest('.md-reader-stage')
+        const canvas = column === null ? null : column.querySelector('.md-reader-canvas')
+        if (stage === null || canvas === null || canvas === undefined) return
+        const stageRect = stage.getBoundingClientRect()
+        const pageRect = canvas.getBoundingClientRect()
+        const centre = stage.scrollLeft + (pageRect.left - stageRect.left) + pageRect.width / 2
+        const wanted = centre - stage.clientWidth / 2
+        stage.scrollLeft = Math.max(0, Math.min(stage.scrollWidth - stage.clientWidth, wanted))
+      }, [padLeft, padRight])
       // Only the pages around the one being read are mounted. A 300-page chapter
       // used to create 300 components (and 300 observers) up front; the rest stay
       // cheap ghosts until the reader approaches them.
@@ -9135,7 +9167,11 @@ window.__ModuleLoader__.load({
         }))
       }
       if (bottomPad > 0) pages.push(h('div', { key: 'pad-bottom', className: 'md-reader-plane-pad', style: { height: `${bottomPad}px` } }))
-      return h('div', { className: 'md-reader-continuous' }, pages)
+      return h('div', {
+        className: 'md-reader-continuous',
+        ref: columnRef,
+        style: padLeft === 0 && padRight === 0 ? undefined : { paddingLeft: `${padLeft}px`, paddingRight: `${padRight}px` },
+      }, pages)
     }
 
     /**
@@ -9648,6 +9684,7 @@ window.__ModuleLoader__.load({
           overlay: props.overlay,
           overlayFor: props.overlayFor,
           overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
+          margins: props.margins,
           // Blank plane at the two ends of the column, sized like a page.
           topPad: padTop,
           bottomPad: padBottom,
@@ -11998,7 +12035,17 @@ window.__ModuleLoader__.load({
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
               title: format('canvasCenterHint'),
-              onClick: () => setInkPan({ x: 0, y: 0 }),
+              onClick: () => {
+                setInkPan({ x: 0, y: 0 })
+                if (reader.mode !== 'continuous') return
+                const stage = props.stageRef === null || props.stageRef === undefined ? null : props.stageRef.current
+                const canvas = stage === null ? null : stage.querySelector('.md-reader-canvas')
+                if (stage === null || canvas === null) return
+                const stageRect = stage.getBoundingClientRect()
+                const pageRect = canvas.getBoundingClientRect()
+                const wanted = stage.scrollLeft + (pageRect.left - stageRect.left) + pageRect.width / 2 - stage.clientWidth / 2
+                stage.scrollLeft = Math.max(0, Math.min(stage.scrollWidth - stage.clientWidth, wanted))
+              },
             }, format('canvasCenter')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
