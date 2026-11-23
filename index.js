@@ -14,6 +14,7 @@
  *
  * @module dsh-pdf-workbench
  */
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveConfig } from './src/host/config.js'
@@ -187,6 +188,47 @@ export function apply(ctx, rawConfig) {
   })
 
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: PREFIX, handler }), 'pdfdesk: routes')
+
+  // Temporary: capture the session API shapes stage 7.6 needs into the library's
+  // `.pdfdesk/session-probe.json` once the app has settled, so the implementation
+  // is written against the running version instead of guesses. Read-only.
+  const probeTimer = setTimeout(() => {
+    try {
+      const agents = ctx.get('agents')
+      const sessions = ctx.get('sessions')
+      const workspace = ctx.get('workspaceRegistry')
+      if (agents === undefined || sessions === undefined) return
+      const live = sessions.list().slice(0, 3)
+      const first = live[0]
+      let boundary = null
+      if (first !== undefined) {
+        try {
+          boundary = agents.turnBoundaryOf(first)
+        } catch (error) {
+          boundary = { error: String(error && error.message ? error.message : error) }
+        }
+      }
+      const source = first === undefined ? [] : (typeof first.events === 'function' ? first.events() : first.events)
+      const events = Array.isArray(source) ? source : []
+      const lastUser = [...events].reverse().find(event => event !== null && event !== undefined && event.type === 'user/message')
+      const data = lastUser === undefined ? null : (lastUser.data === undefined ? lastUser : lastUser.data)
+      const output = {
+        sessionIds: live.map(session => String(session.id)),
+        boundary,
+        userKeys: data === null ? null : Object.keys(data),
+        contentTypes: data !== null && Array.isArray(data.content) ? data.content.map(block => (block === null ? null : block.type)) : null,
+        workspaceArchive: workspace === undefined ? null : typeof workspace.archiveSession === 'function',
+        agentMethods: agents === undefined ? [] : Object.getOwnPropertyNames(Object.getPrototypeOf(agents)).filter(name => name !== 'constructor'),
+      }
+      void mkdir(join(config.libraryDir, '.pdfdesk'), { recursive: true })
+        .then(() => writeFile(join(config.libraryDir, '.pdfdesk', 'session-probe.json'), `${JSON.stringify(output, null, 2)}\n`, 'utf8'))
+        .catch(() => {})
+    } catch {
+      // probe only
+    }
+  }, 12000)
+  if (typeof probeTimer.unref === 'function') probeTimer.unref()
+
 
   // The first turn names a created session; every finished turn records how full
   // its context is, so "New" can decide between continuing and starting over.
