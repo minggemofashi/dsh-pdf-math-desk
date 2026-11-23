@@ -26,6 +26,7 @@
  */
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
@@ -36,7 +37,7 @@ import { readQuestions, writeQuestions } from './questions.js'
 import { prepareChapterText } from './chapter-text.js'
 import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-session.js'
 import { clearSharedPrefixCache } from './chapter-sessions.js'
-import { addAttachment, attachmentsDir, listAttachments, removeAttachment, safeAttachmentName } from './attachments.js'
+import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, removeAttachment, safeAttachmentName } from './attachments.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -840,14 +841,32 @@ async function activeLibrary() {
         }
         try {
           const library = await activeLibrary()
-          const item = await addAttachment({
-            libraryDir: library.libraryDir,
-            book: match.book.id,
-            code: match.chapter.code,
-            sourcePath: typeof record.path === 'string' ? record.path : '',
-            name: typeof record.name === 'string' ? record.name : undefined,
-          })
-          sendJson(response, 200, { ok: true, item })
+          let sourcePath = typeof record.path === 'string' ? record.path : ''
+          let cleanup = null
+          if (sourcePath === '' && typeof record.data === 'string' && record.data !== '') {
+            // Browser upload: decode into a temp file, then reuse the copy-in
+            // path so naming, limits and the manifest behave identically.
+            const bytes = Buffer.from(record.data, 'base64')
+            if (bytes.length > MAX_ATTACHMENT_BYTES) {
+              fail(response, 413, 'too-large', '附件超过 50 MB')
+              return
+            }
+            cleanup = join(tmpdir(), `pdfdesk-upload-${randomUUID()}${extname(String(record.name ?? '')).toLowerCase()}`)
+            await writeFile(cleanup, bytes)
+            sourcePath = cleanup
+          }
+          try {
+            const item = await addAttachment({
+              libraryDir: library.libraryDir,
+              book: match.book.id,
+              code: match.chapter.code,
+              sourcePath,
+              name: typeof record.name === 'string' ? record.name : undefined,
+            })
+            sendJson(response, 200, { ok: true, item })
+          } finally {
+            if (cleanup !== null) await unlink(cleanup).catch(() => {})
+          }
         } catch (error) {
           const reason = error !== null && error !== undefined ? error.code : ''
           fail(

@@ -1033,6 +1033,15 @@ window.__ModuleLoader__.load({
       sharedPrefixClearAction: '清除',
       sharedPrefixCleared: '已清除 {n} 个章节的共享前缀',
       sharedPrefixFailed: '清除共享前缀失败',
+      attachLabel: '附件',
+      attachAdd: '添加',
+      attachEmpty: '暂无附件',
+      attachHint: '支持 PDF 与图片，单个不超过 50 MB；会复制到本章的附件目录',
+      attachDelete: '删除附件',
+      attachDeleteConfirm: '删除这个附件？',
+      attachUploaded: '已添加附件',
+      attachTooLarge: '附件超过 50 MB',
+      attachFailed: '附件操作失败',
       settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.pdfdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
       lastPageLabel: '上次阅读',
       lastPageAt: '读到第 {n} 页',
@@ -1638,6 +1647,15 @@ window.__ModuleLoader__.load({
       sharedPrefixClearAction: 'Clear',
       sharedPrefixCleared: 'Cleared the shared prefix of {n} chapters',
       sharedPrefixFailed: 'Could not clear the shared prefix',
+      attachLabel: 'Attachments',
+      attachAdd: 'Add',
+      attachEmpty: 'No attachments',
+      attachHint: 'PDFs and images up to 50 MB; copied into this chapter’s attachment folder',
+      attachDelete: 'Delete attachment',
+      attachDeleteConfirm: 'Delete this attachment?',
+      attachUploaded: 'Attachment added',
+      attachTooLarge: 'Attachment is over 50 MB',
+      attachFailed: 'Attachment action failed',
       settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.pdfdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
       lastPageLabel: 'Last read',
       lastPageAt: 'Page {n}',
@@ -11649,6 +11667,62 @@ window.__ModuleLoader__.load({
       const [translatedPdf, setTranslatedPdf] = useState('')
       // Where the reader last stopped in this chapter; no record means no hint.
       const lastPage = readStoredPage(props.bookId, chapter.code)
+      // Attachments: listed once per open, then refreshed after an upload or
+      // delete. The file is read in the browser and copied by the Host.
+      const [attachments, setAttachments] = useState(null)
+      const [attachBusy, setAttachBusy] = useState(false)
+      const attachInput = useRef(null)
+      const reloadAttachments = () => setAttachments(null)
+      useEffect(() => {
+        if (!props.open || attachments !== null) return undefined
+        let cancelled = false
+        request('GET', `attachments?book=${encodeURIComponent(props.bookId)}&code=${encodeURIComponent(chapter.code)}`)
+          .then(payload => {
+            if (!cancelled) setAttachments(Array.isArray(payload.items) ? payload.items : [])
+          })
+          .catch(() => {
+            if (!cancelled) setAttachments([])
+          })
+        return () => { cancelled = true }
+      }, [props.open, attachments, props.bookId, chapter.code])
+      const uploadAttachment = async event => {
+        const file = event.target.files !== undefined && event.target.files.length > 0 ? event.target.files[0] : null
+        event.target.value = ''
+        if (file === null || file === undefined) return
+        if (file.size > 50 * 1024 * 1024) {
+          window.alert(format('attachTooLarge'))
+          return
+        }
+        setAttachBusy(true)
+        try {
+          const data = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = String(reader.result ?? '')
+              resolve(result.slice(result.indexOf(',') + 1))
+            }
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(file)
+          })
+          await request('POST', 'attachments', { book: props.bookId, code: chapter.code, name: file.name, data })
+          reloadAttachments()
+        } catch (error) {
+          window.alert(`${format('attachFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
+        } finally {
+          setAttachBusy(false)
+        }
+      }
+      const deleteAttachment = async name => {
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('attachDeleteConfirm'))) return
+        try {
+          await request('POST', 'attachments/remove', { book: props.bookId, code: chapter.code, name })
+          reloadAttachments()
+        } catch (error) {
+          window.alert(`${format('attachFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
+        }
+      }
+      const attachmentUrl = name => `/pdfdesk/attachments/file?book=${encodeURIComponent(props.bookId)}&code=${encodeURIComponent(chapter.code)}&name=${encodeURIComponent(name)}`
       useEffect(() => {
         if (!props.open || chapter.file === '') {
           setTranslatedPdf('')
@@ -11733,6 +11807,40 @@ window.__ModuleLoader__.load({
               },
             }, format('translatedDelete'))
           ),
+          h('div', { className: 'md-detail-line md-attach-line' },
+            h('span', { className: 'md-detail-key' }, format('attachLabel')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: attachBusy,
+              title: format('attachHint'),
+              onClick: () => { if (attachInput.current !== null) attachInput.current.click() },
+            }, format('attachAdd')),
+            attachments === null
+              ? null
+              : attachments.length === 0
+                ? h('span', { className: 'md-shelf-sub' }, format('attachEmpty'))
+                : attachments.map(item => h('span', { key: item.name, className: 'md-attach-item' },
+                  h('a', {
+                    className: 'md-attach-link',
+                    href: attachmentUrl(item.name),
+                    target: '_blank',
+                    rel: 'noreferrer',
+                    title: item.name,
+                  }, item.name),
+                  h('button', {
+                    type: 'button', className: 'md-attach-del',
+                    title: format('attachDelete'),
+                    onClick: () => deleteAttachment(item.name),
+                  }, '×')
+                ))
+          ),
+          h('input', {
+            ref: attachInput,
+            type: 'file',
+            accept: '.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.avif',
+            style: { display: 'none' },
+            onChange: uploadAttachment,
+          }),
           lastPage === null
             ? null
             : h('div', { className: 'md-detail-line' },
@@ -12251,6 +12359,11 @@ window.__ModuleLoader__.load({
 .md-tips { margin-top: 22px; }
 .md-tips-line { font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
 .md-detail-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.md-attach-item { display: inline-flex; align-items: center; gap: 4px; max-width: 46%; }
+.md-attach-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-brand-primary, #2f6df6); text-decoration: none; }
+.md-attach-link:hover { text-decoration: underline; }
+.md-attach-del { border: none; background: transparent; color: var(--dsw-alias-label-tertiary, #888); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; }
+.md-attach-del:hover { color: var(--dsw-alias-state-warning-primary, #d9534f); }
 .md-detail-open { margin-left: auto; }
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
 .md-detail-value { color: var(--dsw-alias-label-primary); word-break: break-all; }
