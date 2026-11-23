@@ -4113,14 +4113,6 @@ window.__ModuleLoader__.load({
             }),
             h('span', { className: 'md-note-size-value' }, Number(props.roughness ?? 1).toFixed(1))
           ),
-          h('div', { className: 'md-settings-row' },
-            h('span', { title: format('cacheClearAllHint') }, format('cacheClearAll')),
-            h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small',
-              title: format('cacheClearAllHint'),
-              onClick: props.onClearCache,
-            }, format('cacheClearAllAction'))
-          )
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('settingsNotesTitle')),
@@ -7555,69 +7547,6 @@ window.__ModuleLoader__.load({
      */
     const WHOLE_CHAPTER_LINE = '阅读方式：整章思考（整章一起理解，不限定某一页；需要定位时我会描述具体段落）。'
 
-    /** Characters of a chapter brief that ride in a prompt; the Host serves more. */
-    const CACHE_PROMPT_CHARS = 12000
-
-    /**
-     * The instruction that makes one session build the chapter brief.
-     * @param {object} cache - Host cache payload.
-     * @param {string} [pdfPath] - the chapter's PDF.
-     * @param {string} status - the cache state being explained.
-     * @returns {string} the builder block.
-     */
-    function cacheBuilderBlock(cache, pdfPath, status) {
-      const briefPath = typeof cache.briefPath === 'string' ? cache.briefPath : ''
-      const manifestPath = typeof cache.manifestPath === 'string' ? cache.manifestPath : ''
-      const pdf = typeof pdfPath === 'string' && pdfPath !== '' ? `${pdfPath}\n` : ''
-      return [
-        `〔章节缓存·首次生成〕本章还没有可用的 brief（状态：${status}）。请先通读本章 PDF：`,
-        pdf + `然后把 brief 写到：${briefPath}`,
-        'brief 只写：章节结构（小节/定理顺序）、关键定义与定理的陈述（公式保留 LaTeX）、页码索引；不要复制原文，控制在 6000 字以内。',
-        `写完把 ${manifestPath} 里的 "status" 改成 "ready"（其他字段不要动）。`,
-        '完成这些后再回答我下面的问题。',
-      ].join('\n')
-    }
-
-    /**
-     * The prompt block for one chapter's brief cache.
-     *
-     * A ready brief is handed to the session so it does not read the chapter
-     * again. A missing (or stale) cache turns the session into the one that
-     * builds it: the block names the exact files, because the model writes them
-     * with its own tools. A pending cache owned by another conversation is not
-     * duplicated; one owned by this session (or with no owner) builds it. Any
-     * other state adds nothing.
-     *
-     * @param {object | null} cache - Host cache payload.
-     * @param {string} [pdfPath] - the chapter's PDF, for the builder block.
-     * @param {string} [sessionId] - the session the block is prepared for.
-     * @returns {string} the block, or '' when there is nothing useful to say.
-     */
-    function cachePromptBlock(cache, pdfPath, sessionId) {
-      if (cache === null || cache === undefined || typeof cache !== 'object') return ''
-      const status = typeof cache.status === 'string' ? cache.status : ''
-      const briefPath = typeof cache.briefPath === 'string' ? cache.briefPath : ''
-      if (status === 'ready') {
-        const text = typeof cache.brief === 'string' ? cache.brief.trim() : ''
-        if (text === '') return ''
-        const cut = text.length > CACHE_PROMPT_CHARS
-        const shown = cut ? `${text.slice(0, CACHE_PROMPT_CHARS)}\n…（brief 超出 ${CACHE_PROMPT_CHARS} 字，已截断）` : text
-        return [
-          `〔章节缓存·已就绪〕本章已有 brief（${briefPath}，${cache.chars ?? text.length} 字），直接使用，不要再通读整章 PDF：`,
-          shown,
-          '需要核对细节或页码时再查 PDF；回答仍以本章整体为准。',
-        ].join('\n')
-      }
-      if (status === 'missing' || status === 'stale' || status === 'failed') {
-        return cacheBuilderBlock(cache, pdfPath, status)
-      }
-      if (status === 'pending') {
-        const owner = typeof cache.sessionId === 'string' ? cache.sessionId : ''
-        if (owner === '' || owner === sessionId) return cacheBuilderBlock(cache, pdfPath, status)
-        return '〔章节缓存〕本章 brief 正在由另一个会话生成：先按 PDF 回答，不要重复写 brief。'
-      }
-      return ''
-    }
 
     /**
      * The context line every new conversation starts with: which book, chapter
@@ -11724,44 +11653,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /**
-     * One chapter's brief cache: its state, the brief itself when asked for, and
-     * the one action that rebuilds it. The Host owns the files; this only asks.
-     * @param {{ cache: object | null, open: boolean, onToggle: Function, onRebuild: Function }} props - state and handlers.
-     * @returns {import('react').ReactElement | null} the row, or null before the state is known.
-     */
-    function ChapterCacheLine(props) {
-      const cache = props.cache
-      if (cache === null || cache === undefined) return null
-      const status = typeof cache.status === 'string' ? cache.status : 'missing'
-      const labelKey = status === 'ready' ? 'cacheStatusReady'
-        : status === 'pending' ? 'cacheStatusPending'
-          : status === 'stale' ? 'cacheStatusStale'
-            : status === 'failed' ? 'cacheStatusFailed'
-              : 'cacheStatusMissing'
-      const hasBrief = typeof cache.brief === 'string' && cache.brief !== ''
-      const chars = Number(cache.chars) || 0
-      return h(React.Fragment, null,
-        h('div', { className: 'md-detail-line md-cache-line' },
-          h('span', { className: 'md-detail-key' }, format('cacheLabel')),
-          h('span', { className: 'md-detail-value md-cache-state', 'data-status': status }, format(labelKey)),
-          chars > 0 ? h('span', { className: 'md-shelf-sub' }, format('cacheChars', { n: chars })) : null,
-          hasBrief
-            ? h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small',
-              onClick: props.onToggle,
-            }, props.open ? format('cacheHide') : format('cacheView'))
-            : null,
-          status === 'pending'
-            ? null
-            : h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-              onClick: props.onRebuild,
-            }, status === 'missing' || status === 'failed' ? format('cacheGenerate') : format('cacheRebuild'))
-        ),
-        props.open && hasBrief ? h('pre', { className: 'md-cache-brief' }, cache.brief) : null
-      )
-    }
 
     /**
      * One chapter row plus its expanded detail.
@@ -11772,16 +11663,8 @@ window.__ModuleLoader__.load({
       const chapter = props.chapter
       const [sessionsOpen, setSessionsOpen] = useState(false)
       const [translatedPdf, setTranslatedPdf] = useState('')
-      // The brief cache is read the first time the detail opens; the page keeps
-      // the answer, so a reopen (or a rebuild) shows the new state.
-      const [cacheOpen, setCacheOpen] = useState(false)
-      const cache = props.cache === undefined ? null : props.cache
       // Where the reader last stopped in this chapter; no record means no hint.
       const lastPage = readStoredPage(props.bookId, chapter.code)
-      useEffect(() => {
-        if (!props.open || cache !== null) return
-        props.onLoadCache(props.bookId, chapter.code)
-      }, [props.open, cache, props.bookId, chapter.code, props.onLoadCache])
       useEffect(() => {
         if (!props.open || chapter.file === '') {
           setTranslatedPdf('')
@@ -11866,12 +11749,6 @@ window.__ModuleLoader__.load({
               },
             }, format('translatedDelete'))
           ),
-          h(ChapterCacheLine, {
-            cache,
-            open: cacheOpen,
-            onToggle: () => setCacheOpen(value => !value),
-            onRebuild: () => props.onRebuildCache(props.bookId, chapter.code),
-          }),
           lastPage === null
             ? null
             : h('div', { className: 'md-detail-line' },
@@ -11998,9 +11875,6 @@ window.__ModuleLoader__.load({
                 allowNonPdfDelete: props.allowNonPdfDelete,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
-                cache: props.caches === undefined ? undefined : props.caches[key],
-                onLoadCache: props.onLoadCache,
-                onRebuildCache: props.onRebuildCache,
                 onOpenQuestion: props.onOpenQuestion,
                 creatingMode: props.creatingKey === key ? props.creatingMode : '',
                 createError: error === null ? '' : error.message,
@@ -14885,92 +14759,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [])
 
-      // The chapter brief cache, per chapter: read when a row opens and after a
-      // session is created, so the row can say Ready / Pending / Stale.
-      const [chapterCaches, setChapterCaches] = useState({})
-      const loadChapterCache = useCallback(async (bookId, code) => {
-        const key = `${bookId}|${code}`
-        try {
-          const payload = await request('GET', `chapter-cache?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
-          const cache = payload !== null && payload !== undefined && payload.cache !== undefined ? payload.cache : null
-          setChapterCaches(current => ({ ...current, [key]: cache }))
-        } catch {
-          // A cache is an optimization: a failed read leaves the row silent.
-        }
-      }, [])
-
-      /**
-       * Ask this chapter to build its brief again: drop whatever is there, then
-       * record a fresh request, so the next conversation writes it.
-       * @param {string} bookId - catalog book id.
-       * @param {string} code - chapter code.
-       * @returns {void}
-       */
-      const rebuildChapterCache = useCallback((bookId, code) => {
-        void (async () => {
-          try {
-            await request('POST', 'chapter-cache', { action: 'clear', book: bookId, code })
-            await request('POST', 'chapter-cache', { action: 'prepare', book: bookId, code })
-            await loadChapterCache(bookId, code)
-            showNotice(format('cacheRebuilt'))
-          } catch (reason) {
-            showNotice(`${format('cacheFailed')} (${errorText(reason)})`)
-          }
-        })()
-      }, [loadChapterCache, showNotice])
-
-      /**
-       * Forget every chapter's brief in this library. PDFs, produced files and
-       * annotations live elsewhere and are untouched.
-       * @returns {void}
-       */
-      const clearChapterCaches = useCallback(() => {
-        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-          && !window.confirm(format('cacheClearAllConfirm'))) return
-        void (async () => {
-          try {
-            const result = await request('POST', 'chapter-cache', { action: 'clear-all' })
-            setChapterCaches({})
-            const removed = Number(result === null || result === undefined ? 0 : result.removed)
-            showNotice(format('cacheAllCleared', { n: Number.isFinite(removed) ? removed : 0 }))
-          } catch (reason) {
-            showNotice(`${format('cacheFailed')} (${errorText(reason)})`)
-          }
-        })()
-      }, [showNotice])
-
-      /**
-       * The cache block one new conversation should carry: reuse a ready brief,
-       * or make this session the one that builds it. A library that cannot be
-       * written leaves the session exactly as it was and only loses the cache.
-       * @param {string} bookId - catalog book id.
-       * @param {string} code - chapter code.
-       * @param {string} sessionId - the session that would write the brief.
-       * @param {string} [pdfPath] - the chapter's PDF.
-       * @returns {Promise<string>} the prompt block, or ''.
-       */
-      const chapterCacheBlock = useCallback(async (bookId, code, sessionId, pdfPath) => {
-        const key = `${bookId}|${code}`
-        try {
-          const payload = await request('GET', `chapter-cache?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
-          let cache = payload !== null && payload !== undefined && payload.cache !== undefined ? payload.cache : null
-          if (cache === null) return ''
-          if (cache.status !== 'ready') {
-            try {
-              const prepared = await request('POST', 'chapter-cache', { action: 'prepare', book: bookId, code, sessionId })
-              if (prepared !== null && prepared !== undefined && prepared.cache !== undefined && prepared.cache !== null) cache = prepared.cache
-            } catch {
-              // Read-only library: keep the session working with the PDF alone.
-              return ''
-            }
-          }
-          setChapterCaches(current => ({ ...current, [key]: cache }))
-          return cachePromptBlock(cache, pdfPath, sessionId)
-        } catch {
-          return ''
-        }
-      }, [])
-
       const closePreview = useCallback(() => {
         const current = previewRef.current
         previewToken.current += 1
@@ -16356,7 +16144,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (prefill.reference !== null) {
           try { prefill.reference.release() } catch { /* already released */ }
         }
-      }, [beginPrefill, book, catalog, chapterCacheBlock, seedFor])
+      }, [beginPrefill, book, catalog, seedFor])
 
       /**
        * Whether the right column would open our own chapter tab. An address no
@@ -16614,7 +16402,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setCreatingKey('')
           setCreatingMode('')
         }
-      }, [book, catalog, chapterCacheBlock, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
+      }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
       createSessionRef.current = createSession
 
       /** The reader's three New buttons: create the session, leave for it. */
@@ -17528,9 +17316,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           artifacts,
           libraryDir: catalog.libraryDir,
           counts: counts[book.id],
-          caches: chapterCaches,
-          onLoadCache: loadChapterCache,
-          onRebuildCache: rebuildChapterCache,
           onOpenQuestion: openQuestionRow,
           creatingKey,
           creatingMode,
@@ -17851,7 +17636,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
               return next
             }),
-            onClearCache: clearChapterCaches,
             questionInject,
             onQuestionInject: () => setQuestionInject(value => {
               const next = !value
