@@ -27,6 +27,7 @@
  * @module dsh-pdf-workbench/routes
  */
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
@@ -36,6 +37,7 @@ import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from 
 import { clearAllChapterCache, clearChapterCache, prepareChapterCache, readChapterCache } from './chapter-cache.js'
 import { readQuestions, writeQuestions } from './questions.js'
 import { prepareChapterText } from './chapter-text.js'
+import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-session.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -302,7 +304,7 @@ async function activeLibrary() {
           return
         }
         try {
-          const probe = typeof options.sessionProbe === 'function' ? options.sessionProbe() : null
+          const probe = typeof options.sessionServices === 'function' ? options.sessionServices() : null
           if (probe === null || probe === undefined || probe.sessions === undefined || probe.agents === undefined) {
             fail(response, 503, 'probe-unavailable', '会话服务尚未就绪')
             return
@@ -636,6 +638,85 @@ async function activeLibrary() {
             noText ? 'no-text' : 'text-failed',
             String(error && error.message ? error.message : error)
           )
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/base-session`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const book = typeof body.book === 'string' ? body.book : ''
+          const code = typeof body.code === 'string' ? body.code.toLowerCase() : ''
+          const mode = typeof body.mode === 'string' ? body.mode : ''
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, book, code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const info = await stat(source)
+          const text = await prepareChapterText({
+            script: join(config.toolsDir, 'pdf_text.py'),
+            source,
+            libraryDir: library.libraryDir,
+            book,
+            code,
+            run: (script, args) => toolOutput(script, args),
+          })
+          const services = typeof options.sessionServices === 'function' ? options.sessionServices() : null
+          if (services === null || services === undefined || services.agents === undefined || services.sessions === undefined) {
+            fail(response, 503, 'session-unavailable', '会话服务尚未就绪')
+            return
+          }
+          const base = await ensureBaseSession({
+            agents: services.agents,
+            workspace: services.workspace,
+            libraryDir: library.libraryDir,
+            book,
+            code,
+            cwd: library.libraryDir,
+            pdf: { size: info.size, mtimeMs: Math.round(info.mtimeMs) },
+            textPath: text.path,
+            createMessage: value => ({
+              role: 'user',
+              id: `pdfdesk-${randomUUID()}`,
+              content: [{ type: 'text', text: value }],
+              source: { kind: 'user' },
+            }),
+            newId: () => `session-${randomUUID()}`,
+            atSeqOf: boundarySeq,
+          })
+          let branch = null
+          if (mode !== '') {
+            branch = await ensureBranchSession({
+              sessions: services.sessions,
+              libraryDir: library.libraryDir,
+              book,
+              code,
+              manifest: base.manifest,
+              mode,
+            })
+          }
+          sendJson(response, 200, {
+            ok: true,
+            base: { id: base.sessionId, created: base.created },
+            branch: branch === null ? null : { id: branch.sessionId, created: branch.created },
+          })
+        } catch (error) {
+          const reason = error !== null && error !== undefined ? error.code : ''
+          if (reason === 'no-text') {
+            fail(response, 422, 'no-text', '这一章没有可提取的文本（可能是扫描件）')
+          } else if (reason === 'bad-mode' || reason === 'no-base') {
+            fail(response, 400, String(reason), String(error && error.message ? error.message : error))
+          } else if (reason === 'no-boundary') {
+            fail(response, 409, 'no-boundary', '基础会话没有完成一个完整回合')
+          } else {
+            fail(response, 500, 'base-session-failed', String(error && error.message ? error.message : error))
+          }
         }
         return
       }

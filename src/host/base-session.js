@@ -26,6 +26,22 @@ import {
 export const BASE_READY_PROMPT = '通读本章全文，只回复 READY，不要回答问题，不要输出摘要。'
 
 /**
+ * The seq a branch may fork at: the end boundary of the last completed turn.
+ * The running version returns `{ openTurnStartSeq, lastStepStartSeq,
+ * lastStepBoundary: { kind: 'end', seq }, lastTurn }`; an open turn has no end
+ * boundary and must not be forked mid-turn.
+ * @param {object} boundary - the value of `ctx.agents.turnBoundaryOf(session)`.
+ * @returns {number} the inclusive event seq, or 0 when the turn is still open.
+ */
+export function boundarySeq(boundary) {
+  if (boundary === null || typeof boundary !== 'object') return 0
+  if (boundary.openTurnStartSeq !== null && boundary.openTurnStartSeq !== undefined) return 0
+  const last = boundary.lastStepBoundary
+  if (last === null || last === undefined || last.kind !== 'end') return 0
+  return Number.isFinite(last.seq) && last.seq > 0 ? last.seq : 0
+}
+
+/**
  * The prompt for the hidden base session: read the extracted file, nothing else.
  * @param {{ textPath: string, bookTitle?: string, chapterTitle?: string }} input - the chapter and its text file.
  * @returns {string} the prompt.
