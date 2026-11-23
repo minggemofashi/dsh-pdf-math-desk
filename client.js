@@ -7880,7 +7880,6 @@ window.__ModuleLoader__.load({
         setDraftBoth(null)
         if (current.points.length > 1) commit([...strokesRef.current, current])
       }
-      const notes = strokes.filter(entry => entry.kind === 'text')
       return h('div', {
         className: 'md-annot',
         'data-tool': props.tool,
@@ -7889,85 +7888,63 @@ window.__ModuleLoader__.load({
         onPointerUp: up,
         onPointerLeave: up,
       },
-        h('svg', {
-          className: 'md-annot-ink',
-          viewBox: '0 0 1 1',
-          preserveAspectRatio: 'none',
-          'aria-hidden': true,
-        },
-          strokes.filter(entry => entry.kind !== 'text').map((entry, index) => h('polyline', {
-            key: `stroke-${index}`,
-            points: (entry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
-            fill: 'none',
-            stroke: entry.color ?? '#e0554a',
-            strokeWidth: entry.width ?? 2,
-            vectorEffect: 'non-scaling-stroke',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          })),
-          draft === null ? null : h('polyline', {
-            points: draft.points.map(point => `${point[0]},${point[1]}`).join(' '),
-            fill: 'none',
-            stroke: draft.color ?? '#e0554a',
-            strokeWidth: draft.width ?? 2,
-            vectorEffect: 'non-scaling-stroke',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          }),
-          textDraft === null ? null : h('rect', {
-            x: Math.min(textDraft.x0, textDraft.x1),
-            y: Math.min(textDraft.y0, textDraft.y1),
-            width: Math.abs(textDraft.x1 - textDraft.x0),
-            height: Math.abs(textDraft.y1 - textDraft.y0),
-            fill: 'none',
-            stroke: '#2f6df6',
-            strokeWidth: 1.5,
-            strokeDasharray: '5 4',
-            vectorEffect: 'non-scaling-stroke',
-          })
-        ),
-        notes.map((entry, index) => {
-          const bounds = noteBox(entry)
-          const hasBox = Number.isFinite(entry.w) && entry.w > 0 && Number.isFinite(entry.h) && entry.h > 0
-          return h('div', {
-            key: `note-${index}`,
-            className: 'md-annot-text',
-            title: props.tool === '' ? format('annotTextEditHint') : undefined,
-            style: {
-              left: `${bounds.x * 100}%`,
-              top: `${bounds.y * 100}%`,
-              ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
-              color: entry.color ?? '#e0554a',
-              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-              fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-              fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
-              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : undefined,
-            },
-            onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
-            onDoubleClick: props.tool === ''
-              ? event => {
-                event.preventDefault()
-                event.stopPropagation()
-                noteSeq.current += 1
-                noteText.current = String(entry.text ?? '')
-                setNoteBoth({
-                  id: noteSeq.current,
-                  index: strokesRef.current.indexOf(entry),
-                  x: bounds.x,
-                  y: bounds.y,
-                  w: bounds.w,
-                  h: bounds.h,
-                  text: noteText.current,
-                  color: entry.color ?? props.color,
-                  fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
-                  fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
-                  fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-                  fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
-                })
-              }
-              : undefined,
-          }, entry.text)
+        h(InkMarks, {
+          entries: strokes,
+          noteTitle: props.tool === '' ? format('annotTextEditHint') : undefined,
+          onNotePointerDown: props.tool === ''
+            ? (index, event) => event.stopPropagation()
+            : undefined,
+          onNoteDoubleClick: props.tool === ''
+            ? (index, event, entry) => {
+              event.preventDefault()
+              event.stopPropagation()
+              noteSeq.current += 1
+              noteText.current = String(entry.text ?? '')
+              const bounds = noteBox(entry)
+              setNoteBoth({
+                id: noteSeq.current,
+                index,
+                x: entry.x,
+                y: entry.y,
+                w: bounds.w,
+                h: bounds.h,
+                text: noteText.current,
+                color: entry.color ?? props.color,
+                fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+                fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+                fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
+              })
+            }
+            : undefined,
+          drafts: [
+            draft === null
+              ? null
+              : h('polyline', {
+                key: 'draft',
+                points: draft.points.map(point => `${point[0]},${point[1]}`).join(' '),
+                fill: 'none',
+                stroke: draft.color ?? '#e0554a',
+                strokeWidth: draft.width ?? 2,
+                vectorEffect: 'non-scaling-stroke',
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+              }),
+            textDraft === null
+              ? null
+              : h('rect', {
+                key: 'text-draft',
+                x: Math.min(textDraft.x0, textDraft.x1),
+                y: Math.min(textDraft.y0, textDraft.y1),
+                width: Math.abs(textDraft.x1 - textDraft.x0),
+                height: Math.abs(textDraft.y1 - textDraft.y0),
+                fill: 'none',
+                stroke: '#2f6df6',
+                strokeWidth: 1.5,
+                strokeDasharray: '5 4',
+                vectorEffect: 'non-scaling-stroke',
+              }),
+          ],
         }),
         note === null ? null : h(NoteEditor, {
           key: `note-${note.id}`,
