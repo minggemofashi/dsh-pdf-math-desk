@@ -5642,14 +5642,24 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The line that tells every new conversation to think about the whole
+     * chapter. The reader's page is not injected, so this replaces the old
+     * "reading position: page N" suffix and says the page is not what matters.
+     */
+    const WHOLE_CHAPTER_LINE = '阅读方式：整章思考（整章一起理解，不限定某一页；需要定位时我会描述具体段落）。'
+
+    /**
      * The context line every new conversation starts with: which book, chapter
-     * and PDF it belongs to, and where the reader is. With `paths`, it also names
-     * the library, the chapter's folder and the exact PDF, so the model never
-     * has to search for the book. With `persona`, a Q&A session starts with the
-     * local Socratic instruction in the same prompt.
+     * and PDF it belongs to. The reader's page is deliberately **not** injected:
+     * a session covers the whole chapter, and a page number would make the model
+     * answer about one screenful and go stale as soon as the reader turns a page.
+     * The page stays a UI-only value used for jumping. With `paths`, the block
+     * also names the library, the chapter's folder and the exact PDF, so the model
+     * never has to search for the book. With `persona`, a Q&A session starts with
+     * the local Socratic instruction in the same prompt.
      * @param {{ title: string }} bookRow - catalog book row.
      * @param {{ code: string, title: string, file: string }} chapter - catalog chapter row.
-     * @param {{ pdf: string, page: number, mode: string } | null} position - the open reader when it is this chapter.
+     * @param {{ pdf: string, page: number, mode: string } | null} position - the open reader when it is this chapter; only its PDF name is used.
      * @param {{ libraryDir: string, bookDir: string, pdfPath: string, artifactDir: string } | null} [paths] - the chapter's absolute locations.
      * @param {string} [persona] - the local Q&A persona, when enabled.
      * @returns {string} the header block.
@@ -5663,14 +5673,10 @@ window.__ModuleLoader__.load({
         `${chapter.code} ${chapter.title}`,
       ]
       if (pdf !== '') parts.push(`PDF：${pdf}`)
-      const suffix = position === null
-        ? ''
-        : ` · 阅读位置：第 ${position.page} 页（${position.mode === 'continuous' ? '连续' : '单页'}）`
-      const header = `${parts.join(' · ')}${suffix}`
+      const header = parts.join(' · ')
+      const lines = [header, WHOLE_CHAPTER_LINE]
       const hasPaths = paths !== null && paths !== undefined
       const hasPersona = typeof persona === 'string' && persona !== ''
-      if (!hasPaths && !hasPersona) return header
-      const lines = [header]
       if (hasPaths) {
         lines.push('路径（已给出，不要搜索或列举目录）：')
         if (paths.libraryDir !== '') lines.push(`书库：${paths.libraryDir}`)
@@ -13141,8 +13147,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       /**
        * The context line every new conversation starts with: which book, chapter
-       * and PDF it belongs to, and where the reader is. Without it a conversation
-       * has no idea what it is looking at.
+       * and PDF it belongs to. The open reader only contributes the PDF name it
+       * shows; its page is UI state and is never injected.
        * @param {object} bookRow - catalog book row.
        * @param {object} chapter - catalog chapter row.
        * @returns {string} the header line.
