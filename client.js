@@ -13248,6 +13248,8 @@ window.__ModuleLoader__.load({
 .md-library-toolscroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
 .md-library-toolscroll.md-scrolling { scrollbar-color: var(--dsw-alias-border-l4) transparent; }
 .md-library-toolscroll.md-scrolling::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l4); }
+.md-library-toolscroll:hover { scrollbar-color: var(--dsw-alias-border-l4) transparent; }
+.md-library-toolscroll:hover::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l4); }
 .md-tool-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); }
 .md-libraries > .md-library-samples { grid-column: 2; }
 .md-library-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -13326,6 +13328,8 @@ window.__ModuleLoader__.load({
 .md-home .md-library-toolscroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
 .md-home .md-library-toolscroll.md-scrolling { scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
 .md-home .md-library-toolscroll.md-scrolling::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
+.md-home .md-library-toolscroll:hover { scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
+.md-home .md-library-toolscroll:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
 .md-home .md-library-toolscroll > .md-subheading { display: none; }
 .md-home .md-tool-card { flex: 0 0 300px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-layer-2); }
 .md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
