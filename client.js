@@ -12731,11 +12731,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [error, setError] = useState('')
       const [docRev, setDocRev] = useState(0)
       const [annotRev, setAnnotRev] = useState(0)
-      const [strokes, setStrokes] = useState([])
-      const [masks, setMasks] = useState([])
-      // Local edit counter: read-only copies in this pane re-read storage after
-      // every edit, not only after the other pane announces one.
-      const [inkRev, setInkRev] = useState(0)
       // The overlay/translated page the boxes reveal; loaded only when a box exists.
       const [maskDoc, setMaskDoc] = useState(null)
       const maskTask = useRef(null)
@@ -12805,16 +12800,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // focus alone is enough
         }
       }, [gotoOpen])
-      const [draftStroke, setDraftStroke] = useState(null)
-      const [shapeDraft, setShapeDraft] = useState(null)
       const [maskDraft, setMaskDraft] = useState(null)
       // The note being typed in the preview; `index` is its slot in `strokes`,
       // or -1 for one that does not exist yet. The text itself stays inside the
       // editor until saved (`noteText` is what a save reads).
-      const [noteEdit, setNoteEdit] = useState(null)
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
       // Tool defaults and the hover settings panel for the side rail.
       const [sideColor, setSideColor] = useState('#1f1f1f')
       const [sideWidth, setSideWidth] = useState(2)
@@ -12862,14 +12853,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
       const noteText = useRef('')
-      const strokesRef = useRef(strokes)
-      const masksRef = useRef(masks)
       strokesRef.current = strokes
       masksRef.current = masks
       const draftRef = useRef(null)
       const maskDraftRef = useRef(null)
       const maskStartRef = useRef(null)
-      const erasingRef = useRef(false)
       const boxRef = useRef(null)
       const boxSize = useRef({ width: 400, height: 600 })
       const seenAnnotRev = useRef(0)
@@ -12883,6 +12871,34 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // a stale-count closure otherwise.
       const countRef = useRef(0)
       pageRef.current = page
+      // The same editing state the reader uses: lists, drafts, the note and the
+      // history. The write path is inside the hook.
+      const inkEditor = useInkEditorState({
+        inkStore,
+        pageRef,
+        editKey: chapterKey(bookId, code),
+        pageNumber: page,
+        onRev: rev => { seenAnnotRev.current = rev },
+      })
+      const {
+        strokes, setStrokes, strokesRef,
+        masks, setMasks, masksRef,
+        draftStroke, setDraftStroke,
+        shapeDraft, setShapeDraft,
+        noteEdit, setNoteEdit,
+        noteStyle, setNoteStyle,
+        erasing: erasingRef,
+        inkRev,
+        bumpHistory,
+        saveAnnots: commitStrokes,
+        saveMasks: commitMasks,
+        restorePage,
+        undoPage,
+        redoPage,
+        historyCounts,
+      } = inkEditor
+      strokesRef.current = strokes
+      masksRef.current = masks
       countRef.current = count
       // What this document can paint: the chapter's page stays the source of
       // truth, a translated file with a different count only clamps the render.
@@ -13042,51 +13058,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       /* ------------------------------------------------------- editing -- */
       // Both ends write the same keys through the shared annotation store, so
       // every local edit persists first and then announces itself.
-      const historyKeyOf = inkStore.historyKeyOf
-      const [, bumpHistory] = useState(0)
-      const inkEditing = createInkEditing({
-        inkStore,
-        pageRef,
-        editKey: chapterKey(bookId, code),
-        onCommit: (kind, next, rev) => {
-          bumpHistory(value => value + 1)
-          if (kind === 'annots') {
-            strokesRef.current = next
-            setStrokes(next)
-          } else {
-            masksRef.current = next
-            setMasks(next)
-          }
-          seenAnnotRev.current = rev
-          setInkRev(value => value + 1)
-        },
-        onRestore: (snapshot, rev) => {
-          strokesRef.current = snapshot.annots
-          masksRef.current = snapshot.masks
-          setStrokes(snapshot.annots)
-          setMasks(snapshot.masks)
-          seenAnnotRev.current = rev
-          setInkRev(value => value + 1)
-        },
-      })
-      const commitStrokes = next => { inkEditing.save('annots', next, currentSnapshot()) }
-      const commitMasks = next => { inkEditing.save('masks', next, currentSnapshot()) }
-      // Undo/redo restore ink and boxes together, then announce once.
-      const restorePage = snapshot => { inkEditing.restore(snapshot) }
-      const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
-      const undoPage = () => {
-        const previous = inkEditing.undo(currentSnapshot())
-        if (previous === null) return
-        restorePage(previous)
-        bumpHistory(value => value + 1)
-      }
-      const redoPage = () => {
-        const next = inkEditing.redo(currentSnapshot())
-        if (next === null) return
-        restorePage(next)
-        bumpHistory(value => value + 1)
-      }
-      const historyCounts = inkStore.depth(page)
 
       // A draft belongs to the page it was started on: a page change (or the
       // reader's edit) would otherwise save it into the new page's list. An
