@@ -11744,7 +11744,7 @@ window.__ModuleLoader__.load({
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-      }, [undoAvailable, redoAvailable])
+      }, [undoAvailable, redoAvailable, activeSide, dual])
       // Each mask paints the translated page into its own canvas, sized as a
       // whole page and shifted by -mask origin. The canvas has no width/height
       // style of its own, so the browser scales the bitmap to exactly the page
