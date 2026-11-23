@@ -6308,6 +6308,86 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * How far marks live above/below the page, in page units. Single mode uses
+     * this to unlock vertical panning only where there is actually a note; a
+     * page without off-page marks stays perfectly still.
+     * @param {object[]} entries - the page's marks.
+     * @returns {{ top: number, bottom: number }} positive overhang in page units.
+     */
+    function offPageExtent(entries) {
+      let minY = 0
+      let maxY = 0
+      const visit = value => {
+        const number = Number(value)
+        if (!Number.isFinite(number)) return
+        if (number < minY) minY = number
+        if (number > maxY) maxY = number
+      }
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        if (entry === null || typeof entry !== 'object') continue
+        if (entry.kind === 'text') {
+          const box = noteBox(entry)
+          visit(box.y)
+          visit(box.y + box.h)
+        } else if (entry.kind === 'shape') {
+          if (entry.shape === 'line' || entry.shape === 'arrow') {
+            visit(entry.y0)
+            visit(entry.y1)
+          } else {
+            visit(entry.y)
+            visit(Number(entry.y) + Number(entry.h))
+          }
+        } else if (Array.isArray(entry.points)) {
+          for (const point of entry.points) visit(point[1])
+        }
+      }
+      return { top: Math.max(0, -minY), bottom: Math.max(0, maxY - 1) }
+    }
+
+    /**
+     * Axis-aligned page-unit bounds of one mark, used by marquee selection.
+     * @param {object} entry - the stored mark.
+     * @returns {{ x: number, y: number, w: number, h: number }} the bounds.
+     */
+    function entryBounds(entry) {
+      if (entry === null || typeof entry !== 'object') return { x: 0, y: 0, w: 0, h: 0 }
+      if (entry.kind === 'text') return noteBox(entry)
+      if (entry.kind === 'shape') {
+        if (entry.shape === 'line' || entry.shape === 'arrow') {
+          const x = Math.min(Number(entry.x0) || 0, Number(entry.x1) || 0)
+          const y = Math.min(Number(entry.y0) || 0, Number(entry.y1) || 0)
+          return { x, y, w: Math.abs((Number(entry.x1) || 0) - x), h: Math.abs((Number(entry.y1) || 0) - y) }
+        }
+        return { x: Number(entry.x) || 0, y: Number(entry.y) || 0, w: Number(entry.w) || 0, h: Number(entry.h) || 0 }
+      }
+      const points = Array.isArray(entry.points) ? entry.points : []
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const point of points) {
+        const x = Number(point[0])
+        const y = Number(point[1])
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+      if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 }
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+    }
+
+    /**
+     * @param {{ x: number, y: number, w: number, h: number }} a - first box.
+     * @param {{ x: number, y: number, w: number, h: number }} b - second box.
+     * @returns {boolean} whether the boxes overlap.
+     */
+    function boxesIntersect(a, b) {
+      return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    }
+
+    /**
      * Translate one mark, used while dragging a selection.
      * @param {object} entry - the stored mark.
      * @param {number} dx - horizontal page delta.
@@ -9480,7 +9560,30 @@ window.__ModuleLoader__.load({
           height: rect === null ? 0 : rect.height,
         }
       }
-      const clampPan = value => plane.clampPan(value, pageSize())
+      // How far the page may move vertically. Without off-page notes the page
+      // stays put (single mode reads as one page); notes above/below unlock just
+      // enough room to bring them into view, plus a small breathing space.
+      const verticalNeeds = props.panNeeds === null || props.panNeeds === undefined ? null : props.panNeeds
+      const clampPan = value => {
+        const size = pageSize()
+        if (verticalNeeds === null) return plane.clampPan(value, size)
+        const limit = plane.panLimit(size)
+        const height = size.height > 0 ? size.height : 800
+        const top = Math.max(0, Math.min(plane.margins.top, Number(verticalNeeds.top) || 0))
+        const bottom = Math.max(0, Math.min(plane.margins.bottom, Number(verticalNeeds.bottom) || 0))
+        const minY = top > 0 ? -(Math.round(height * top) + 24) : 0
+        const maxY = bottom > 0 ? Math.round(height * bottom) + 24 : 0
+        return {
+          x: Math.max(limit.minX, Math.min(limit.maxX, value.x)),
+          y: Math.max(minY, Math.min(maxY, value.y)),
+        }
+      }
+      const needsKey = verticalNeeds === null ? '' : `${verticalNeeds.top}|${verticalNeeds.bottom}`
+      useEffect(() => {
+        if (pan === null || pan === undefined || typeof props.onPan !== 'function' || verticalNeeds === null) return
+        const next = clampPan(pan)
+        if (next.x !== pan.x || next.y !== pan.y) props.onPan(next)
+      }, [needsKey])
       const beginPan = event => {
         if (!panEnabled || event.button !== 0) return
         panDrag.current = { start: [event.clientX, event.clientY], origin: pan ?? { x: 0, y: 0 } }
@@ -9496,32 +9599,9 @@ window.__ModuleLoader__.load({
       }
       const endPan = () => { panDrag.current = null }
 
-      // The pages just above and below the one being read. The notes live on the
-      // shared plane, so bringing the neighbour into view by panning must show
-      // its page and its own marks, not an empty gap. The right preview keeps
-      // its single page: it has no plane and no pan of its own.
-      const showNeighbours = typeof props.overlayFor === 'function'
-      const neighbour = (pageNumber, place) => {
-        if (!showNeighbours) return null
-        if (!(props.count > 0) || pageNumber < 1 || pageNumber > props.count) return null
-        const shownScale = props.scale === null ? (paintedScale === null ? 1 : paintedScale) : props.scale
-        return h('div', { className: `md-reader-neighbour md-reader-neighbour-${place}`, key: `neighbour-${pageNumber}` },
-          h(ReaderPage, {
-            doc: props.doc,
-            pageNumber,
-            scale: shownScale,
-            rootRef: props.rootRef === null || props.rootRef === undefined ? stage : props.rootRef,
-            onVisible: noop,
-            registerSlot: noop,
-            showBlocks: false,
-            bookId: props.bookId,
-            code: props.code,
-            onError: props.onError,
-            overlay: typeof props.overlayFor === 'function' ? props.overlayFor(pageNumber) : null,
-            overlayPage: pageNumber,
-          }))
-      }
-
+      // Neighbouring PDF pages stay preloaded for a seamless page turn, but
+      // they are not drawn: single mode must read as one page. Off-page notes
+      // still paint on this page's annotation plane.
       const content = props.mode === 'continuous'
         ? h(ContinuousView, {
           doc: props.doc,
@@ -9556,7 +9636,6 @@ window.__ModuleLoader__.load({
           // The plane's outline: a dashed line where the hand and the pen stop,
           // so the edge is visible instead of guessed. It is the page box plus
           // the margins, in page units. Rendered with the page's own layers.
-          neighbour(props.page - 1, 'before'),
           h('div', {
             className: 'md-reader-single-page',
             ref: node => {
@@ -9565,8 +9644,7 @@ window.__ModuleLoader__.load({
           },
             h('canvas', { className: 'md-reader-canvas', ref: canvas }),
             props.children
-          ),
-          neighbour(props.page + 1, 'after'))
+          ))
 
       if (props.variant === 'column') return content
       const stageNode = h('div', {
@@ -9854,6 +9932,17 @@ window.__ModuleLoader__.load({
         redoPage,
         historyCounts,
       } = inkEditor
+      // Marquee selection: drag on empty paper with the select tool; selected
+      // marks then move together on the next drag.
+      const [marquee, setMarquee] = useState(null)
+      const [groupSelection, setGroupSelection] = useState([])
+      const [groupDrag, setGroupDrag] = useState(null)
+      useEffect(() => {
+        if (annotTool === 'select') return
+        setMarquee(null)
+        setGroupSelection([])
+        setGroupDrag(null)
+      }, [annotTool])
       // `noteEdit` lives in the shared hook; this ref mirrors it for handlers
       // that run after the render (keyboard, blur).
       const noteEditRef = useRef(null)
@@ -10224,6 +10313,9 @@ window.__ModuleLoader__.load({
         setStrokes(list)
         setInkPage(page)
         setSelection(null)
+        setGroupSelection([])
+        setMarquee(null)
+        setGroupDrag(null)
         setDraftStroke(null)
         setTextDraft(null)
         setDrag(null)
@@ -10517,11 +10609,23 @@ window.__ModuleLoader__.load({
         drawingRef.current = true
         event.preventDefault()
         if (annotTool === 'select') {
-          const found = strokesRef.current.findIndex(entry => annotHit(entry, point))
-          setSelection(found < 0
-            ? null
-            : { index: found, kind: strokesRef.current[found].kind === 'text' ? 'text' : strokesRef.current[found].kind === 'shape' ? 'shape' : 'stroke' })
-          if (found >= 0) setDrag({ index: found, start: point, dx: 0, dy: 0 })
+          const list = strokesRef.current
+          // A drag that starts on a selected mark moves the whole group.
+          if (groupSelection.length > 0 && groupSelection.some(index => annotHit(list[index], point))) {
+            setGroupDrag({ indices: [...groupSelection], start: point, dx: 0, dy: 0 })
+            return
+          }
+          const found = list.findIndex(entry => annotHit(entry, point))
+          if (found >= 0) {
+            setGroupSelection([])
+            setSelection({ index: found, kind: list[found].kind === 'text' ? 'text' : list[found].kind === 'shape' ? 'shape' : 'stroke' })
+            setDrag({ index: found, start: point, dx: 0, dy: 0 })
+            return
+          }
+          // Empty paper: start a marquee instead of clearing the selection.
+          setSelection(null)
+          setGroupSelection([])
+          setMarquee({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
           return
         }
         if (SHAPE_TOOLS.includes(annotTool)) {
@@ -10597,6 +10701,20 @@ window.__ModuleLoader__.load({
           inkGestures.move(event, point)
           return
         }
+        if (groupDrag !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setGroupDrag(current => (current === null ? null : { ...current, dx: point[0] - current.start[0], dy: point[1] - current.start[1] }))
+          return
+        }
+        if (marquee !== null) {
+          const point = annotPoint(event)
+          if (point === null) return
+          event.preventDefault()
+          setMarquee(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          return
+        }
         if (drag !== null) {
           const point = annotPoint(event)
           if (point === null) return
@@ -10626,6 +10744,43 @@ window.__ModuleLoader__.load({
           savePageAnnots(strokesRef.current.map((entry, index) => (index === resize.index ? resizeEntry : entry)))
           setResize(null)
           setResizeEntry(null)
+          return
+        }
+        if (groupDrag !== null) {
+          const moved = groupDrag
+          setGroupDrag(null)
+          if (Math.hypot(moved.dx, moved.dy) > 0.003) {
+            const set = new Set(moved.indices)
+            savePageAnnots(strokesRef.current.map((entry, index) => (
+              set.has(index) ? translateEntry(entry, moved.dx, moved.dy) : entry
+            )))
+          }
+          return
+        }
+        if (marquee !== null) {
+          const box = {
+            x: Math.min(marquee.x0, marquee.x1),
+            y: Math.min(marquee.y0, marquee.y1),
+            w: Math.abs(marquee.x1 - marquee.x0),
+            h: Math.abs(marquee.y1 - marquee.y0),
+          }
+          setMarquee(null)
+          if (box.w > 0.005 || box.h > 0.005) {
+            const hits = []
+            strokesRef.current.forEach((entry, index) => {
+              if (boxesIntersect(box, entryBounds(entry))) hits.push(index)
+            })
+            if (hits.length === 1) {
+              const entry = strokesRef.current[hits[0]]
+              setGroupSelection([])
+              setSelection({ index: hits[0], kind: entry.kind === 'text' ? 'text' : entry.kind === 'shape' ? 'shape' : 'stroke' })
+            } else if (hits.length > 1) {
+              setSelection(null)
+              setGroupSelection(hits)
+            } else {
+              setGroupSelection([])
+            }
+          }
           return
         }
         if (drag !== null) {
@@ -11371,6 +11526,39 @@ window.__ModuleLoader__.load({
               }),
           ],
         }),
+        (() => {
+          if (marquee === null) return null
+          const box = {
+            x: Math.min(marquee.x0, marquee.x1),
+            y: Math.min(marquee.y0, marquee.y1),
+            w: Math.abs(marquee.x1 - marquee.x0),
+            h: Math.abs(marquee.y1 - marquee.y0),
+          }
+          return h('div', {
+            className: 'md-marquee',
+            style: { left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` },
+          })
+        })(),
+        (() => {
+          if (groupSelection.length === 0) return null
+          const boxes = groupSelection.map(index => entryBounds(strokes[index])).filter(box => box.w > 0 || box.h > 0)
+          if (boxes.length === 0) return null
+          const x = Math.min(...boxes.map(box => box.x))
+          const y = Math.min(...boxes.map(box => box.y))
+          const right = Math.max(...boxes.map(box => box.x + box.w))
+          const bottom = Math.max(...boxes.map(box => box.y + box.h))
+          const dx = groupDrag === null ? 0 : groupDrag.dx
+          const dy = groupDrag === null ? 0 : groupDrag.dy
+          return h('div', {
+            className: 'md-marquee md-marquee-group',
+            style: {
+              left: `${(x + dx) * 100}%`,
+              top: `${(y + dy) * 100}%`,
+              width: `${(right - x) * 100}%`,
+              height: `${(bottom - y) * 100}%`,
+            },
+          })
+        })(),
         selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text')
           && (annotTool === 'select' || (annotTool === 'text' && selectedEntry.kind === 'text'))
           ? (() => {
@@ -12031,6 +12219,7 @@ window.__ModuleLoader__.load({
                 registerSlot,
                 onError: props.onError,
                 pan: extended ? inkPan : null,
+                panNeeds: offPageExtent(strokes),
                 margins: planeMargins,
                 onPan: setInkPan,
                 panEnabled: extended && handActive && noteEdit === null,
@@ -13143,6 +13332,8 @@ window.__ModuleLoader__.load({
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page-image { display: block; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
+.md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); border-radius: 2px; pointer-events: none; }
+.md-marquee-group { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
 .md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
@@ -14735,6 +14926,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               registerSlot,
               onError,
               pan: mode === 'single' ? sidePan : null,
+              panNeeds: offPageExtent(strokes),
               margins: planeMargins,
               onPan: setSidePan,
               panEnabled: tool === 'hand',
@@ -14908,7 +15100,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             'aria-label': format('annotText'),
             onClick: () => toggleTool('text'),
           }, annotIcon('M4 6h16M12 6v13M9 19h6')),
-          h(NoteStyleMenu, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle }),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
