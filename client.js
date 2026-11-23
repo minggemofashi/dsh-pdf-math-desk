@@ -9607,6 +9607,23 @@ window.__ModuleLoader__.load({
         }
       }
       const endPan = () => { panDrag.current = null }
+      // In continuous mode the page column itself scrolls, so the hand drags the
+      // scroller instead of the plane.
+      const scrollGrab = props.scrollGrab === true
+      const scrollDrag = useRef(null)
+      const beginScroll = event => {
+        if (!scrollGrab || event.button !== 0) return
+        const node = event.currentTarget
+        scrollDrag.current = { start: [event.clientX, event.clientY], left: node.scrollLeft, top: node.scrollTop }
+        try { node.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const moveScroll = event => {
+        if (scrollDrag.current === null) return
+        const node = event.currentTarget
+        node.scrollLeft = scrollDrag.current.left - (event.clientX - scrollDrag.current.start[0])
+        node.scrollTop = scrollDrag.current.top - (event.clientY - scrollDrag.current.start[1])
+      }
+      const endScroll = () => { scrollDrag.current = null }
 
       // Neighbouring PDF pages stay preloaded for a seamless page turn, but
       // they are not drawn: single mode must read as one page. Off-page notes
@@ -9659,15 +9676,15 @@ window.__ModuleLoader__.load({
       const stageNode = h('div', {
         className: 'md-reader-stage',
         'data-mode': props.mode,
-        'data-grab': panEnabled && panDrag.current === null ? 'true' : undefined,
+        'data-grab': (panEnabled || scrollGrab) && panDrag.current === null ? 'true' : undefined,
         'data-panning': panDrag.current !== null ? 'true' : undefined,
         'data-panned': pan !== null && (pan.x !== 0 || pan.y !== 0) ? 'true' : undefined,
         ref: attachStage,
-        onPointerDown: panEnabled ? beginPan : undefined,
-        onPointerMove: panEnabled ? movePan : undefined,
-        onPointerUp: panEnabled ? endPan : undefined,
-        onPointerCancel: panEnabled ? endPan : undefined,
-        onPointerLeave: panEnabled ? endPan : undefined,
+        onPointerDown: panEnabled ? beginPan : scrollGrab ? beginScroll : undefined,
+        onPointerMove: panEnabled ? movePan : scrollGrab ? moveScroll : undefined,
+        onPointerUp: panEnabled ? endPan : scrollGrab ? endScroll : undefined,
+        onPointerCancel: panEnabled ? endPan : scrollGrab ? endScroll : undefined,
+        onPointerLeave: panEnabled ? endPan : scrollGrab ? endScroll : undefined,
       }, content)
       // The pointer layer must cover the *viewport*, not the scrolled content: an
       // absolutely positioned child of the scroller is laid out at the top of the
@@ -9699,8 +9716,12 @@ window.__ModuleLoader__.load({
       // marks may live outside the page, and the hand tool (or a held space)
       // moves the plane. Pan is a per-visit value and resets with the document.
       const [inkPan, setInkPan] = useState({ x: 0, y: 0 })
+      // A "+" press means the user asked for room outside the page: unlock
+      // vertical panning to the plane edge, even when no note lives there yet.
+      const [planeExpanded, setPlaneExpanded] = useState(0)
       useEffect(() => {
         setInkPan({ x: 0, y: 0 })
+        setPlaneExpanded(0)
         // A mode change gets a fresh plane: a pan left over from the previous
         // view could put the page off-screen behind a hidden-overflow stage,
         // which looks exactly like a blank viewer.
@@ -9777,7 +9798,17 @@ window.__ModuleLoader__.load({
       // choice is global, like the reading width.
       const planeMargins = usePlaneMargins()
       const plane = createPlane(planeMargins)
-      const expandPlane = side => { expandPlaneMargin(side) }
+      const expandPlane = side => {
+        expandPlaneMargin(side)
+        setPlaneExpanded(value => value + 1)
+        // Nudge the plane toward the new edge so the added room is visible
+        // instead of making the "+" look inert.
+        const shift = 24
+        setInkPan(current => ({
+          x: side === 'left' ? current.x + shift : side === 'right' ? current.x - shift : current.x,
+          y: side === 'top' ? current.y + shift : side === 'bottom' ? current.y - shift : current.y,
+        }))
+      }
       // The text adjustment panel: opened by a right-click on a text box, never
       // by a plain selection. It floats, moves by its header, closes with its
       // button or with a press anywhere else.
@@ -9952,6 +9983,13 @@ window.__ModuleLoader__.load({
         setGroupSelection([])
         setGroupDrag(null)
       }, [annotTool])
+      const basePanNeeds = offPageExtent(strokes)
+      const panNeeds = planeExpanded === 0
+        ? basePanNeeds
+        : {
+          top: Math.max(basePanNeeds.top, planeMargins.top),
+          bottom: Math.max(basePanNeeds.bottom, planeMargins.bottom),
+        }
       // `noteEdit` lives in the shared hook; this ref mirrors it for handlers
       // that run after the render (keyboard, blur).
       const noteEditRef = useRef(null)
@@ -12256,10 +12294,11 @@ window.__ModuleLoader__.load({
                 registerSlot,
                 onError: props.onError,
                 pan: extended ? inkPan : null,
-                panNeeds: offPageExtent(strokes),
+                panNeeds,
                 margins: planeMargins,
                 onPan: setInkPan,
                 panEnabled: extended && handActive && noteEdit === null,
+                scrollGrab: reader.mode === 'continuous' && handActive && noteEdit === null,
                 captureLayer: canvasCapture,
                 onPageNode: (page, node) => {
                   if (node === null || node === undefined) pageNodes.current.delete(page)
@@ -13314,6 +13353,7 @@ window.__ModuleLoader__.load({
    transformed page would otherwise add scrollbars at the plane's edges. */
 .md-reader-stage[data-grab="true"], .md-reader-stage[data-panned="true"] { overflow: hidden; }
 .md-reader-stage[data-grab="true"] { cursor: grab; }
+.md-reader-stage[data-grab="true"]:active { cursor: grabbing; }
 .md-reader-stage[data-panning="true"] { cursor: grabbing; }
 .md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
 /* The stage-sized layer sits above the page, so it has to show the tool's own
@@ -13746,7 +13786,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const planeMargins = usePlaneMargins()
       const plane = createPlane(planeMargins)
       const [sidePan, setSidePan] = useState({ x: 0, y: 0 })
-      useEffect(() => { setSidePan({ x: 0, y: 0 }) }, [bookId, code, shownVariant, mode])
+      useEffect(() => { setSidePan({ x: 0, y: 0 }); setSideExpanded(0) }, [bookId, code, shownVariant, mode])
+      const [sideExpanded, setSideExpanded] = useState(0)
+      const expandSidePlane = side => {
+        expandPlaneMargin(side)
+        setSideExpanded(value => value + 1)
+        const shift = 24
+        setSidePan(current => ({
+          x: side === 'left' ? current.x + shift : side === 'right' ? current.x - shift : current.x,
+          y: side === 'top' ? current.y + shift : side === 'bottom' ? current.y - shift : current.y,
+        }))
+      }
       // Question marks: the same chapter data the reader and the chapter list
       // show. Creating one here saves it and (optionally) appends the line to
       // the conversation this column belongs to.
@@ -13870,6 +13920,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         redoPage,
         historyCounts,
       } = inkEditor
+      const sideBasePanNeeds = offPageExtent(strokes)
+      const sidePanNeeds = sideExpanded === 0
+        ? sideBasePanNeeds
+        : {
+          top: Math.max(sideBasePanNeeds.top, planeMargins.top),
+          bottom: Math.max(sideBasePanNeeds.bottom, planeMargins.bottom),
+        }
       const noteEditRef = useRef(null)
       noteEditRef.current = noteEdit
       strokesRef.current = strokes
@@ -14717,7 +14774,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       })
       // The same plane edge as the reader, with the same "+" squares: the plane
       // is shared, so widening it in one pane is immediately true in the other.
-      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: side => expandPlaneMargin(side), compact: mode === 'single' })
+      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: expandSidePlane, compact: mode === 'single' })
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
@@ -14965,10 +15022,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               registerSlot,
               onError,
               pan: mode === 'single' ? sidePan : null,
-              panNeeds: offPageExtent(strokes),
+              panNeeds: sidePanNeeds,
               margins: planeMargins,
               onPan: setSidePan,
               panEnabled: tool === 'hand',
+              scrollGrab: mode === 'continuous' && tool === 'hand',
               children: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
               // the page being read, so drawing and boxes work there too.
@@ -15187,6 +15245,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onPointerLeave: leaveSidePanel,
         },
           h('div', { className: 'md-rail md-side-rail' },
+            sideRailTool('hand', 'annotHand', 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'),
             sideRailTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             sideRailTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             sideRailTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
