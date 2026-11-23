@@ -6588,6 +6588,9 @@ window.__ModuleLoader__.load({
         if (drag === null) return
         const rect = resizeQuestionRect(drag.origin, drag.mode, drag.delta[0], drag.delta[1])
         setDrag(null)
+        // A press that did not move the mark is not an edit: it must not spend
+        // an undo step either.
+        if (drag.delta[0] === 0 && drag.delta[1] === 0) return
         props.onCommit(drag.id, rect)
       }
       const commitRename = () => {
@@ -6596,6 +6599,9 @@ window.__ModuleLoader__.load({
         setEditing(null)
         const name = String(current.value).trim()
         if (name === '') return
+        // Closing the field without changing the name is not an edit.
+        const target = Array.isArray(props.questions) ? props.questions.find(item => item.id === current.id) : undefined
+        if (target !== undefined && String(target.name).trim() === name) return
         props.onRename(current.id, name)
       }
       const styleOf = rect => ({
