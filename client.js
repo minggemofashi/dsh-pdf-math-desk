@@ -157,7 +157,7 @@ window.__ModuleLoader__.load({
       if (style !== null) return
       const node = document.createElement('style')
       node.id = XIAOLAI_STYLE_ID
-      node.textContent = "@font-face { font-family: 'Xiaolai'; src: url('/pdfdesk/font/file') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }"
+      node.textContent = "@font-face { font-family: 'Xiaolai'; src: url('/pdfdesk/font/file') format(\"truetype\"); font-weight: 400; font-style: normal; font-display: swap; }"
       document.head.appendChild(node)
     }
 
