@@ -13797,6 +13797,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 .md-data-progress { height: 3px; margin: 12px 0 2px; border-radius: 999px; overflow: hidden; background: var(--dsw-alias-border-l2); }
 .md-data-progress-bar { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--dsw-alias-brand-primary); animation: md-data-progress 1.1s ease-in-out infinite alternate; }
 @keyframes md-data-progress { from { transform: translateX(-30%); } to { transform: translateX(230%); } }
+
+/* Add-library page: the old heavy focus boxes were louder than the form. */
+.md-library, .md-library:focus, .md-library:focus-visible { outline: none; }
+.md-library-active { border-color: transparent; box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary); }
+.md-add-row input:focus, .md-add-row input:focus-visible, .md-add-row .md-input:focus, .md-add-row .md-input:focus-visible { outline: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, var(--dsw-alias-border-l3)); }
+.md-add-row input, .md-add-row .md-input { border-color: var(--dsw-alias-border-l2); }
 `
 
     /* ------------------------------------------------------------ side view -- */
