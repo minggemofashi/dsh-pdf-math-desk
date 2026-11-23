@@ -3973,6 +3973,10 @@ window.__ModuleLoader__.load({
      */
     function PlaneBounds(props) {
       const margins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
+      // Compact mode (single page) keeps the four "+" handles on the page edge:
+      // the full three-page box would otherwise add two pages of scrollable
+      // blank space below the page.
+      const compact = props.compact === true
       const expand = side => {
         if (typeof props.onExpand === 'function') props.onExpand(side)
         else expandPlaneMargin(side)
@@ -3991,8 +3995,9 @@ window.__ModuleLoader__.load({
       }, '+')
       return h('div', {
         className: 'md-plane-bounds',
+        'data-compact': compact ? 'true' : undefined,
         title: format('planeBoundsHint'),
-        style: {
+        style: compact ? { inset: 0 } : {
           left: `${-margins.left * 100}%`,
           top: `${-margins.top * 100}%`,
           width: `${(1 + margins.left + margins.right) * 100}%`,
@@ -6876,6 +6881,10 @@ window.__ModuleLoader__.load({
       const adjusted = (entry, index) => {
         if (resize !== null && resize.index === index && resizeEntry !== null) return resizeEntry
         if (drag !== null && drag.index === index) return translateEntry(entry, drag.dx, drag.dy)
+        const group = props.dragGroup
+        if (group !== null && group !== undefined && Array.isArray(group.indices) && group.indices.includes(index)) {
+          return translateEntry(entry, group.dx, group.dy)
+        }
         return entry
       }
       const selectedEntry = selection === null || entries[selection.index] === undefined ? null : entries[selection.index]
@@ -10524,6 +10533,31 @@ window.__ModuleLoader__.load({
         savePageAnnots(strokesRef.current.filter((entry, index) => index !== selection.index))
         setSelection(null)
       }
+      // Backspace/Delete removes the picked marks (single or marquee group) so
+      // selections can be cleared without reaching for the toolbar.
+      useEffect(() => {
+        const onKeyDown = event => {
+          if (event.key !== 'Backspace' && event.key !== 'Delete') return
+          if (noteEditRef.current !== null) return
+          const target = event.target
+          if (target !== null && target !== undefined && typeof target.tagName === 'string'
+            && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)) return
+          if (groupSelection.length > 0) {
+            const doomed = new Set(groupSelection)
+            savePageAnnots(strokesRef.current.filter((entry, index) => !doomed.has(index)))
+            setGroupSelection([])
+            setSelection(null)
+          } else if (selection !== null) {
+            deleteSelection()
+          } else {
+            return
+          }
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [selection, groupSelection, deleteSelection])
       const duplicateSelection = () => {
         if (selection === null) return
         const source = strokesRef.current[selection.index]
@@ -11451,6 +11485,7 @@ window.__ModuleLoader__.load({
           roughness: props.roughness,
           hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index,
           drag,
+          dragGroup: groupDrag === null ? null : { indices: groupDrag.indices, dx: groupDrag.dx, dy: groupDrag.dy },
           resize,
           resizeEntry,
           selection,
@@ -11540,23 +11575,25 @@ window.__ModuleLoader__.load({
           })
         })(),
         (() => {
-          if (groupSelection.length === 0) return null
-          const boxes = groupSelection.map(index => entryBounds(strokes[index])).filter(box => box.w > 0 || box.h > 0)
-          if (boxes.length === 0) return null
-          const x = Math.min(...boxes.map(box => box.x))
-          const y = Math.min(...boxes.map(box => box.y))
-          const right = Math.max(...boxes.map(box => box.x + box.w))
-          const bottom = Math.max(...boxes.map(box => box.y + box.h))
+          const indices = groupSelection.length > 0
+            ? groupSelection
+            : selection === null ? [] : [selection.index]
+          if (indices.length === 0) return null
           const dx = groupDrag === null ? 0 : groupDrag.dx
           const dy = groupDrag === null ? 0 : groupDrag.dy
-          return h('div', {
-            className: 'md-marquee md-marquee-group',
-            style: {
-              left: `${(x + dx) * 100}%`,
-              top: `${(y + dy) * 100}%`,
-              width: `${(right - x) * 100}%`,
-              height: `${(bottom - y) * 100}%`,
-            },
+          return indices.map(index => {
+            const box = entryBounds(strokes[index])
+            if (box.w <= 0 && box.h <= 0) return null
+            return h('div', {
+              key: `selection-${index}`,
+              className: 'md-selection-outline',
+              style: {
+                left: `${(box.x + dx) * 100}%`,
+                top: `${(box.y + dy) * 100}%`,
+                width: `${Math.max(box.w, 0.008) * 100}%`,
+                height: `${Math.max(box.h, 0.008) * 100}%`,
+              },
+            })
           })
         })(),
         selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text')
@@ -11795,7 +11832,7 @@ window.__ModuleLoader__.load({
       // The plane's outline: the page box plus its margins, with one "+" square
       // per edge. The right preview renders the same component, so both panes
       // show the same plane and the same handles.
-      const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane })
+      const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane, compact: reader.mode === 'single' })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -13334,6 +13371,8 @@ window.__ModuleLoader__.load({
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
 .md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); border-radius: 2px; pointer-events: none; }
 .md-marquee-group { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); }
+.md-selection-outline { position: absolute; z-index: 7; border: 1.5px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); pointer-events: none; }
+.md-plane-bounds[data-compact="true"] { border-color: transparent; }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
 .md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
@@ -14678,7 +14717,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       })
       // The same plane edge as the reader, with the same "+" squares: the plane
       // is shared, so widening it in one pane is immediately true in the other.
-      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: side => expandPlaneMargin(side) })
+      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: side => expandPlaneMargin(side), compact: mode === 'single' })
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
