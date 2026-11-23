@@ -85,7 +85,7 @@ export function chapterSessionsStale(manifest, pdf) {  if (manifest === null || 
 export async function staleChapterSessions(libraryDir, book, code) {
   const at = join(libraryDir, '.pdfdesk', 'cache', '.stale', book, code, String(Date.now()))
   await mkdir(at, { recursive: true })
-  for (const name of ['sessions.json', 'text.md']) {
+  for (const name of ['sessions.json', 'text.md', 'text.md.meta.json']) {
     const from = join(libraryDir, '.pdfdesk', 'cache', book, code, name)
     const to = join(at, name)
     try {

@@ -619,6 +619,7 @@ async function activeLibrary() {
             libraryDir: library.libraryDir,
             book,
             code,
+            pdf: { size: info.size, mtimeMs: Math.round(info.mtimeMs) },
             run: (script, args) => toolOutput(script, args),
           })
           const services = typeof options.sessionServices === 'function' ? options.sessionServices() : null

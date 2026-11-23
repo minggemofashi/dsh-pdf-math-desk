@@ -48,7 +48,10 @@ export async function prepareChapterText(options) {
   const path = chapterTextPath(libraryDir, book, code)
   if (options.refresh !== true) {
     const cached = await readFile(path, 'utf8').catch(() => null)
-    if (typeof cached === 'string' && cached !== '') {
+    const meta = await readFile(`${path}.meta.json`, 'utf8').then(raw => JSON.parse(raw)).catch(() => null)
+    const samePdf = options.pdf === undefined
+      || (meta !== null && meta.size === options.pdf.size && meta.mtimeMs === options.pdf.mtimeMs)
+    if (typeof cached === 'string' && cached !== '' && samePdf) {
       return { path, chars: cached.length, pageCount: (cached.match(/^## 第 /gm) ?? []).length, cached: true }
     }
   }
@@ -65,6 +68,13 @@ export async function prepareChapterText(options) {
   const temporary = `${path}.${process.pid}.tmp`
   await writeFile(temporary, `${text}\n`, 'utf8')
   await rename(temporary, path)
+  const meta = {
+    size: options.pdf === undefined ? null : options.pdf.size,
+    mtimeMs: options.pdf === undefined ? null : options.pdf.mtimeMs,
+    chars,
+    pageCount: pages.length,
+  }
+  await writeFile(`${path}.meta.json`, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
   return { path, chars, pageCount: pages.length, cached: false }
 }
 
