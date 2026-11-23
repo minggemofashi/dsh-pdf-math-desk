@@ -1121,6 +1121,7 @@ window.__ModuleLoader__.load({
       dataReport: '导入完成：导入 {imported}，改名 {renamed}，跳过 {skipped}，重写书库 {rewritten}',
       dataRootHint: '书库 {id} 的新根目录',
       dataFailed: '迁移操作失败',
+      dataWorking: '正在处理…',
       dataApplySettings: '应用导入的浏览器设置',
       dataApplied: '已应用 {n} 项设置；刷新页面后生效',
       dataNoSettings: '没有导入的浏览器设置',
@@ -1795,6 +1796,7 @@ window.__ModuleLoader__.load({
       dataReport: 'Imported {imported}, renamed {renamed}, skipped {skipped}, rewrote {rewritten} libraries',
       dataRootHint: 'New root of library {id}',
       dataFailed: 'Migration action failed',
+      dataWorking: 'Working…',
       dataApplySettings: 'Apply imported browser settings',
       dataApplied: 'Applied {n} settings; refresh the page to use them',
       dataNoSettings: 'No imported browser settings found',
@@ -4808,6 +4810,10 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataHint')),
+          dataBusy === ''
+            ? null
+            : h('div', { className: 'md-data-progress', role: 'status', 'aria-label': format('dataWorking') },
+              h('span', { className: 'md-data-progress-bar' })),
           h('div', { className: 'md-settings-row' },
             h('label', null,
               h('input', {
@@ -13823,6 +13829,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 .md-collection-count { font-size: 10.5px; letter-spacing: .035em; text-transform: uppercase; }
 .md-collection-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 16px; font-weight: 600; }
 .md-shelf-actions { border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); backdrop-filter: blur(12px); }
+
+.md-data-progress { height: 3px; margin: 12px 0 2px; border-radius: 999px; overflow: hidden; background: var(--dsw-alias-border-l2); }
+.md-data-progress-bar { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--dsw-alias-brand-primary); animation: md-data-progress 1.1s ease-in-out infinite alternate; }
+@keyframes md-data-progress { from { transform: translateX(-30%); } to { transform: translateX(230%); } }
 `
 
     /* ------------------------------------------------------------ side view -- */
