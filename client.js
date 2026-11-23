@@ -735,6 +735,24 @@ window.__ModuleLoader__.load({
       settingsTabAbout: '关于',
       settingsNotesTitle: '笔记与备份',
       settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.pdfdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
+      cacheLabel: '章节缓存',
+      cacheStatusReady: '已就绪',
+      cacheStatusPending: '待生成',
+      cacheStatusStale: '已过期',
+      cacheStatusMissing: '未生成',
+      cacheStatusFailed: '生成失败',
+      cacheChars: '{n} 字',
+      cacheView: '查看 brief',
+      cacheHide: '收起 brief',
+      cacheGenerate: '生成缓存',
+      cacheRebuild: '重建缓存',
+      cacheRebuilt: '已重建章节缓存：下一次会话会生成新 brief',
+      cacheFailed: '章节缓存操作失败',
+      cacheClearAll: '清除章节缓存',
+      cacheClearAllAction: '清除',
+      cacheClearAllHint: '删除书库里所有章节的 brief（.pdfdesk/cache）；PDF、产物和批注不受影响',
+      cacheClearAllConfirm: '清除所有章节缓存？PDF、产物和批注不受影响。',
+      cacheAllCleared: '已清除 {n} 个章节的缓存',
       shortcutsTitle: '快捷键',
       shortcutsHint: '默认是阅读器一直用的键；点「录制」按新键替换，Esc 取消',
       shortcutsRecord: '录制',
@@ -1284,6 +1302,24 @@ window.__ModuleLoader__.load({
       settingsTabAbout: 'About',
       settingsNotesTitle: 'Notes and backup',
       settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.pdfdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
+      cacheLabel: 'Chapter cache',
+      cacheStatusReady: 'Ready',
+      cacheStatusPending: 'Pending',
+      cacheStatusStale: 'Stale',
+      cacheStatusMissing: 'Not built',
+      cacheStatusFailed: 'Failed',
+      cacheChars: '{n} chars',
+      cacheView: 'View brief',
+      cacheHide: 'Hide brief',
+      cacheGenerate: 'Build cache',
+      cacheRebuild: 'Rebuild cache',
+      cacheRebuilt: 'Chapter cache rebuilt: the next conversation writes a new brief',
+      cacheFailed: 'Chapter cache operation failed',
+      cacheClearAll: 'Clear chapter cache',
+      cacheClearAllAction: 'Clear',
+      cacheClearAllHint: 'Delete every chapter brief in this library (.pdfdesk/cache); PDFs, produced files and annotations stay.',
+      cacheClearAllConfirm: 'Clear every chapter cache? PDFs, produced files and annotations stay.',
+      cacheAllCleared: 'Cleared the cache of {n} chapters',
       shortcutsTitle: 'Shortcuts',
       shortcutsHint: 'These are the keys the reader has always used; press “Record”, then the new key (Esc cancels)',
       shortcutsRecord: 'Record',
@@ -3577,6 +3613,14 @@ window.__ModuleLoader__.load({
               onChange: event => props.onRoughness(Number(event.target.value)),
             }),
             h('span', { className: 'md-note-size-value' }, Number(props.roughness ?? 1).toFixed(1))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('cacheClearAllHint') }, format('cacheClearAll')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('cacheClearAllHint'),
+              onClick: props.onClearCache,
+            }, format('cacheClearAllAction'))
           )
         ),
         h('div', { className: 'md-settings-section' },
@@ -5647,6 +5691,70 @@ window.__ModuleLoader__.load({
      * "reading position: page N" suffix and says the page is not what matters.
      */
     const WHOLE_CHAPTER_LINE = '阅读方式：整章思考（整章一起理解，不限定某一页；需要定位时我会描述具体段落）。'
+
+    /** Characters of a chapter brief that ride in a prompt; the Host serves more. */
+    const CACHE_PROMPT_CHARS = 12000
+
+    /**
+     * The instruction that makes one session build the chapter brief.
+     * @param {object} cache - Host cache payload.
+     * @param {string} [pdfPath] - the chapter's PDF.
+     * @param {string} status - the cache state being explained.
+     * @returns {string} the builder block.
+     */
+    function cacheBuilderBlock(cache, pdfPath, status) {
+      const briefPath = typeof cache.briefPath === 'string' ? cache.briefPath : ''
+      const manifestPath = typeof cache.manifestPath === 'string' ? cache.manifestPath : ''
+      const pdf = typeof pdfPath === 'string' && pdfPath !== '' ? `${pdfPath}\n` : ''
+      return [
+        `〔章节缓存·首次生成〕本章还没有可用的 brief（状态：${status}）。请先通读本章 PDF：`,
+        pdf + `然后把 brief 写到：${briefPath}`,
+        'brief 只写：章节结构（小节/定理顺序）、关键定义与定理的陈述（公式保留 LaTeX）、页码索引；不要复制原文，控制在 6000 字以内。',
+        `写完把 ${manifestPath} 里的 "status" 改成 "ready"（其他字段不要动）。`,
+        '完成这些后再回答我下面的问题。',
+      ].join('\n')
+    }
+
+    /**
+     * The prompt block for one chapter's brief cache.
+     *
+     * A ready brief is handed to the session so it does not read the chapter
+     * again. A missing (or stale) cache turns the session into the one that
+     * builds it: the block names the exact files, because the model writes them
+     * with its own tools. A pending cache owned by another conversation is not
+     * duplicated; one owned by this session (or with no owner) builds it. Any
+     * other state adds nothing.
+     *
+     * @param {object | null} cache - Host cache payload.
+     * @param {string} [pdfPath] - the chapter's PDF, for the builder block.
+     * @param {string} [sessionId] - the session the block is prepared for.
+     * @returns {string} the block, or '' when there is nothing useful to say.
+     */
+    function cachePromptBlock(cache, pdfPath, sessionId) {
+      if (cache === null || cache === undefined || typeof cache !== 'object') return ''
+      const status = typeof cache.status === 'string' ? cache.status : ''
+      const briefPath = typeof cache.briefPath === 'string' ? cache.briefPath : ''
+      if (status === 'ready') {
+        const text = typeof cache.brief === 'string' ? cache.brief.trim() : ''
+        if (text === '') return ''
+        const cut = text.length > CACHE_PROMPT_CHARS
+        const shown = cut ? `${text.slice(0, CACHE_PROMPT_CHARS)}\n…（brief 超出 ${CACHE_PROMPT_CHARS} 字，已截断）` : text
+        return [
+          `〔章节缓存·已就绪〕本章已有 brief（${briefPath}，${cache.chars ?? text.length} 字），直接使用，不要再通读整章 PDF：`,
+          shown,
+          '需要核对细节或页码时再查 PDF；回答仍以本章整体为准。',
+        ].join('\n')
+      }
+      if (status === 'missing' || status === 'stale' || status === 'failed') {
+        return cacheBuilderBlock(cache, pdfPath, status)
+      }
+      if (status === 'pending') {
+        const owner = typeof cache.sessionId === 'string' ? cache.sessionId : ''
+        if (owner === '' || owner === sessionId) return cacheBuilderBlock(cache, pdfPath, status)
+        return '〔章节缓存〕本章 brief 正在由另一个会话生成：先按 PDF 回答，不要重复写 brief。'
+      }
+      return ''
+    }
 
     /**
      * The context line every new conversation starts with: which book, chapter
@@ -9051,14 +9159,61 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One chapter's brief cache: its state, the brief itself when asked for, and
+     * the one action that rebuilds it. The Host owns the files; this only asks.
+     * @param {{ cache: object | null, open: boolean, onToggle: Function, onRebuild: Function }} props - state and handlers.
+     * @returns {import('react').ReactElement | null} the row, or null before the state is known.
+     */
+    function ChapterCacheLine(props) {
+      const cache = props.cache
+      if (cache === null || cache === undefined) return null
+      const status = typeof cache.status === 'string' ? cache.status : 'missing'
+      const labelKey = status === 'ready' ? 'cacheStatusReady'
+        : status === 'pending' ? 'cacheStatusPending'
+          : status === 'stale' ? 'cacheStatusStale'
+            : status === 'failed' ? 'cacheStatusFailed'
+              : 'cacheStatusMissing'
+      const hasBrief = typeof cache.brief === 'string' && cache.brief !== ''
+      const chars = Number(cache.chars) || 0
+      return h(React.Fragment, null,
+        h('div', { className: 'md-detail-line md-cache-line' },
+          h('span', { className: 'md-detail-key' }, format('cacheLabel')),
+          h('span', { className: 'md-detail-value md-cache-state', 'data-status': status }, format(labelKey)),
+          chars > 0 ? h('span', { className: 'md-shelf-sub' }, format('cacheChars', { n: chars })) : null,
+          hasBrief
+            ? h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onToggle,
+            }, props.open ? format('cacheHide') : format('cacheView'))
+            : null,
+          status === 'pending'
+            ? null
+            : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              onClick: props.onRebuild,
+            }, status === 'missing' || status === 'failed' ? format('cacheGenerate') : format('cacheRebuild'))
+        ),
+        props.open && hasBrief ? h('pre', { className: 'md-cache-brief' }, cache.brief) : null
+      )
+    }
+
+    /**
      * One chapter row plus its expanded detail.
-     * @param {{ bookId: string, bookTitle: string, chapter: object, open: boolean, groups: object | undefined, artifacts: object | undefined, counts: object | undefined, creatingMode: string, createError: string, errorSession: string | null, loaded: boolean, available: boolean, onClick: Function, onOpenPdf: Function, onNewSession: Function, onOpenSession: Function, onRetryRename: Function, onOpenArtifact: Function, onRetryArtifacts: Function, onReloadArtifacts: Function, onCopyPath: Function, registerRef: Function, registerFileRef: Function }} props - chapter state and handlers.
+     * @param {{ bookId: string, bookTitle: string, chapter: object, open: boolean, groups: object | undefined, artifacts: object | undefined, counts: object | undefined, cache: object | undefined, creatingMode: string, createError: string, errorSession: string | null, loaded: boolean, available: boolean, onClick: Function, onOpenPdf: Function, onNewSession: Function, onOpenSession: Function, onRetryRename: Function, onOpenArtifact: Function, onRetryArtifacts: Function, onReloadArtifacts: Function, onLoadCache: Function, onRebuildCache: Function, onCopyPath: Function, registerRef: Function, registerFileRef: Function }} props - chapter state and handlers.
      * @returns {import('react').ReactElement} the row.
      */
     function ChapterRow(props) {
       const chapter = props.chapter
       const [sessionsOpen, setSessionsOpen] = useState(false)
       const [translatedPdf, setTranslatedPdf] = useState('')
+      // The brief cache is read the first time the detail opens; the page keeps
+      // the answer, so a reopen (or a rebuild) shows the new state.
+      const [cacheOpen, setCacheOpen] = useState(false)
+      const cache = props.cache === undefined ? null : props.cache
+      useEffect(() => {
+        if (!props.open || cache !== null) return
+        props.onLoadCache(props.bookId, chapter.code)
+      }, [props.open, cache, props.bookId, chapter.code, props.onLoadCache])
       useEffect(() => {
         if (!props.open || chapter.file === '') {
           setTranslatedPdf('')
@@ -9140,6 +9295,12 @@ window.__ModuleLoader__.load({
               },
             }, format('translatedDelete'))
           ),
+          h(ChapterCacheLine, {
+            cache,
+            open: cacheOpen,
+            onToggle: () => setCacheOpen(value => !value),
+            onRebuild: () => props.onRebuildCache(props.bookId, chapter.code),
+          }),
           h('div', {
             className: 'md-sessions-wrap',
             'data-collapsed': sessionsOpen ? 'false' : 'true',
@@ -9194,7 +9355,7 @@ window.__ModuleLoader__.load({
 
     /**
      * One book's chapter list.
-     * @param {{ book: object, expanded: string[], sessionIndex: object, artifacts: object, counts: object, creatingKey: string, creatingMode: string, createError: object | null, onClickRow: Function, onOpenPdf: Function, onNewSession: Function, onOpenSession: Function, onRetryRename: Function, onOpenArtifact: Function, onRetryArtifacts: Function, onReloadArtifacts: Function, onCopyPath: Function, registerChapterRef: Function, registerFileRef: Function }} props - book, expanded codes, session and artifact state, handlers.
+     * @param {{ book: object, expanded: string[], sessionIndex: object, artifacts: object, counts: object, caches: object, onLoadCache: Function, onRebuildCache: Function, creatingKey: string, creatingMode: string, createError: object | null, onClickRow: Function, onOpenPdf: Function, onNewSession: Function, onOpenSession: Function, onRetryRename: Function, onOpenArtifact: Function, onRetryArtifacts: Function, onReloadArtifacts: Function, onCopyPath: Function, registerChapterRef: Function, registerFileRef: Function }} props - book, expanded codes, session and artifact state, handlers.
      * @returns {import('react').ReactElement} the book sheet.
      */
     function BookSheet(props) {
@@ -9252,6 +9413,9 @@ window.__ModuleLoader__.load({
                 allowNonPdfDelete: props.allowNonPdfDelete,
                 artifacts: props.artifacts[key],
                 counts: props.counts,
+                cache: props.caches === undefined ? undefined : props.caches[key],
+                onLoadCache: props.onLoadCache,
+                onRebuildCache: props.onRebuildCache,
                 creatingMode: props.creatingKey === key ? props.creatingMode : '',
                 createError: error === null ? '' : error.message,
                 errorSession: error !== null && typeof error.sessionId === 'string' ? error.sessionId : null,
@@ -9642,6 +9806,12 @@ window.__ModuleLoader__.load({
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
 .md-detail-value { color: var(--dsw-alias-label-primary); word-break: break-all; }
 .md-detail-actions { display: flex; gap: 8px; }
+.md-cache-line { row-gap: 4px; }
+.md-cache-state[data-status="ready"] { color: var(--dsw-alias-state-success-primary, var(--dsw-alias-label-primary)); }
+.md-cache-state[data-status="pending"],
+.md-cache-state[data-status="stale"],
+.md-cache-state[data-status="failed"] { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-primary)); }
+.md-cache-brief { max-height: 260px; overflow: auto; margin: 0 0 6px; padding: 8px 10px; white-space: pre-wrap; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; }
 .md-section-bar { display: flex; align-items: center; gap: 12px; }
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
@@ -11915,6 +12085,92 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [])
 
+      // The chapter brief cache, per chapter: read when a row opens and after a
+      // session is created, so the row can say Ready / Pending / Stale.
+      const [chapterCaches, setChapterCaches] = useState({})
+      const loadChapterCache = useCallback(async (bookId, code) => {
+        const key = `${bookId}|${code}`
+        try {
+          const payload = await request('GET', `chapter-cache?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
+          const cache = payload !== null && payload !== undefined && payload.cache !== undefined ? payload.cache : null
+          setChapterCaches(current => ({ ...current, [key]: cache }))
+        } catch {
+          // A cache is an optimization: a failed read leaves the row silent.
+        }
+      }, [])
+
+      /**
+       * Ask this chapter to build its brief again: drop whatever is there, then
+       * record a fresh request, so the next conversation writes it.
+       * @param {string} bookId - catalog book id.
+       * @param {string} code - chapter code.
+       * @returns {void}
+       */
+      const rebuildChapterCache = useCallback((bookId, code) => {
+        void (async () => {
+          try {
+            await request('POST', 'chapter-cache', { action: 'clear', book: bookId, code })
+            await request('POST', 'chapter-cache', { action: 'prepare', book: bookId, code })
+            await loadChapterCache(bookId, code)
+            showNotice(format('cacheRebuilt'))
+          } catch (reason) {
+            showNotice(`${format('cacheFailed')} (${errorText(reason)})`)
+          }
+        })()
+      }, [loadChapterCache, showNotice])
+
+      /**
+       * Forget every chapter's brief in this library. PDFs, produced files and
+       * annotations live elsewhere and are untouched.
+       * @returns {void}
+       */
+      const clearChapterCaches = useCallback(() => {
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('cacheClearAllConfirm'))) return
+        void (async () => {
+          try {
+            const result = await request('POST', 'chapter-cache', { action: 'clear-all' })
+            setChapterCaches({})
+            const removed = Number(result === null || result === undefined ? 0 : result.removed)
+            showNotice(format('cacheAllCleared', { n: Number.isFinite(removed) ? removed : 0 }))
+          } catch (reason) {
+            showNotice(`${format('cacheFailed')} (${errorText(reason)})`)
+          }
+        })()
+      }, [showNotice])
+
+      /**
+       * The cache block one new conversation should carry: reuse a ready brief,
+       * or make this session the one that builds it. A library that cannot be
+       * written leaves the session exactly as it was and only loses the cache.
+       * @param {string} bookId - catalog book id.
+       * @param {string} code - chapter code.
+       * @param {string} sessionId - the session that would write the brief.
+       * @param {string} [pdfPath] - the chapter's PDF.
+       * @returns {Promise<string>} the prompt block, or ''.
+       */
+      const chapterCacheBlock = useCallback(async (bookId, code, sessionId, pdfPath) => {
+        const key = `${bookId}|${code}`
+        try {
+          const payload = await request('GET', `chapter-cache?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
+          let cache = payload !== null && payload !== undefined && payload.cache !== undefined ? payload.cache : null
+          if (cache === null) return ''
+          if (cache.status !== 'ready') {
+            try {
+              const prepared = await request('POST', 'chapter-cache', { action: 'prepare', book: bookId, code, sessionId })
+              if (prepared !== null && prepared !== undefined && prepared.cache !== undefined && prepared.cache !== null) cache = prepared.cache
+            } catch {
+              // Read-only library: keep the session working with the PDF alone.
+              return ''
+            }
+          }
+          setChapterCaches(current => ({ ...current, [key]: cache }))
+          return cachePromptBlock(cache, pdfPath, sessionId)
+        } catch {
+          return ''
+        }
+      }, [])
+
       const closePreview = useCallback(() => {
         const current = previewRef.current
         previewToken.current += 1
@@ -13196,14 +13452,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             // The context seed is still useful without the optional persona.
           }
         }
+        const cachePart = await chapterCacheBlock(book.id, chapter.code, sessionId, paths.pdfPath)
         const draft = mode === GENERAL_MODE
           ? [
             `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
             `${format('generalSeedLibrary')}：${paths.libraryDir}`,
             paths.bookDir === '' ? '' : `${format('generalSeedBookDir')}：${paths.bookDir}`,
             paths.pdfPath === '' ? '' : `${format('generalSeedPdf')}：${paths.pdfPath}`,
+            cachePart,
           ].filter(Boolean).join('\n')
-          : `${seedFor(book, chapter, paths, persona)}\n\n${format('sessionQuestionLead')}`
+          : [seedFor(book, chapter, paths, persona), cachePart, format('sessionQuestionLead')].filter(Boolean).join('\n\n')
         const prefill = await beginPrefill(sessionId, draft, 'keep')
         if (prefill.applied && persona !== '') {
           try { window.localStorage.setItem(`pdfdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
@@ -13211,7 +13469,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (prefill.reference !== null) {
           try { prefill.reference.release() } catch { /* already released */ }
         }
-      }, [beginPrefill, book, catalog, seedFor])
+      }, [beginPrefill, book, catalog, chapterCacheBlock, seedFor])
 
       /**
        * Whether the right column would open our own chapter tab. An address no
@@ -13378,17 +13636,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           let persona = ''
           let personaFailed = false
           let hasOutline = false
+          // The chapter's shared brief: a ready one replaces reading the PDF
+          // again; otherwise this session is asked to build it. General sessions
+          // take it too, because they are still chapter-scoped.
+          const pdfPath = paths === null || typeof paths.pdfPath !== 'string' ? '' : paths.pdfPath
+          const cachePart = await chapterCacheBlock(book.id, chapter.code, sessionId, pdfPath)
           let draft
           if (mode === GENERAL_MODE) {
             // The universal session carries only addresses: no persona, no
             // outline, no question lead and no purpose prompt.
             const bookDir = paths !== null && typeof paths.bookDir === 'string' ? paths.bookDir : ''
-            const pdfPath = paths !== null && typeof paths.pdfPath === 'string' ? paths.pdfPath : ''
             draft = [
               `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
               `${format('generalSeedLibrary')}：${paths === null ? '' : paths.libraryDir}`,
               bookDir === '' ? '' : `${format('generalSeedBookDir')}：${bookDir}`,
               pdfPath === '' ? '' : `${format('generalSeedPdf')}：${pdfPath}`,
+              cachePart,
             ].filter(Boolean).join('\n')
           } else {
             // The Q&A persona is part of the same initial prompt as the paths:
@@ -13402,6 +13665,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
             }
             const parts = [seedFor(book, chapter, paths, persona)]
+            if (cachePart !== '') parts.push(cachePart)
             if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
             if (continuation >= 2) {
               const outline = await loadOutline(book.id, chapter.code)
@@ -13450,7 +13714,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setCreatingKey('')
           setCreatingMode('')
         }
-      }, [book, catalog, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
+      }, [book, catalog, chapterCacheBlock, findReusableBlank, flushSave, loadOutline, openPdfInSession, previewPdf, refreshSessions, registerPending, seedFor, settlePending, showNotice])
       createSessionRef.current = createSession
 
       /** The reader's three New buttons: create the session, leave for it. */
@@ -14364,6 +14628,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           artifacts,
           libraryDir: catalog.libraryDir,
           counts: counts[book.id],
+          caches: chapterCaches,
+          onLoadCache: loadChapterCache,
+          onRebuildCache: rebuildChapterCache,
           creatingKey,
           creatingMode,
           createError,
@@ -14673,6 +14940,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
               return next
             }),
+            onClearCache: clearChapterCaches,
             onClose: () => setSettingsOpen(false),
           })
           : null,

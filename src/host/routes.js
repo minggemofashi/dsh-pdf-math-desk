@@ -8,6 +8,8 @@
  *   GET  /pdfdesk/pdf-ref          that PDF as a workspace-relative path
  *   GET  /pdfdesk/cover            a user-provided book cover image
  *   GET  /pdfdesk/context          how full one session's context is
+ *   GET  /pdfdesk/chapter-cache    one chapter's brief cache state and text
+ *   POST /pdfdesk/chapter-cache    request a brief, forget one, or forget all
  *   POST /pdfdesk/digest           summarize a chapter's conversations
  *   GET  /pdfdesk/vendor/<file>    the reader's pdf.js build
  *   POST /pdfdesk/links            attach an existing session to a chapter
@@ -28,6 +30,7 @@ import { basename, dirname, extname, isAbsolute, join, relative } from 'node:pat
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from './annotations.js'
+import { clearAllChapterCache, clearChapterCache, prepareChapterCache, readChapterCache } from './chapter-cache.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
@@ -598,6 +601,68 @@ async function activeLibrary() {
         } catch (error) {
           fail(response, 500, 'cancel-failed', String(error && error.message ? error.message : error))
         }
+        return
+      }
+
+      if (path === `${PREFIX}/chapter-cache`) {
+        if (request.method === 'GET') {
+          const match = await chapterFromQuery(url)
+          if (match.ok !== true) {
+            fail(response, match.status, match.code, match.message)
+            return
+          }
+          const library = await activeLibrary()
+          const source = chapterPdfPath(library, match.book, match.chapter)
+          const cache = await readChapterCache(
+            library.libraryDir,
+            match.book.id,
+            match.chapter.code,
+            source.ok ? source.path : null,
+          )
+          sendJson(response, 200, { ok: true, cache })
+          return
+        }
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const action = typeof record.action === 'string' ? record.action : ''
+        const library = await activeLibrary()
+        if (action === 'clear-all') {
+          const result = await clearAllChapterCache(library.libraryDir)
+          sendJson(response, 200, { ok: true, ...result })
+          return
+        }
+        if (action !== 'prepare' && action !== 'clear') {
+          fail(response, 400, 'unknown-action', `未知的缓存操作：${action}`)
+          return
+        }
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        if (action === 'clear') {
+          const result = await clearChapterCache(library.libraryDir, match.book.id, match.chapter.code)
+          sendJson(response, 200, { ok: true, ...result })
+          return
+        }
+        const source = chapterPdfPath(library, match.book, match.chapter)
+        if (source.ok !== true) {
+          fail(response, 409, 'pdf-missing', '这一章没有可用的 PDF，无法建立章节缓存')
+          return
+        }
+        const cache = await prepareChapterCache(
+          library.libraryDir,
+          match.book.id,
+          match.chapter.code,
+          source.path,
+          typeof record.sessionId === 'string' ? record.sessionId : '',
+        )
+        sendJson(response, 200, { ok: true, cache })
         return
       }
 
