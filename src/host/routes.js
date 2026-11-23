@@ -36,6 +36,7 @@ import { readQuestions, writeQuestions } from './questions.js'
 import { prepareChapterText } from './chapter-text.js'
 import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-session.js'
 import { clearSharedPrefixCache } from './chapter-sessions.js'
+import { addAttachment, attachmentsDir, listAttachments, removeAttachment, safeAttachmentName } from './attachments.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -779,6 +780,110 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, ...result })
         } catch (error) {
           fail(response, 500, 'shared-prefix-clear-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/attachments/file`) {
+        const match = await chapterFromQuery(url)
+        if (match.ok !== true) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const name = safeAttachmentName(url.searchParams.get('name') ?? '')
+        if (name === 'manifest.json') {
+          fail(response, 404, 'missing-file', '找不到这个附件')
+          return
+        }
+        const library = await activeLibrary()
+        const dir = attachmentsDir(library.libraryDir, match.book.id, match.chapter.code)
+        try {
+          const body = await readFile(join(dir, name))
+          const extension = extname(name).slice(1).toLowerCase()
+          const type = extension === 'pdf'
+            ? 'application/pdf'
+            : extension === 'png' ? 'image/png'
+              : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
+                : extension === 'webp' ? 'image/webp'
+                  : extension === 'gif' ? 'image/gif'
+                    : extension === 'bmp' ? 'image/bmp'
+                      : 'application/octet-stream'
+          sendBytes(response, 200, body, type, `inline; filename*=UTF-8''${encodeURIComponent(name)}`)
+        } catch {
+          fail(response, 404, 'missing-file', '找不到这个附件')
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/attachments`) {
+        if (request.method === 'GET') {
+          const match = await chapterFromQuery(url)
+          if (match.ok !== true) {
+            fail(response, match.status, match.code, match.message)
+            return
+          }
+          const library = await activeLibrary()
+          sendJson(response, 200, { ok: true, ...(await listAttachments(library.libraryDir, match.book.id, match.chapter.code)) })
+          return
+        }
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        try {
+          const library = await activeLibrary()
+          const item = await addAttachment({
+            libraryDir: library.libraryDir,
+            book: match.book.id,
+            code: match.chapter.code,
+            sourcePath: typeof record.path === 'string' ? record.path : '',
+            name: typeof record.name === 'string' ? record.name : undefined,
+          })
+          sendJson(response, 200, { ok: true, item })
+        } catch (error) {
+          const reason = error !== null && error !== undefined ? error.code : ''
+          fail(
+            response,
+            reason === 'too-large' ? 413 : reason === 'bad-type' || reason === 'not-file' ? 400 : 500,
+            reason === 'too-large' ? 'too-large' : reason === 'bad-type' ? 'bad-type' : 'attachment-add-failed',
+            String(error && error.message ? error.message : error)
+          )
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/attachments/remove`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        try {
+          const library = await activeLibrary()
+          const result = await removeAttachment({
+            libraryDir: library.libraryDir,
+            book: match.book.id,
+            code: match.chapter.code,
+            name: typeof record.name === 'string' ? record.name : '',
+          })
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 500, 'attachment-remove-failed', String(error && error.message ? error.message : error))
         }
         return
       }
