@@ -5986,24 +5986,6 @@ window.__ModuleLoader__.load({
      * @param {object} entry - a stored annotation.
      * @returns {boolean} true when every anchor is on the page.
      */
-    function entryInsidePage(entry) {
-      if (entry === null || typeof entry !== 'object') return false
-      const inside = (x, y) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1
-      if (entry.kind === 'text') return inside(Number(entry.x), Number(entry.y))
-      if (entry.kind === 'shape' && (entry.shape === 'line' || entry.shape === 'arrow')) {
-        return inside(Number(entry.x0), Number(entry.y0)) && inside(Number(entry.x1), Number(entry.y1))
-      }
-      if (entry.kind === 'shape') {
-        const x = Number(entry.x)
-        const y = Number(entry.y)
-        const w = Number(entry.w)
-        const h = Number(entry.h)
-        return inside(x, y) && inside(x + w, y + h)
-      }
-      if (Array.isArray(entry.points)) return entry.points.every(point => inside(Number(point[0]), Number(point[1])))
-      return true
-    }
-
     /**
      * How far a hit test reaches at one box width: ~8px of slack plus half the
      * stroke's own width, in page units.
@@ -7486,6 +7468,48 @@ window.__ModuleLoader__.load({
           const points = options.smooth === true ? smoothStroke(current.points) : current.points
           if (points.length > 1) saveAnnots([...strokesRef.current, { ...current, points }])
           return true
+        },
+      }
+    }
+
+    /**
+     * The chapter question list's write path, shared by the reader and the
+     * preview: record the undo step, update the visible list, persist the
+     * chapter JSON, then adopt what the host saved and announce it.
+     * @param {{ bookId: string, code: string, origin: string, questionsRef: object, nextRef: object,
+     *   setQuestions: Function, bumpQuestionEdits: Function, seenQuestionRev: object,
+     *   onFailure?: Function }} options - the list, its refs and listeners.
+     * @returns {{ commit: Function, editKey: string }} the write path.
+     */
+    function createQuestionCommitting(options) {
+      const { bookId, code, origin, questionsRef, nextRef, setQuestions, bumpQuestionEdits, seenQuestionRev } = options
+      const editKey = chapterKey(bookId, code)
+      const fail = typeof options.onFailure === 'function' ? options.onFailure : null
+      return {
+        editKey,
+        /**
+         * @param {object[]} list - the new list.
+         * @param {number} next - the next free number the host keeps.
+         * @param {boolean} [record] - whether this edit joins the undo stack.
+         * @returns {void}
+         */
+        commit(list, next, record = true) {
+          if (record) {
+            // The stack lives in memory: undo is a gesture log, not chapter data.
+            recordQuestionEdit(editKey, { questions: questionsRef.current, next: nextRef.current })
+            bumpQuestionEdits(value => value + 1)
+          }
+          questionsRef.current = list
+          nextRef.current = next
+          setQuestions(list)
+          void saveChapterQuestions(bookId, code, { next, questions: list }).then(saved => {
+            questionsRef.current = saved.questions
+            nextRef.current = saved.next
+            setQuestions(saved.questions)
+            seenQuestionRev.current = bumpQuestionRev(bookId, code, origin)
+          }).catch(() => {
+            if (fail !== null) fail()
+          })
         },
       }
     }
@@ -10907,27 +10931,17 @@ window.__ModuleLoader__.load({
        * @param {number} next - the next default number.
        * @returns {void}
        */
-      const commitQuestions = (list, next, record = true) => {
-        if (record) {
-          // The stack lives in memory: undo is a gesture log, not chapter data.
-          recordQuestionEdit(chapterKey(reader.bookId, reader.code), {
-            questions: questionsRef.current,
-            next: questionsNext.current,
-          })
-          bumpQuestionEdits(value => value + 1)
-        }
-        questionsRef.current = list
-        questionsNext.current = next
-        setQuestions(list)
-        void saveChapterQuestions(reader.bookId, reader.code, { next, questions: list }).then(saved => {
-          questionsRef.current = saved.questions
-          questionsNext.current = saved.next
-          setQuestions(saved.questions)
-          seenQuestionRev.current = bumpQuestionRev(reader.bookId, reader.code, 'reader')
-        }).catch(() => {
-          // The marker is already on screen; a failed save leaves it unsaved.
-        })
-      }
+      const questionCommitting = createQuestionCommitting({
+        bookId: reader.bookId,
+        code: reader.code,
+        origin: 'reader',
+        questionsRef,
+        nextRef: questionsNext,
+        setQuestions,
+        bumpQuestionEdits,
+        seenQuestionRev,
+      })
+      const commitQuestions = (list, next, record = true) => { questionCommitting.commit(list, next, record) }
       const createQuestion = rect => {
         // Fill the smallest free number: deleting 疑问 1 makes the next mark
         // 疑问 1 again instead of continuing at a later number.
@@ -13766,26 +13780,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
         return () => { cancelled = true }
       }, [bookId, code, questionRev])
-      const commitQuestions = (list, next, record = true) => {
-        if (record) {
-          recordQuestionEdit(chapterKey(bookId, code), {
-            questions: questionsRef.current,
-            next: questionsNext.current,
-          })
-          bumpQuestionEdits(value => value + 1)
-        }
-        questionsRef.current = list
-        questionsNext.current = next
-        setQuestions(list)
-        void saveChapterQuestions(bookId, code, { next, questions: list }).then(saved => {
-          questionsRef.current = saved.questions
-          questionsNext.current = saved.next
-          setQuestions(saved.questions)
-          seenQuestionRev.current = bumpQuestionRev(bookId, code, 'side')
-        }).catch(() => {
-          notifySide(format('questionSaveFailed'))
-        })
-      }
+      const questionCommitting = createQuestionCommitting({
+        bookId,
+        code,
+        origin: 'side',
+        questionsRef,
+        nextRef: questionsNext,
+        setQuestions,
+        bumpQuestionEdits,
+        seenQuestionRev,
+        onFailure: () => { notifySide(format('questionSaveFailed')) },
+      })
+      const commitQuestions = (list, next, record = true) => { questionCommitting.commit(list, next, record) }
       const createQuestion = rect => {
         // Same gap-filling number as the reader: one numbering rule for both.
         const number = nextQuestionNumber(questionsRef.current)
