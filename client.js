@@ -2608,6 +2608,25 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The chapter's branch session for one mode (shared-prefix design): the
+     * Host prepares a hidden base session that reads the chapter once, then
+     * forks this mode's own session from that boundary. Falls back to an
+     * ordinary new session when the Host cannot prepare one (for example a
+     * scanned chapter with no extractable text).
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {string} mode - `general` / `extract` / `qa` / `exercise`.
+     * @returns {Promise<string>} the branch session id.
+     */
+    async function ensureSharedBranch(bookId, code, mode) {
+      const payload = await request('POST', 'base-session', { book: bookId, code, mode })
+      const branch = payload !== null && payload !== undefined ? payload.branch : null
+      const id = branch !== null && branch !== undefined ? branch.id : ''
+      if (typeof id !== 'string' || id === '') throw new Error('no branch session')
+      return id
+    }
+
+    /**
      * Rename a Session and pin the title; the Client projection updates as well.
      * @param {string} sessionId - target Session.
      * @param {string} title - the workbench title.
@@ -16318,7 +16337,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             // The context seed is still useful without the optional persona.
           }
         }
-        const cachePart = await chapterCacheBlock(book.id, chapter.code, sessionId, paths.pdfPath)
+        // The shared-prefix base session already read this chapter; no brief is
+        // injected into the conversation any more.
+        const cachePart = ''
         const draft = mode === GENERAL_MODE
           ? [
             `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
@@ -16435,32 +16456,43 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setCreatingMode(mode)
         setCreateError(null)
         try {
-          // Reuse the workspace blank when there is one; settle everything else.
-          const reuseId = findReusableBlank()
-          await settlePending(reuseId)
-          const base = target.workspaceId !== null ? { workspaceId: target.workspaceId } : { cwd: target.cwd }
-          let sessionId
+          // The shared-prefix branch: the chapter is read once by a hidden base
+          // session and every mode talks in its own fork of that prefix. A
+          // chapter the Host cannot extract (scanned) falls back to an ordinary
+          // session that reads the PDF itself.
+          let sessionId = ''
           try {
-            sessionId = await createSessionId(reuseId === null ? base : { ...base, sessionId: reuseId })
-          } catch (error) {
-            // A refused reuse (cwd, membership, preset) falls back to a fresh session.
-            if (reuseId === null) {
-              setCreateError({
-                bookId: book.id,
-                code: chapter.code,
-                message: `${format('sessionCreateFailed')} (${errorText(error)})`,
-              })
-              return
-            }
+            sessionId = await ensureSharedBranch(book.id, chapter.code, mode === GENERAL_MODE ? 'general' : mode)
+          } catch {
+            sessionId = ''
+          }
+          if (sessionId === '') {
+            // Reuse the workspace blank when there is one; settle everything else.
+            const reuseId = findReusableBlank()
+            await settlePending(reuseId)
+            const base = target.workspaceId !== null ? { workspaceId: target.workspaceId } : { cwd: target.cwd }
             try {
-              sessionId = await createSessionId(base)
-            } catch (fallbackError) {
-              setCreateError({
-                bookId: book.id,
-                code: chapter.code,
-                message: `${format('sessionCreateFailed')} (${errorText(fallbackError)})`,
-              })
-              return
+              sessionId = await createSessionId(reuseId === null ? base : { ...base, sessionId: reuseId })
+            } catch (error) {
+              // A refused reuse (cwd, membership, preset) falls back to a fresh session.
+              if (reuseId === null) {
+                setCreateError({
+                  bookId: book.id,
+                  code: chapter.code,
+                  message: `${format('sessionCreateFailed')} (${errorText(error)})`,
+                })
+                return
+              }
+              try {
+                sessionId = await createSessionId(base)
+              } catch (fallbackError) {
+                setCreateError({
+                  bookId: book.id,
+                  code: chapter.code,
+                  message: `${format('sessionCreateFailed')} (${errorText(fallbackError)})`,
+                })
+                return
+              }
             }
           }
           try {
@@ -16506,7 +16538,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // again; otherwise this session is asked to build it. General sessions
           // take it too, because they are still chapter-scoped.
           const pdfPath = paths === null || typeof paths.pdfPath !== 'string' ? '' : paths.pdfPath
-          const cachePart = await chapterCacheBlock(book.id, chapter.code, sessionId, pdfPath)
+          // The shared-prefix base session already read this chapter; no brief is
+          // injected into the conversation any more.
+          const cachePart = ''
           let draft
           if (mode === GENERAL_MODE) {
             // The universal session carries only addresses: no persona, no
