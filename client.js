@@ -311,18 +311,135 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The page stored for one chapter, when the reader ever wrote one.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {number | null} a positive page number, or null when unknown.
+     */
+    function readStoredPage(bookId, code) {
+      try {
+        const raw = window.localStorage.getItem(`pdfdesk:page:${bookId}:${code}`)
+        if (raw === null || raw === '') return null
+        const value = Number.parseInt(raw, 10)
+        return Number.isFinite(value) && value > 0 ? value : null
+      } catch {
+        return null
+      }
+    }
+
+    /**
      * Last page read for one chapter, so leaving the reader does not reset it.
      * @param {string} bookId - book id.
      * @param {string} code - chapter code.
      * @returns {number} a positive page number, or 1.
      */
     function readReaderPage(bookId, code) {
+      return readStoredPage(bookId, code) ?? 1
+    }
+
+    /** Per-book page width memory (the zoom the reader last settled on). */
+    const WIDTH_PREFIX = 'pdfdesk:width:'
+    /** Global reading mode, shared by every book (`single` | `continuous`). */
+    const MODE_KEY = 'pdfdesk:mode'
+
+    /**
+     * The page width one book was last read at. `scale: null` means "fit the
+     * width", which must be remembered as fit rather than as the fitted number:
+     * a later window size should still fit the page.
+     * @param {string} bookId - book id.
+     * @returns {{ scale: number | null } | null} the stored width, or null when never set.
+     */
+    function readBookScale(bookId) {
+      if (typeof bookId !== 'string' || bookId === '') return null
       try {
-        const raw = window.localStorage.getItem(`pdfdesk:page:${bookId}:${code}`)
-        const value = Number.parseInt(raw ?? '', 10)
-        return Number.isFinite(value) && value > 0 ? value : 1
+        const raw = window.localStorage.getItem(`${WIDTH_PREFIX}${bookId}`)
+        if (raw === null || raw === '') return null
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return null
+        if (parsed.scale === null) return { scale: null }
+        const scale = Number(parsed.scale)
+        if (!Number.isFinite(scale) || scale <= 0) return null
+        return { scale }
       } catch {
-        return 1
+        return null
+      }
+    }
+
+    /**
+     * Remember one book's page width.
+     * @param {string} bookId - book id.
+     * @param {number | null} scale - the zoom, or null for "fit the width".
+     * @returns {void}
+     */
+    function writeBookScale(bookId, scale) {
+      if (typeof bookId !== 'string' || bookId === '') return
+      try {
+        window.localStorage.setItem(`${WIDTH_PREFIX}${bookId}`, JSON.stringify({ scale: scale === null ? null : scale }))
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /**
+     * The reading mode shared by every book.
+     * @returns {'single' | 'continuous' | null} the stored mode, or null when never set.
+     */
+    function readGlobalMode() {
+      try {
+        const raw = window.localStorage.getItem(MODE_KEY)
+        return raw === 'continuous' ? 'continuous' : raw === 'single' ? 'single' : null
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Remember the reading mode for every book.
+     * @param {string} mode - `single` or `continuous`.
+     * @returns {void}
+     */
+    function writeGlobalMode(mode) {
+      if (mode !== 'single' && mode !== 'continuous') return
+      try {
+        window.localStorage.setItem(MODE_KEY, mode)
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /**
+     * In-memory page drafts: unsaved note edits and unfinished strokes, one per
+     * page. They never enter the annotation store, never reach the disk and are
+     * never exported; leaving the page stashes them, returning restores them.
+     * @returns {{ stash: Function, take: Function, peek: Function, clear: Function, size: number }} the store.
+     */
+    function createPageDraftStore() {
+      const drafts = new Map()
+      const pageKey = page => {
+        const value = Math.round(Number(page))
+        return Number.isFinite(value) && value >= 1 ? String(value) : ''
+      }
+      return {
+        stash(page, draft) {
+          const key = pageKey(page)
+          if (key !== '' && draft !== null && draft !== undefined) drafts.set(key, draft)
+        },
+        take(page) {
+          const key = pageKey(page)
+          const value = key === '' ? undefined : drafts.get(key)
+          if (key !== '') drafts.delete(key)
+          return value
+        },
+        peek(page) {
+          const key = pageKey(page)
+          return key === '' ? undefined : drafts.get(key)
+        },
+        clear() {
+          drafts.clear()
+        },
+        get size() {
+          return drafts.size
+        },
       }
     }
 
@@ -753,6 +870,10 @@ window.__ModuleLoader__.load({
       cacheClearAllHint: '删除书库里所有章节的 brief（.pdfdesk/cache）；PDF、产物和批注不受影响',
       cacheClearAllConfirm: '清除所有章节缓存？PDF、产物和批注不受影响。',
       cacheAllCleared: '已清除 {n} 个章节的缓存',
+      lastPageLabel: '上次阅读',
+      lastPageAt: '读到第 {n} 页',
+      lastPageHint: '上次阅读停在这一页',
+      lastPageResume: '继续阅读',
       shortcutsTitle: '快捷键',
       shortcutsHint: '默认是阅读器一直用的键；点「录制」按新键替换，Esc 取消',
       shortcutsRecord: '录制',
@@ -1320,6 +1441,10 @@ window.__ModuleLoader__.load({
       cacheClearAllHint: 'Delete every chapter brief in this library (.pdfdesk/cache); PDFs, produced files and annotations stay.',
       cacheClearAllConfirm: 'Clear every chapter cache? PDFs, produced files and annotations stay.',
       cacheAllCleared: 'Cleared the cache of {n} chapters',
+      lastPageLabel: 'Last read',
+      lastPageAt: 'Page {n}',
+      lastPageHint: 'The reader stopped on this page',
+      lastPageResume: 'Continue reading',
       shortcutsTitle: 'Shortcuts',
       shortcutsHint: 'These are the keys the reader has always used; press “Record”, then the new key (Esc cancels)',
       shortcutsRecord: 'Record',
@@ -4874,11 +4999,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One page in continuous mode: renders when it comes near the viewport,
-     * reports when it becomes the page a reader is looking at.
-     * @param {{ doc: object, pageNumber: number, scale: number, rootRef: object, onVisible: Function, registerSlot: Function, onError: Function }} props - the document, page, zoom and callbacks.
-     * @returns {import('react').ReactElement} the page slot.
+     * Pages kept warm around the one being read: the current page plus its two
+     * neighbours fits in five, which is enough to absorb a flick.
      */
+    const PAGE_PRELOAD_LIMIT = 5
+
     /**
      * Paint one page into a canvas; shared by single and continuous mode so the
      * DPR/canvas-size rules live in one place during the viewer rewrite.
@@ -6445,6 +6570,12 @@ window.__ModuleLoader__.load({
           })))
     }
 
+    /**
+     * One page in continuous mode: renders when it comes near the viewport,
+     * reports when it becomes the page a reader is looking at.
+     * @param {{ doc: object, pageNumber: number, scale: number, rootRef: object, onVisible: Function, registerSlot: Function, onError: Function }} props - the document, page, zoom and callbacks.
+     * @returns {import('react').ReactElement} the page slot.
+     */
     function ReaderPage(props) {
       const [visible, setVisible] = useState(false)
       const [rendered, setRendered] = useState(false)
@@ -6786,6 +6917,13 @@ window.__ModuleLoader__.load({
       const canvas = useRef(null)
       const stage = useRef(null)
       const task = useRef(null)
+      // Warm bitmaps for the pages around this one, so turning a page shows the
+      // page immediately instead of a blank canvas. Cleared whenever the
+      // document, the zoom or the stage size changes: a stale bitmap at another
+      // scale would be worse than a short wait.
+      const pageCache = useRef(new Map())
+      const cacheGen = useRef(0)
+      const [paintedScale, setPaintedScale] = useState(null)
       // The parent keeps the same ref for keyboard scrolling and fit width, so
       // the viewer hands its stage to that ref instead of hiding it.
       const attachStage = node => {
@@ -6793,12 +6931,48 @@ window.__ModuleLoader__.load({
         if (props.stageRef !== null && props.stageRef !== undefined) props.stageRef.current = node
       }
 
+      useEffect(() => {
+        cacheGen.current += 1
+        pageCache.current.clear()
+      }, [props.doc, props.mode, paintedScale])
+
+      useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        const onResize = () => {
+          cacheGen.current += 1
+          pageCache.current.clear()
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+      }, [])
+
+      // A cached page at the current zoom: its own width resolves "fit" the same
+      // way the paint would, so no getPage round trip is needed to show it.
+      const cachedPaint = useCallback(pageNumber => {
+        const entry = pageCache.current.get(pageNumber)
+        if (entry === undefined) return null
+        const used = props.scale === null ? props.fitScale(entry.baseWidth) : props.scale
+        if (Math.abs(used - entry.scale) > 0.001) return null
+        return { entry, used }
+      }, [props.fitScale, props.scale])
+
       // Paint the single page. A page or zoom change cancels the previous
       // render, so a fast zoom never leaves a stale bitmap on top.
       useEffect(() => {
         if (props.mode !== 'single' || props.doc === null || props.doc === undefined) return undefined
         const node = canvas.current
         if (node === null) return undefined
+        const shot = cachedPaint(props.page)
+        if (shot !== null) {
+          node.width = shot.entry.canvas.width
+          node.height = shot.entry.canvas.height
+          node.style.width = shot.entry.cssWidth
+          node.style.height = shot.entry.cssHeight
+          const context = node.getContext('2d')
+          if (context !== null) context.drawImage(shot.entry.canvas, 0, 0)
+          if (props.scale === null) props.onScale(shot.used)
+          return undefined
+        }
         let cancelled = false
         void (async () => {
           try {
@@ -6814,6 +6988,7 @@ window.__ModuleLoader__.load({
             task.current = render
             await render.promise
             if (cancelled) return
+            setPaintedScale(current => (current === used ? current : used))
             // The document starts at "fit width", which is only known after the
             // first page's size is; record it so later zoom is relative to it.
             if (props.scale === null) props.onScale(used)
@@ -6831,7 +7006,65 @@ window.__ModuleLoader__.load({
             task.current = null
           }
         }
-      }, [props.doc, props.page, props.scale, props.mode, props.fitScale, props.onScale, props.onError])
+      }, [props.doc, props.page, props.scale, props.mode, props.fitScale, props.onScale, props.onError, cachedPaint])
+
+      // Warm the adjacent pages while the reader is idle. A page that fails to
+      // warm is simply painted on demand, as before.
+      useEffect(() => {
+        if (props.mode !== 'single' || props.doc === null || props.doc === undefined || paintedScale === null) return undefined
+        const generation = cacheGen.current
+        const doc = props.doc
+        const total = Number(props.count) || 0
+        const targets = [props.page - 1, props.page + 1]
+          .filter(page => page >= 1 && (total <= 0 || page <= total))
+        const idle = typeof requestIdleCallback === 'function'
+          ? callback => requestIdleCallback(callback, { timeout: 800 })
+          : callback => setTimeout(callback, 120)
+        let cancelled = false
+        // A fast page flip must not leave the previous warm-up painting: each
+        // pending render is cancelled when this effect is torn down.
+        const pending = new Map()
+        const warm = async pageNumber => {
+          if (cancelled || generation !== cacheGen.current || pageCache.current.has(pageNumber)) return
+          try {
+            const page = await doc.getPage(pageNumber)
+            if (cancelled || generation !== cacheGen.current) return
+            const base = page.getViewport({ scale: 1 })
+            const used = props.scale === null ? props.fitScale(base.width) : props.scale
+            if (Math.abs(used - paintedScale) > 0.001) return
+            const offscreen = document.createElement('canvas')
+            const render = paintPageCanvas(page, offscreen, used)
+            pending.set(pageNumber, render)
+            await render.promise
+            pending.delete(pageNumber)
+            if (cancelled || generation !== cacheGen.current) return
+            pageCache.current.set(pageNumber, {
+              canvas: offscreen,
+              baseWidth: base.width,
+              scale: used,
+              cssWidth: offscreen.style.width,
+              cssHeight: offscreen.style.height,
+            })
+            while (pageCache.current.size > PAGE_PRELOAD_LIMIT) {
+              const oldest = pageCache.current.keys().next().value
+              pageCache.current.delete(oldest)
+            }
+          } catch {
+            // A page that fails to warm paints normally when the reader reaches it.
+            pending.delete(pageNumber)
+          }
+        }
+        const handles = targets.map(pageNumber => idle(() => { void warm(pageNumber) }))
+        return () => {
+          cancelled = true
+          if (typeof cancelIdleCallback === 'function') handles.forEach(handle => cancelIdleCallback(handle))
+          else handles.forEach(handle => clearTimeout(handle))
+          for (const render of pending.values()) {
+            try { render.cancel() } catch { /* already finished */ }
+          }
+          pending.clear()
+        }
+      }, [props.doc, props.mode, props.page, props.count, props.scale, props.fitScale, paintedScale])
 
       // Continuous mode has no single-page paint to learn the page size from,
       // so measure page one instead of leaving the scale unknown.
@@ -7044,8 +7277,18 @@ window.__ModuleLoader__.load({
       const seenAnnotRev = useRef(0)
       const strokesRef = useRef([])
       const masksRef = useRef([])
+      // Neighbouring pages' marks, read before the reader arrives on them, so a
+      // turn does not show a blank page while localStorage is read. Any edit
+      // clears it: a stale copy would be worse than the tiny read it saves.
+      const annotPrefetch = useRef(new Map())
+      // Unsaved edits, one per page. They are deliberately not annotations: they
+      // never reach the store, the disk or an export.
+      const pageDrafts = useMemo(() => createPageDraftStore(), [reader.bookId, reader.code, reader.name, reader.variant])
       // Page marks live in the shared store: the side preview writes the same keys.
       const inkStore = useMemo(() => createAnnotationStore(reader.bookId, reader.code, 'reader'), [reader.bookId, reader.code])
+      useEffect(() => {
+        annotPrefetch.current.clear()
+      }, [inkStore])
       strokesRef.current = strokes
       masksRef.current = masks
       useEffect(() => {
@@ -7055,6 +7298,7 @@ window.__ModuleLoader__.load({
           const next = Number(state.annotRev) || 0
           if (next <= seenAnnotRev.current) return
           seenAnnotRev.current = next
+          annotPrefetch.current.clear()
           setRemoteAnnotRev(value => value + 1)
         })
       }, [reader.bookId, reader.code])
@@ -7067,6 +7311,7 @@ window.__ModuleLoader__.load({
       const savePageAnnots = next => {
         const rev = inkStore.save(reader.page, 'annots', next, currentSnapshot())
         if (rev === null) return
+        annotPrefetch.current.clear()
         bumpHistory(value => value + 1)
         strokesRef.current = next
         setStrokes(next)
@@ -7075,6 +7320,7 @@ window.__ModuleLoader__.load({
       const savePageMasks = next => {
         const rev = inkStore.save(reader.page, 'masks', next, currentSnapshot())
         if (rev === null) return
+        annotPrefetch.current.clear()
         bumpHistory(value => value + 1)
         masksRef.current = next
         setMasks(next)
@@ -7276,7 +7522,8 @@ window.__ModuleLoader__.load({
       }, [reader.bookId, reader.code, reader.fileName])
       const maskKey = `pdfdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
-        const list = inkStore.readList('masks', reader.page)
+        const prefetched = annotPrefetch.current.get(reader.page)
+        const list = prefetched === undefined ? inkStore.readList('masks', reader.page) : prefetched.masks
         masksRef.current = list
         setMasks(list)
       }, [inkStore, maskKey, remoteAnnotRev])
@@ -7424,15 +7671,55 @@ window.__ModuleLoader__.load({
 
       const annotKey = `pdfdesk:annots:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
-        const list = inkStore.readList('annots', reader.page)
+        const prefetched = annotPrefetch.current.get(reader.page)
+        const list = prefetched === undefined ? inkStore.readList('annots', reader.page) : prefetched.annots
         strokesRef.current = list
         setStrokes(list)
       }, [inkStore, annotKey, remoteAnnotRev])
-      // Turning the page (or taking the other end's edit) moves the ink under
-      // the editor: a draft left open would save itself onto the wrong page.
-      // An in-flight stroke is dropped for the same reason.
+      // Warm the neighbouring pages' marks: the reader usually turns one page,
+      // and a page must not appear bare while its ink is read.
       useEffect(() => {
-        setNoteEdit(null)
+        const total = Number(reader.count) || 0
+        const targets = [reader.page - 1, reader.page + 1]
+          .filter(page => page >= 1 && (total <= 0 || page <= total))
+        const idle = typeof requestIdleCallback === 'function'
+          ? callback => requestIdleCallback(callback, { timeout: 800 })
+          : callback => setTimeout(callback, 150)
+        const handles = targets.map(page => idle(() => {
+          if (annotPrefetch.current.has(page)) return
+          annotPrefetch.current.set(page, {
+            annots: inkStore.readList('annots', page),
+            masks: inkStore.readList('masks', page),
+          })
+        }))
+        return () => {
+          if (typeof cancelIdleCallback === 'function') handles.forEach(handle => cancelIdleCallback(handle))
+          else handles.forEach(handle => clearTimeout(handle))
+        }
+      }, [inkStore, reader.page, reader.count])
+      // Turning the page moves the ink under the editor: a draft left open would
+      // save itself onto the wrong page. Unsaved edits are stashed for the page
+      // they belong to and restored when the reader comes back; a remote edit
+      // (the same page, a new revision) still cancels the open editor.
+      const lastAnnotKey = useRef(annotKey)
+      useEffect(() => {
+        const pageChanged = lastAnnotKey.current !== annotKey
+        lastAnnotKey.current = annotKey
+        if (pageChanged) {
+          const draft = noteEditRef.current
+          if (draft !== null) {
+            const page = draft.page ?? reader.page
+            pageDrafts.stash(page, { noteEdit: { ...draft, text: noteText.current }, text: noteText.current })
+          }
+          setNoteEdit(null)
+          const restored = pageDrafts.take(reader.page)
+          if (restored !== undefined) {
+            noteText.current = restored.text
+            setNoteEdit({ ...restored.noteEdit, page: reader.page })
+          }
+        } else if (noteEditRef.current !== null) {
+          setNoteEdit(null)
+        }
         setDraftStroke(null)
         setTextDraft(null)
         setSelection(null)
@@ -7442,7 +7729,7 @@ window.__ModuleLoader__.load({
         // The block pass belongs to one page: keep its signature only while the
         // boxes on screen are still that page's.
         setAutoBoxes(null)
-      }, [annotKey, remoteAnnotRev])
+      }, [annotKey, remoteAnnotRev, pageDrafts, reader.page])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
       // so the same numbers work at any zoom. The box width is remembered so the
       // eraser can turn its pixel tolerance into page units.
@@ -7482,6 +7769,7 @@ window.__ModuleLoader__.load({
           noteText.current = String(entry.text ?? '')
           setNoteEdit({
             id: noteSeq.current,
+            page: reader.page,
             side,
             index: found,
             x: bounds.x,
@@ -7506,6 +7794,7 @@ window.__ModuleLoader__.load({
         noteText.current = ''
         setNoteEdit({
           id: noteSeq.current,
+          page: reader.page,
           side,
           index: -1,
           x,
@@ -7531,6 +7820,13 @@ window.__ModuleLoader__.load({
         const draft = noteEditRef.current
         if (draft === null || draft.id !== id) return
         setNoteEdit(null)
+        // A blur that lands after the page moved must not write onto the new
+        // page: keep the words as a draft of the page they belong to.
+        const page = draft.page ?? reader.page
+        if (page !== reader.page) {
+          pageDrafts.stash(page, { noteEdit: { ...draft, text: noteText.current }, text: noteText.current })
+          return
+        }
         // Nothing typed into a brand-new note: nothing to store.
         if (draft.index < 0 && noteText.current.trim() === '') return
         savePageAnnots(applyNote(strokesRef.current, draft, noteText.current))
@@ -8289,6 +8585,7 @@ window.__ModuleLoader__.load({
           setSelection({ index: found, kind: 'text' })
           setNoteEdit({
             id: noteSeq.current,
+            page: reader.page,
             side,
             index: found,
             x: bounds.x,
@@ -9210,6 +9507,8 @@ window.__ModuleLoader__.load({
       // the answer, so a reopen (or a rebuild) shows the new state.
       const [cacheOpen, setCacheOpen] = useState(false)
       const cache = props.cache === undefined ? null : props.cache
+      // Where the reader last stopped in this chapter; no record means no hint.
+      const lastPage = readStoredPage(props.bookId, chapter.code)
       useEffect(() => {
         if (!props.open || cache !== null) return
         props.onLoadCache(props.bookId, chapter.code)
@@ -9256,6 +9555,9 @@ window.__ModuleLoader__.load({
           counts === '' ? null : h('span', { className: 'md-session-count' }, counts),
           kindText === '' ? null : h('span', { className: 'md-kind' }, kindText),
           chapter.pages === '' ? null : h('span', { className: 'md-pages' }, format('pages', { range: chapter.pages })),
+          lastPage === null || lastPage <= 1
+            ? null
+            : h('span', { className: 'md-last-page', title: format('lastPageHint') }, format('lastPageAt', { n: lastPage })),
           h('span', { className: 'md-chevron', 'aria-hidden': true })
         ),
         open ? h('div', { className: 'md-detail', id: detailId },
@@ -9301,6 +9603,17 @@ window.__ModuleLoader__.load({
             onToggle: () => setCacheOpen(value => !value),
             onRebuild: () => props.onRebuildCache(props.bookId, chapter.code),
           }),
+          lastPage === null
+            ? null
+            : h('div', { className: 'md-detail-line' },
+              h('span', { className: 'md-detail-key' }, format('lastPageLabel')),
+              h('span', { className: 'md-detail-value' }, format('lastPageAt', { n: lastPage })),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: format('lastPageHint'),
+                onClick: () => props.onOpenPdf(chapter),
+              }, format('lastPageResume'))
+            ),
           h('div', {
             className: 'md-sessions-wrap',
             'data-collapsed': sessionsOpen ? 'false' : 'true',
@@ -9795,6 +10108,7 @@ window.__ModuleLoader__.load({
 .md-session-count { font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-kind { font-size: 11px; color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l3); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 .md-pages { font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.md-last-page { font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .md-chevron { position: relative; width: 18px; height: 18px; }
 .md-chevron::before { content: ""; position: absolute; top: 50%; left: 40%; width: 6px; height: 6px; border-right: 1.5px solid var(--dsw-alias-label-secondary); border-bottom: 1.5px solid var(--dsw-alias-label-secondary); transform: translate(0, -50%) rotate(-45deg); transition: transform .16s ease; }
 .md-chapter[data-open="true"] .md-chevron::before { transform: translate(0, -50%) rotate(45deg); }
@@ -10174,7 +10488,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [count, setCount] = useState(0)
       const [page, setPage] = useState(1)
       const [jump, setJump] = useState(0)
-      const [mode, setMode] = useState('single')
+      const [mode, setMode] = useState(() => readGlobalMode() ?? 'single')
+      // One writer for the reading mode: the global preference follows every
+      // change, so single/continuous is the same in the reader and this column.
+      const changeMode = next => {
+        if (next !== 'single' && next !== 'continuous') return
+        writeGlobalMode(next)
+        setMode(next)
+      }
       // Zoom: the column auto-fits by default and follows its own width. A manual
       // zoom (buttons or menu) leaves auto-fit, and following the reader's zoom is
       // an explicit third mode; all three resolve to one concrete scale.
@@ -11244,7 +11565,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             id: 'mode',
             label: format(state.mode === 'single' ? 'readerModeContinuous' : 'readerModeSingle'),
             separatorBefore: true,
-            run: () => setMode(state.mode === 'single' ? 'continuous' : 'single'),
+            run: () => changeMode(state.mode === 'single' ? 'continuous' : 'single'),
           },
           {
             id: 'sessions',
@@ -11447,7 +11768,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             title: format('readerMode'),
             'aria-label': format('readerMode'),
             'aria-pressed': mode === 'continuous' ? 'true' : 'false',
-            onClick: () => setMode(mode === 'single' ? 'continuous' : 'single'),
+            onClick: () => changeMode(mode === 'single' ? 'continuous' : 'single'),
           }, mode === 'single' ? format('readerModeSingle') : format('readerModeContinuous')),
           h(KitButton, {
             type: 'button',
@@ -12242,6 +12563,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         const name = target.name ?? ''
         const wanted = Number(target.page)
         const page = Number.isFinite(wanted) && wanted > 0 ? Math.round(wanted) : readReaderPage(target.bookId, target.code)
+        // The width belongs to the book and the reading mode to everyone: both
+        // are remembered across reader closes and app restarts.
+        const rememberedWidth = readBookScale(target.bookId)
+        const rememberedMode = readGlobalMode()
         // The chapter PDF shares one page with its right-column preview. A
         // produced PDF is a document of its own, so it keeps its page locally.
         // Only a real difference is announced: re-opening the same document must
@@ -12275,8 +12600,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             variant: target.variant ?? '',
             page,
             count: 0,
-            scale: null,
-            mode: target.mode === 'continuous' ? 'continuous' : 'single',
+            scale: rememberedWidth === null ? null : rememberedWidth.scale,
+            mode: rememberedMode ?? (target.mode === 'continuous' ? 'continuous' : 'single'),
             jump: 0,
             phase: 'loading',
             error: '',
@@ -12399,6 +12724,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       const readerMode = useCallback(mode => {
+        if (mode === 'single' || mode === 'continuous') writeGlobalMode(mode)
         setReader(previous => previous === null
           ? null
           : { ...previous, mode, jump: (previous.jump ?? 0) + 1 })
@@ -12413,12 +12739,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => {
           if (previous === null) return null
           const current = previous.scale ?? 1
-          return { ...previous, scale: Math.max(0.3, Math.min(4, Math.round(current * factor * 100) / 100)) }
+          const scale = Math.max(0.3, Math.min(4, Math.round(current * factor * 100) / 100))
+          writeBookScale(previous.bookId, scale)
+          return { ...previous, scale }
         })
       }, [])
 
       const readerFit = useCallback(() => {
-        setReader(previous => previous === null ? null : { ...previous, scale: null })
+        setReader(previous => {
+          if (previous === null) return null
+          // "Fit" is a width choice of its own: remember it as fit, not as the
+          // number a particular window size produced.
+          writeBookScale(previous.bookId, null)
+          return { ...previous, scale: null }
+        })
       }, [])
 
       const closeReader = useCallback(() => setReader(null), [])
@@ -12884,6 +13218,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               ? undefined
               : restoreBook.chapters.find(item => item.code === storedReader.code)
             if (restoreBook !== undefined && restoreChapter !== undefined) {
+              const rememberedWidth = readBookScale(restoreBook.id)
               setReader({
                 bookId: restoreBook.id,
                 code: restoreChapter.code,
@@ -12893,8 +13228,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 name: typeof storedReader.name === 'string' ? storedReader.name : '',
                 page: typeof storedReader.page === 'number' ? storedReader.page : 1,
                 count: 0,
-                scale: typeof storedReader.scale === 'number' ? storedReader.scale : null,
-                mode: storedReader.mode === 'continuous' ? 'continuous' : 'single',
+                // The book's own width and the global mode outrank the last
+                // position: they are the reader's standing choice.
+                scale: rememberedWidth !== null
+                  ? rememberedWidth.scale
+                  : (typeof storedReader.scale === 'number' ? storedReader.scale : null),
+                mode: readGlobalMode() ?? (storedReader.mode === 'continuous' ? 'continuous' : 'single'),
                 jump: 0,
                 phase: 'loading',
                 error: '',
