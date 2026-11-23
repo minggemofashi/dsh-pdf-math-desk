@@ -11724,6 +11724,27 @@ window.__ModuleLoader__.load({
         if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.redo()
         else redoPage()
       }
+      // Standard editor shortcuts for annotation history. Inputs and the note
+      // editor keep their native text undo.
+      useEffect(() => {
+        const onKeyDown = event => {
+          if (!(event.ctrlKey === true || event.metaKey === true) || event.altKey === true) return
+          const key = String(event.key).toLowerCase()
+          if (key !== 'z' && key !== 'y') return
+          const target = event.target
+          if (target !== null && target !== undefined && typeof target.tagName === 'string'
+            && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)) return
+          if (noteEditRef.current !== null) return
+          const redo = key === 'y' || (key === 'z' && event.shiftKey === true)
+          if (redo ? redoAvailable === 0 : undoAvailable === 0) return
+          event.preventDefault()
+          event.stopPropagation()
+          if (redo) redoEither()
+          else undoEither()
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [undoAvailable, redoAvailable])
       // Each mask paints the translated page into its own canvas, sized as a
       // whole page and shifted by -mask origin. The canvas has no width/height
       // style of its own, so the browser scales the bitmap to exactly the page
@@ -15292,6 +15313,29 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
         redoPage()
       }
+      useEffect(() => {
+        const onKeyDown = event => {
+          // With the full reader open, its handler owns Ctrl+Z/Y; this one only
+          // serves the standalone right-column preview.
+          if (typeof document !== 'undefined' && document.querySelector('.md-reader') !== null) return
+          if (!(event.ctrlKey === true || event.metaKey === true) || event.altKey === true) return
+          const key = String(event.key).toLowerCase()
+          if (key !== 'z' && key !== 'y') return
+          const target = event.target
+          if (target !== null && target !== undefined && typeof target.tagName === 'string'
+            && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)) return
+          if (noteEditRef.current !== null) return
+          const redo = key === 'y' || (key === 'z' && event.shiftKey === true)
+          if (redo ? redoCount === 0 : undoCount === 0) return
+          event.preventDefault()
+          event.stopPropagation()
+          if (redo) redoOne()
+          else undoOne()
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [undoCount, redoCount])
+
       const questionLayer = h(QuestionMarks, {
         questions: questions.filter(item => Number(item.page) === displayPage),
         active: tool === 'question',
