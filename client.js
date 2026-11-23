@@ -110,6 +110,8 @@ window.__ModuleLoader__.load({
 
     /** Session modes, in the order the chapter shows them. */
     const MODES = ['extract', 'qa', 'exercise']
+    /** A no-op callback that keeps a stable identity across renders. */
+    const noop = () => {}
     /** The always-available, purpose-free session type. */
     const GENERAL_MODE = 'general'
     const ALL_MODES = [GENERAL_MODE, ...MODES]
@@ -751,7 +753,6 @@ window.__ModuleLoader__.load({
       readerModeContinuous: '连续',
       canvasCenter: '居中',
       canvasCenterHint: '回到当前页居中',
-      canvasOffPageHint: '本章有 {n} 处页外笔记，切到单页查看',
       annotHand: '手（平移）',
       handPanelHint: '拖动页面平移，页外笔记也能看到；也可按住空格临时切手；「居中」回到当前页',
       sideTabTitle: '{book} · {code}',
@@ -1095,19 +1096,18 @@ window.__ModuleLoader__.load({
       readerLastHint: '最后一页',
       readerJumpPage: '跳页',
       readerJumpPageHint: '跳到指定页：聚焦页码框输入',
-      printNoArtifact: '本章没有可打印的 Markdown 产物',
       questionTool: '疑问框',
-      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放、双击名称改名、右键删除',
+      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放。改名：双击框上的名称；删除：先选中疑问框工具，再右键框（立即删除、不可恢复）',
       questionJump: '疑问跳转',
       questionJumpEmpty: '本章没有疑问',
-      questionNameHint: '双击改名；右键删除',
+      questionNameHint: '双击改名（先选中疑问框工具）；右键删除',
       questionRename: '疑问名称',
       questionsTitle: '疑问',
       questionsEmpty: '本章还没有疑问标记',
       questionOpen: '定位',
       questionListHint: '点击跳到页面位置',
-      questionInjectToggle: '疑问：创建时注入当前会话',
-      questionInjectHint: '创建疑问时把「看到疑问：名称」追加到当前会话输入框，不自动发送；没有打开的会话时只创建标记',
+      questionInjectToggle: '疑问：右侧预览创建时注入当前会话',
+      questionInjectHint: '只有在右侧预览（会话旁的 PDF）创建疑问时，才把「看到疑问：名称」追加到当前会话输入框，不自动发送；主阅读器里创建只标记位置；没有打开的会话时只创建标记',
       questionSaveFailed: '疑问保存失败',
       printAction: '打印',
       printHint: '用浏览器打印这个 Markdown（HTML 打印页，不需要 TeX）',
@@ -1364,7 +1364,6 @@ window.__ModuleLoader__.load({
       readerModeContinuous: 'Continuous',
       canvasCenter: 'Center',
       canvasCenterHint: 'Center the current page again',
-      canvasOffPageHint: '{n} off-page marks in this chapter; switch to single page to see them',
       annotHand: 'Hand (pan)',
       handPanelHint: 'Drag the page to pan, even to marks outside it; hold Space for the same gesture; “Center” returns to the current page',
       sideTabTitle: '{book} · {code}',
@@ -1710,18 +1709,17 @@ window.__ModuleLoader__.load({
       readerLastHint: 'Go to the last page',
       readerJumpPage: 'Jump to page',
       readerJumpPageHint: 'Jump to a page: focus the page box and type',
-      printNoArtifact: 'No printable Markdown product in this chapter',
-      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize, double-click the name to rename, right-click to delete',
+      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize. Rename: double-click the name. Delete: pick the question tool first, then right-click the box (immediate, no undo)',
       questionJump: 'Jump to a question',
       questionJumpEmpty: 'No questions in this chapter',
-      questionNameHint: 'Double-click to rename; right-click to delete',
+      questionNameHint: 'Double-click to rename (question tool active); right-click to delete',
       questionRename: 'Question name',
       questionsTitle: 'Questions',
       questionsEmpty: 'No questions marked in this chapter yet',
       questionOpen: 'Go to',
       questionListHint: 'Click to jump there',
-      questionInjectToggle: 'Questions: append to the open conversation',
-      questionInjectHint: 'When a question is created, append “看到疑问：<name>” to the open conversation’s input (never sent). Without an open conversation only the mark is created.',
+      questionInjectToggle: 'Questions: append when created in the right preview',
+      questionInjectHint: 'Only a mark created in the right preview (the PDF beside the chat) appends “看到疑问：<name>” to the open conversation’s input (never sent). The reader only marks a place; without an open conversation only the mark is created.',
       questionSaveFailed: 'The question could not be saved',
       printAction: 'Print',
       printHint: 'Print this Markdown with the browser (HTML print page, no TeX needed)',
@@ -3221,7 +3219,6 @@ window.__ModuleLoader__.load({
       { id: 'textTool', labelKey: 'annotText', fallback: [{ key: 'x' }] },
       { id: 'questionTool', labelKey: 'questionTool', fallback: [{ key: 'q' }] },
       { id: 'questionJump', labelKey: 'questionJump', fallback: [{ key: 'Q', shift: true }] },
-      { id: 'printArtifact', labelKey: 'printAction', fallback: [{ key: 'p', ctrl: true }] },
       { id: 'closeReader', labelKey: 'shortcutClose', fallback: [{ key: 'Escape' }] },
     ]
 
@@ -5734,9 +5731,9 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Where a pointer lands in page coordinates **without** clamping: the canvas
-     * mode lets a mark live outside the page, so a point there has to keep its
-     * sign and distance.
+     * Where a pointer lands in page coordinates **without** clamping to the
+     * page: the shared plane lets a mark live outside the page, so a point
+     * there has to keep its sign and distance.
      * @param {{ clientX: number, clientY: number }} event - the pointer event.
      * @param {Element | null} node - the page-sized element.
      * @returns {[number, number] | null} the point, or null when the box has no area.
@@ -5752,7 +5749,29 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Whether one mark lies inside its page. Off-page marks belong to the canvas
+     * How far a mark may sit outside its page, in page units: five page widths
+     * to each side, one page height above and below. The shared plane is large
+     * enough to write beside a page, but it is not infinite: the hand tool stops
+     * at these margins, so the page can always be found again.
+     */
+    const INK_MARGIN_X = 5
+    const INK_MARGIN_Y = 1
+
+    /**
+     * Keep a free pointer point inside the shared plane's margin.
+     * @param {[number, number]} point - unclamped page coordinates.
+     * @returns {[number, number]} the point inside the plane.
+     */
+    function clampInkPoint(point) {
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+      return [
+        clamp(point[0], -INK_MARGIN_X, 1 + INK_MARGIN_X),
+        clamp(point[1], -INK_MARGIN_Y, 1 + INK_MARGIN_Y),
+      ]
+    }
+
+    /**
+     * Whether one mark lies inside its page. Off-page marks belong to the shared
      * plane; the page views hide them so they cannot bleed over the toolbar.
      * @param {object} entry - a stored annotation.
      * @returns {boolean} true when every anchor is on the page.
@@ -6308,6 +6327,24 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The number the next default name (`疑问 N`) should take: the smallest
+     * positive number no current mark is named with. A deleted mark therefore
+     * gives its number back instead of leaving a gap that the next mark skips.
+     * @param {object[]} questions - the chapter's marks.
+     * @returns {number} the number to use.
+     */
+    function nextQuestionNumber(questions) {
+      const used = new Set()
+      for (const item of Array.isArray(questions) ? questions : []) {
+        const match = /^疑问\s*(\d+)$/.exec(String(item !== null && item !== undefined ? item.name : ''))
+        if (match !== null) used.add(Number(match[1]))
+      }
+      let number = 1
+      while (used.has(number)) number += 1
+      return number
+    }
+
+    /**
      * Question marks on one page: a thin border per mark, its name on hover, and
      * the drag / resize / rename / right-click-delete gestures. The layer only
      * takes pointer events while a mark tool is picked, so drawing behind it
@@ -6367,6 +6404,10 @@ window.__ModuleLoader__.load({
       }
       const beginDrag = (event, question, mode) => {
         if (!active || event.button !== 0) return
+        // The rename field is a field first: a press in it must focus and place
+        // the caret, not start moving the mark (which also dismissed the field).
+        if (event.target !== null && event.target !== undefined && typeof event.target.closest === 'function'
+          && event.target.closest('.md-question-input') !== null) return
         event.preventDefault()
         event.stopPropagation()
         const at = pointOf(event)
@@ -6427,12 +6468,17 @@ window.__ModuleLoader__.load({
             onContextMenu: event => {
               event.preventDefault()
               event.stopPropagation()
+              // A right press in the rename field belongs to the field.
+              if (event.target !== null && event.target !== undefined && typeof event.target.closest === 'function'
+                && event.target.closest('.md-question-input') !== null) return
               if (active) props.onDelete(question.id)
             },
           },
             editing !== null && editing.id === question.id
-              ? h(KitInput, {
-                className: 'md-question-input',
+              // The wrapper carries the class in both UI modes: the host input
+              // uses its own class name, so the field has to be found by
+              // something the wrapper always provides.
+              ? h('div', { className: 'md-question-input' }, h(KitInput, {
                 value: editing.value,
                 autoFocus: true,
                 'aria-label': format('questionRename'),
@@ -6448,7 +6494,7 @@ window.__ModuleLoader__.load({
                   }
                 },
                 onBlur: commitRename,
-              })
+              }))
               : h('span', {
                 className: 'md-question-name',
                 title: format('questionNameHint'),
@@ -6860,7 +6906,7 @@ window.__ModuleLoader__.load({
         [props.bookId, props.code, props.page, props.rev],
       )
       if (entries.length === 0) return null
-      return h('div', { className: 'md-annot md-annot-static', 'aria-hidden': true },
+      return h('div', { className: 'md-annot md-annot-static', 'data-extended': 'true', 'aria-hidden': true },
         h('svg', { className: 'md-annot-ink', viewBox: '0 0 1 1', preserveAspectRatio: 'none' },
           entries.map((entry, index) => {
             if (entry.kind === 'text') return null
@@ -6915,7 +6961,7 @@ window.__ModuleLoader__.load({
               fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
               opacity: entry.opacity ?? 1,
               textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-              fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+              fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
               fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
             },
           }, entry.text)
@@ -7423,7 +7469,7 @@ window.__ModuleLoader__.load({
               color: entry.color ?? '#e0554a',
               fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
               fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-              fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+              fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
               fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
               textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : undefined,
             },
@@ -8096,6 +8142,23 @@ window.__ModuleLoader__.load({
       const pan = props.pan !== null && props.pan !== undefined ? props.pan : null
       const panEnabled = props.panEnabled === true
       const panDrag = useRef(null)
+      // The plane is finite: with the page on screen, the hand may move it five
+      // page widths sideways and one page height up or down. The clamp uses the
+      // painted canvas size, so it follows the zoom.
+      const panLimit = () => {
+        const node = canvas.current
+        const rect = node === null ? null : node.getBoundingClientRect()
+        const width = rect === null || rect.width === 0 ? 600 : rect.width
+        const height = rect === null || rect.height === 0 ? 800 : rect.height
+        return { x: Math.round(width * INK_MARGIN_X), y: Math.round(height * INK_MARGIN_Y + 24) }
+      }
+      const clampPan = value => {
+        const limit = panLimit()
+        return {
+          x: Math.max(-limit.x, Math.min(limit.x, value.x)),
+          y: Math.max(-limit.y, Math.min(limit.y, value.y)),
+        }
+      }
       const beginPan = event => {
         if (!panEnabled || event.button !== 0) return
         panDrag.current = { start: [event.clientX, event.clientY], origin: pan ?? { x: 0, y: 0 } }
@@ -8106,10 +8169,36 @@ window.__ModuleLoader__.load({
         const dx = event.clientX - panDrag.current.start[0]
         const dy = event.clientY - panDrag.current.start[1]
         if (typeof props.onPan === 'function') {
-          props.onPan({ x: panDrag.current.origin.x + dx, y: panDrag.current.origin.y + dy })
+          props.onPan(clampPan({ x: panDrag.current.origin.x + dx, y: panDrag.current.origin.y + dy }))
         }
       }
       const endPan = () => { panDrag.current = null }
+
+      // The pages just above and below the one being read. The notes live on the
+      // shared plane, so bringing the neighbour into view by panning must show
+      // its page and its own marks, not an empty gap. The right preview keeps
+      // its single page: it has no plane and no pan of its own.
+      const showNeighbours = typeof props.overlayFor === 'function'
+      const neighbour = (pageNumber, place) => {
+        if (!showNeighbours) return null
+        if (!(props.count > 0) || pageNumber < 1 || pageNumber > props.count) return null
+        const shownScale = props.scale === null ? (paintedScale === null ? 1 : paintedScale) : props.scale
+        return h('div', { className: `md-reader-neighbour md-reader-neighbour-${place}`, key: `neighbour-${pageNumber}` },
+          h(ReaderPage, {
+            doc: props.doc,
+            pageNumber,
+            scale: shownScale,
+            rootRef: props.rootRef === null || props.rootRef === undefined ? stage : props.rootRef,
+            onVisible: noop,
+            registerSlot: noop,
+            showBlocks: false,
+            bookId: props.bookId,
+            code: props.code,
+            onError: props.onError,
+            overlay: typeof props.overlayFor === 'function' ? props.overlayFor(pageNumber) : null,
+            overlayPage: pageNumber,
+          }))
+      }
 
       const content = props.mode === 'continuous'
         ? h(ContinuousView, {
@@ -8134,6 +8223,7 @@ window.__ModuleLoader__.load({
           className: 'md-reader-single',
           style: pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
         },
+          neighbour(props.page - 1, 'before'),
           h('div', {
             className: 'md-reader-single-page',
             ref: node => {
@@ -8142,7 +8232,8 @@ window.__ModuleLoader__.load({
           },
             h('canvas', { className: 'md-reader-canvas', ref: canvas }),
             props.children
-          ))
+          ),
+          neighbour(props.page + 1, 'after'))
 
       if (props.variant === 'column') return content
       return h('div', {
@@ -8150,6 +8241,7 @@ window.__ModuleLoader__.load({
         'data-mode': props.mode,
         'data-grab': panEnabled && panDrag.current === null ? 'true' : undefined,
         'data-panning': panDrag.current !== null ? 'true' : undefined,
+        'data-panned': pan !== null && (pan.x !== 0 || pan.y !== 0) ? 'true' : undefined,
         ref: attachStage,
         onPointerDown: panEnabled ? beginPan : undefined,
         onPointerMove: panEnabled ? movePan : undefined,
@@ -8853,8 +8945,12 @@ window.__ModuleLoader__.load({
       const canvasPage = useRef(null)
       const annotPoint = event => {
         const node = extended && canvasPage.current !== null ? canvasPage.current : event.currentTarget
-        const point = extended ? inkPointOfFree(event, node) : inkPointOf(event, node)
-        if (point === null) return null
+        // The shared plane is finite: a point is clamped to five page widths to
+        // each side and one page height above/below, so a stray drag can never
+        // leave a mark so far away that the page is lost.
+        const raw = extended ? inkPointOfFree(event, node) : inkPointOf(event, node)
+        if (raw === null) return null
+        const point = extended ? clampInkPoint(raw) : raw
         const rect = node.getBoundingClientRect()
         annotBox.current = { width: rect.width, height: rect.height }
         return point
@@ -9795,9 +9891,10 @@ window.__ModuleLoader__.load({
       const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
-        // Single page: the layer is the shared plane, so its SVG is allowed to
-        // paint past the page edge and the off-page marks stay visible.
-        'data-extended': extended ? 'true' : undefined,
+        // Both views share one annotation plane: a mark may live past the page
+        // edge and stays visible, so the same notes show in single and
+        // continuous. Six page widths and three page heights are the bounds.
+        'data-extended': 'true',
         // In the single page a stage-sized capture layer (below) owns the
         // pointers while a mark tool is picked, because off-page marks need
         // coordinates outside the page box; otherwise this layer takes them.
@@ -9855,7 +9952,6 @@ window.__ModuleLoader__.load({
             : null,
           strokes.map((stroke, index) => {
             if (stroke.kind === 'text' || stroke.kind === 'shape') return null
-            if (!extended && !entryInsidePage(stroke)) return null
             const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
             const points = shown.points ?? []
             if (points.some(point => point.length > 2)) {
@@ -9890,13 +9986,13 @@ window.__ModuleLoader__.load({
             })
           }),
           strokes.map((entry, index) => (entry.kind === 'shape'
-            ? (!extended && !entryInsidePage(entry) ? null : h(ShapeMark, {
+            ? h(ShapeMark, {
               key: `shape-${index}`,
               entry: resizeEntry !== null && resize !== null && resize.index === index
                 ? resizeEntry
                 : drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry,
               roughness: props.roughness,
-            }))
+            })
             : null)),
           shapeDraft === null
             ? null
@@ -9928,7 +10024,6 @@ window.__ModuleLoader__.load({
         // with the stored list, so a double-click edits the right entry.
         strokes.map((entry, index) => (entry.kind === 'text'
           ? (() => {
-            if (!extended && !entryInsidePage(entry)) return null
             const live = resizeEntry !== null && resize !== null && resize.index === index ? resizeEntry : entry
             const shown = drag !== null && drag.index === index ? translateEntry(live, drag.dx, drag.dy) : live
             const bounds = noteBox(shown)
@@ -9946,7 +10041,7 @@ window.__ModuleLoader__.load({
                 fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
                 opacity: entry.opacity ?? 1,
                 textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-                fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+                fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
                 fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
               },
               onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
@@ -10129,7 +10224,9 @@ window.__ModuleLoader__.load({
         })
       }
       const createQuestion = rect => {
-        const number = questionsNext.current
+        // Fill the smallest free number: deleting 疑问 1 makes the next mark
+        // 疑问 1 again instead of continuing at a later number.
+        const number = nextQuestionNumber(questionsRef.current)
         const question = {
           id: createQuestionId(),
           name: `疑问 ${number}`,
@@ -10137,8 +10234,10 @@ window.__ModuleLoader__.load({
           rect,
           createdAt: Date.now(),
         }
-        commitQuestions([...questionsRef.current, question], number + 1)
-        void injectQuestionLine(reader.bookId, reader.code, question)
+        commitQuestions([...questionsRef.current, question], Math.max(questionsNext.current, number + 1))
+        // Reading mode never writes into a conversation: only the right preview
+        // (the PDF next to the chat) announces a new mark. Here the mark is just
+        // a position on the page.
       }
       const commitQuestionRect = (id, rect) => {
         commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, rect } : item)), questionsNext.current)
@@ -10189,12 +10288,6 @@ window.__ModuleLoader__.load({
         onDelete: id => deleteQuestion(id),
         onRename: (id, name) => renameQuestion(id, name),
       })
-      // Single page shows the whole shared plane, off-page marks included.
-      // Continuous keeps marks inside their own page, so it only says how many
-      // there are instead of letting them bleed over the next page.
-      const offPageMarks = extended
-        ? 0
-        : strokes.filter(entry => !entryInsidePage(entry)).length
       // In the single page a stage-sized layer captures the pointers while a mark
       // tool is picked, because ink may continue outside the page box. Questions
       // stay page-area marks and keep their own page-sized layer, the mask tool
@@ -10338,10 +10431,6 @@ window.__ModuleLoader__.load({
                 title: format('canvasCenterHint'),
                 onClick: () => setInkPan({ x: 0, y: 0 }),
               }, format('canvasCenter'))
-              : null,
-            offPageMarks > 0
-              ? h('span', { className: 'md-canvas-hint', title: format('canvasOffPageHint', { n: offPageMarks }) },
-                format('canvasOffPageHint', { n: offPageMarks }))
               : null,
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
@@ -11639,13 +11728,21 @@ window.__ModuleLoader__.load({
 /* The single page rides on the shared annotation plane: the hand tool (or a
    held space) pans it, and a stage-sized capture layer takes the pointer while
    a mark tool is picked so a stroke may continue outside the page. */
+/* The hand moves the page, so the stage must not also scroll under it: a
+   transformed page would otherwise add scrollbars at the plane's edges. */
+.md-reader-stage[data-grab="true"], .md-reader-stage[data-panned="true"] { overflow: hidden; }
 .md-reader-stage[data-grab="true"] { cursor: grab; }
 .md-reader-stage[data-panning="true"] { cursor: grabbing; }
 .md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
 .md-annot[data-extended="true"] .md-annot-ink { overflow: visible; }
 .md-annot-static { pointer-events: none; }
 .md-canvas-hint { font-size: 11.5px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
-.md-reader-single { display: flex; justify-content: safe center; flex: 0 0 auto; width: max-content; margin: 0 auto; }
+.md-reader-single { position: relative; display: flex; justify-content: safe center; flex: 0 0 auto; width: max-content; margin: 0 auto; }
+/* The neighbours sit on the plane above and below the page, so the page keeps
+   the stage's own centring and does not shift when they mount. */
+.md-reader-neighbour { position: absolute; left: 50%; transform: translateX(-50%); }
+.md-reader-neighbour-before { bottom: calc(100% + 24px); }
+.md-reader-neighbour-after { top: calc(100% + 24px); }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 /* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
    row from the page. It now takes no layout height at all: the note floats as an
@@ -11700,7 +11797,9 @@ window.__ModuleLoader__.load({
 .md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
-.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; }
+.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; z-index: 3; }
+.md-question-input input { min-width: 130px; }
+.md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
 .md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: 0; }
@@ -11745,7 +11844,7 @@ window.__ModuleLoader__.load({
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 /* A text note is transparent: it sits straight on the page, and a faint outline
    appears only on hover, when it can be double-clicked for editing. */
-.md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; font-weight: 600; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; }
+.md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; }
 /* With no tool picked, a note is clickable so a double-click can edit it. */
 .md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; }
 .md-annot[data-tool=""] .md-annot-text:hover { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
@@ -12856,7 +12955,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
             fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
             textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-            fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
             fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
             opacity: entry.opacity ?? 1,
           },
@@ -13002,7 +13101,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }
       const createQuestion = rect => {
-        const number = questionsNext.current
+        // Same gap-filling number as the reader: one numbering rule for both.
+        const number = nextQuestionNumber(questionsRef.current)
         const question = {
           id: createQuestionId(),
           name: `疑问 ${number}`,
@@ -13010,7 +13110,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           rect,
           createdAt: Date.now(),
         }
-        commitQuestions([...questionsRef.current, question], number + 1)
+        commitQuestions([...questionsRef.current, question], Math.max(questionsNext.current, number + 1))
+        // This column is the PDF beside the conversation, so this is where a new
+        // mark is announced: one line into the open chat box, never sent.
         void injectQuestionLine(bookId, code, question)
       }
       const flashQuestion = id => {
@@ -13714,9 +13816,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [picker, setPicker] = useState(null)
       // The HTML print page of one produced Markdown file (built on demand).
       const [printPage, setPrintPage] = useState(null)
-      // The keyboard handler is registered before the print callback exists, so
-      // Ctrl+P reaches it through a ref instead of a stale closure.
-      const printShortcut = useRef(null)
       const [digest, setDigest] = useState(null)
       const [libs, setLibs] = useState({ items: [], activeId: '' })
       const [library, setLibrary] = useState(null)
@@ -14433,10 +14532,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           else if (action === 'zoomOut') readerZoom(1 / 1.2)
           else if (action === 'fitWidth') readerFit()
           else if (action === 'toggleMode') readerMode(reader.mode === 'single' ? 'continuous' : 'single')
-          else if (action === 'printArtifact') {
-            const run = printShortcut.current
-            if (typeof run === 'function') run()
-          }
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
@@ -14525,41 +14620,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               : { ...current, html: '', busy: false, error: errorText(reason) }))
           })
       }, [work])
-
-      /**
-       * Print the chapter's newest Markdown product. Ctrl+P in the reader has no
-       * "current product" of its own, so the most recently written one is the
-       * one the reader is looking at. Nothing printable is a notice, not a
-       * silent key.
-       * @param {string} code - chapter code.
-       * @returns {Promise<void>} resolves after the print page is requested.
-       */
-      const printLatestArtifact = useCallback(async code => {
-        if (work === null || work.bookId === null) return
-        const key = `${work.bookId}|${code}`
-        try {
-          const cached = artifactsRef.current[key]
-          let items = cached !== undefined && cached.phase === 'ready' ? cached.items : []
-          if (!(cached !== undefined && cached.phase === 'ready')) {
-            const data = await request('GET', `artifacts?book=${encodeURIComponent(work.bookId)}&code=${encodeURIComponent(code)}`)
-            items = Array.isArray(data.artifacts) ? data.artifacts : []
-          }
-          const target = items
-            .filter(item => /\.(md|markdown)$/i.test(String(item.name ?? '')))
-            .sort((left, right) => (Number(right.mtime) || 0) - (Number(left.mtime) || 0))[0]
-          if (target === undefined) {
-            showNotice(format('printNoArtifact'))
-            return
-          }
-          printArtifact(target, code)
-        } catch (error) {
-          showNotice(errorText(error))
-        }
-      }, [printArtifact, showNotice, work])
-      printShortcut.current = () => {
-        const shown = readerRef.current
-        if (shown !== null) void printLatestArtifact(shown.code)
-      }
 
       /** Right-click a hidden book: move its chapter PDFs to the recycle bin. */
       const trashBook = useCallback(async bookId => {
