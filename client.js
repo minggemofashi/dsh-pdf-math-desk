@@ -402,6 +402,7 @@ window.__ModuleLoader__.load({
       splitReopened: '已打开这个书库的拆分会话',
       splitWorkspace: '工作区',
       workspaceNotChosen: '未选择工作区',
+      workspaceChoose: '选择工作区',
       workspaceChange: '更改',
       importStart: '导入文件',
       importBusy: '导入中…',
@@ -949,6 +950,7 @@ window.__ModuleLoader__.load({
       splitReopened: 'Opened this library\'s split conversation',
       splitWorkspace: 'Workspace',
       workspaceNotChosen: 'No workspace selected',
+      workspaceChoose: 'Choose workspace',
       workspaceChange: 'Change',
       importStart: 'Import files',
       importBusy: 'Importing…',
@@ -4038,14 +4040,14 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-library-tools' },
             h(KitButton, {
               type: 'button', className: 'md-btn',
-              disabled: busy,
+              disabled: busy || props.workspaceLabel === '',
               onClick: props.onSplit,
             }, busy ? format('libraryBusy') : format('splitStart')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: busy,
               onClick: props.onChooseWorkspace,
-            }, format('workspaceChange'))
+            }, props.workspaceLabel === '' ? format('workspaceChoose') : format('workspaceChange'))
           )
         ),
         h('div', { className: 'md-tool-card' },
@@ -12486,6 +12488,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             indexIgnored: data.indexIgnored === true,
             problem: data.problem !== null && typeof data.problem === 'object' ? data.problem : null,
             version: typeof data.version === 'string' ? data.version : '0.0.0',
+            libraryId: data.library !== null && typeof data.library === 'object' && typeof data.library.id === 'string' ? data.library.id : '',
             covers: new Set(Array.isArray(data.covers) ? data.covers : []),
             libraryDir: typeof data.libraryDir === 'string' ? data.libraryDir : '',
             fragmentDir: typeof data.fragmentDir === 'string' ? data.fragmentDir : '',
