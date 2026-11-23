@@ -145,6 +145,35 @@ window.__ModuleLoader__.load({
     const WORKSPACE_STORAGE = 'pdfdesk:workspace:'
     const SPLIT_SESSION_STORAGE = 'pdfdesk:split-session:'
 
+    /** Split-tool conversations this page visit has created or reopened. */
+    const splitSessionIds = new Set()
+
+    /**
+     * Every split-tool conversation this browser remembers, for any library.
+     * A split conversation carries the split preset in its composer until the
+     * user sends it, so it stays "blank" and a chapter New could otherwise adopt
+     * it; the preset would then look like the new chapter's prompt. No chapter
+     * session may reuse one, so every library's pointer counts.
+     * @returns {Set<string>} the known split session ids.
+     */
+    function storedSplitSessionIds() {
+      try {
+        const storage = window.localStorage
+        for (let index = 0; index < storage.length; index += 1) {
+          const key = storage.key(index)
+          if (typeof key !== 'string' || !key.startsWith(SPLIT_SESSION_STORAGE)) continue
+          const raw = storage.getItem(key)
+          if (raw === null || raw === '') continue
+          const parsed = JSON.parse(raw)
+          if (parsed === null || typeof parsed !== 'object') continue
+          if (typeof parsed.sessionId === 'string' && parsed.sessionId !== '') splitSessionIds.add(parsed.sessionId)
+        }
+      } catch {
+        // storage unavailable: keep the ids this visit already saw
+      }
+      return splitSessionIds
+    }
+
     /**
      * The split-tool conversation remembered for one library.
      * @param {string} libraryId - library id.
@@ -176,6 +205,8 @@ window.__ModuleLoader__.load({
      */
     function writeStoredSplitSession(libraryId, sessionId, workspaceId) {
       if (typeof libraryId !== 'string' || libraryId === '' || typeof sessionId !== 'string' || sessionId === '') return
+      // Remember it even when storage is unavailable: this visit must not reuse it.
+      splitSessionIds.add(sessionId)
       try {
         window.localStorage.setItem(`${SPLIT_SESSION_STORAGE}${libraryId}`, JSON.stringify({ sessionId, workspaceId }))
       } catch {
@@ -13011,11 +13042,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         const archivedIds = workspaces === null || workspaces.list === undefined
           ? NO_IDS
           : new Set(workspaces.list.getSnapshot().archivedSessionIds ?? [])
+        // A split conversation holds the split preset as its composer draft while
+        // it is still blank; adopting it would hand that preset to a chapter.
+        const splitIds = storedSplitSessionIds()
         const workspace = target.workspaceId !== null && workspaces !== null && workspaces.list !== undefined
           ? workspaces.list.getSnapshot().items.find(item => item.workspaceId === target.workspaceId)
           : undefined
         for (const id of list.ids) {
           if (archivedIds.has(id)) continue
+          if (splitIds.has(id)) continue
           const summary = list.byId[id]
           if (summary === undefined || summary.blank !== true || summary.origin === 'subagent') continue
           // A workbench-created pending blank already carries one preset prompt
