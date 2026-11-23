@@ -1090,6 +1090,24 @@ window.__ModuleLoader__.load({
       fontRemove: '删除',
       fontHint: '22 MB 的 Xiaolai 字体不再随插件分发；下载或导入后只存放在本机插件数据目录，删除不影响笔记',
       fontFailed: '字体操作失败',
+      settingsTabData: '数据',
+      dataTitle: '整机数据迁移',
+      dataHint: '打包会话、工作区登记、插件状态与书库内 .pdfdesk（笔记/疑问/缓存/附件）；书籍 PDF 与密钥永不打包',
+      dataBackup: '打包数据',
+      dataBackupCreated: '已生成 {name}（{files} 个文件，{mb} MB）',
+      dataDownload: '下载迁移包',
+      dataImportTitle: '导入迁移包',
+      dataImportHint: '填写本机 ZIP 路径；合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
+      dataPath: 'ZIP 路径',
+      dataInspect: '检查',
+      dataImport: '开始导入',
+      dataStrategy: '冲突处理',
+      dataMerge: '合并（不覆盖）',
+      dataOverwrite: '覆盖（先备份）',
+      dataSkip: '跳过已存在',
+      dataReport: '导入完成：导入 {imported}，改名 {renamed}，跳过 {skipped}，重写书库 {rewritten}',
+      dataRootHint: '书库 {id} 的新根目录',
+      dataFailed: '迁移操作失败',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
       attachHint: '支持 PDF、图片与 PPT（自动转 PDF），单个不超过 50 MB；会复制到本章的附件目录',
@@ -1720,6 +1738,24 @@ window.__ModuleLoader__.load({
       fontRemove: 'Remove',
       fontHint: 'The 22 MB Xiaolai face is no longer shipped; it is stored only in the local plugin data folder and removing it never touches notes',
       fontFailed: 'Font action failed',
+      settingsTabData: 'Data',
+      dataTitle: 'Machine migration',
+      dataHint: 'Packs sessions, workspace registry, plugin state and each library’s .pdfdesk (notes, questions, cache, attachments). Book PDFs and keys are never included.',
+      dataBackup: 'Create backup',
+      dataBackupCreated: 'Created {name} ({files} files, {mb} MB)',
+      dataDownload: 'Download backup',
+      dataImportTitle: 'Import a backup',
+      dataImportHint: 'Enter the ZIP path on this machine. Merge never overwrites: conflicts become *.imported-<time>.',
+      dataPath: 'ZIP path',
+      dataInspect: 'Inspect',
+      dataImport: 'Import',
+      dataStrategy: 'Conflicts',
+      dataMerge: 'Merge (keep existing)',
+      dataOverwrite: 'Overwrite (snapshot first)',
+      dataSkip: 'Skip existing',
+      dataReport: 'Imported {imported}, renamed {renamed}, skipped {skipped}, rewrote {rewritten} libraries',
+      dataRootHint: 'New root of library {id}',
+      dataFailed: 'Migration action failed',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
       attachHint: 'PDFs, images and PPT (converted to PDF) up to 50 MB; copied into this chapter’s attachment folder',
@@ -4163,6 +4199,65 @@ window.__ModuleLoader__.load({
           window.alert(`${format('fontFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
         }
       }
+      // Data migration: pack on this machine, inspect/import a local ZIP path.
+      const [dataBusy, setDataBusy] = useState('')
+      const [dataBackup, setDataBackup] = useState(null)
+      const [dataPath, setDataPath] = useState('')
+      const [dataInfo, setDataInfo] = useState(null)
+      const [dataRoots, setDataRoots] = useState({})
+      const [dataStrategy, setDataStrategy] = useState('merge')
+      const [dataReport, setDataReport] = useState(null)
+      const dataFail = error => {
+        window.alert(`${format('dataFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
+      }
+      const createDataBackup = async () => {
+        setDataBusy('create')
+        setDataReport(null)
+        try {
+          const payload = await request('POST', 'backup', { action: 'create', include: { fonts: false, projcache: false } })
+          setDataBackup(payload)
+        } catch (error) {
+          dataFail(error)
+        } finally {
+          setDataBusy('')
+        }
+      }
+      const inspectDataBackup = async () => {
+        setDataBusy('inspect')
+        setDataInfo(null)
+        setDataReport(null)
+        try {
+          const payload = await request('POST', 'backup', { action: 'inspect', path: dataPath.trim() })
+          const manifest = payload !== null && payload !== undefined ? payload.manifest : null
+          setDataInfo(manifest)
+          const roots = {}
+          const libraries = manifest !== null && manifest.paths !== null && typeof manifest.paths === 'object'
+            ? manifest.paths.libraries ?? {}
+            : {}
+          for (const id of Object.keys(libraries)) roots[id] = ''
+          setDataRoots(roots)
+        } catch (error) {
+          dataFail(error)
+        } finally {
+          setDataBusy('')
+        }
+      }
+      const runDataImport = async () => {
+        setDataBusy('import')
+        try {
+          const payload = await request('POST', 'backup', {
+            action: 'import',
+            path: dataPath.trim(),
+            strategy: dataStrategy,
+            libraryRoots: dataRoots,
+          })
+          setDataReport(payload !== null && payload !== undefined ? payload.report : null)
+        } catch (error) {
+          dataFail(error)
+        } finally {
+          setDataBusy('')
+        }
+      }
       useEffect(() => {
         request('GET', 'deepseek-key')
           .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
@@ -4211,6 +4306,7 @@ window.__ModuleLoader__.load({
         { id: 'workflow', label: format('settingsTabWorkflow') },
         { id: 'keys', label: format('settingsTabKeys') },
         { id: 'env', label: format('settingsTabEnv') },
+        { id: 'data', label: format('settingsTabData') },
         { id: 'about', label: format('settingsTabAbout') },
       ]
       const reading = h(React.Fragment, null,
@@ -4497,6 +4593,91 @@ window.__ModuleLoader__.load({
           : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message),
         h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
       )
+      const data = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('dataTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('dataHint')),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: dataBusy === 'create',
+              onClick: createDataBackup,
+            }, format('dataBackup')),
+            dataBackup === null
+              ? null
+              : h('a', {
+                className: 'md-btn md-btn-small',
+                href: dataBackup.download,
+                download: dataBackup.name,
+              }, format('dataDownload'))
+          ),
+          dataBackup === null
+            ? null
+            : h('p', { className: 'md-shelf-sub' },
+              format('dataBackupCreated', {
+                name: dataBackup.name,
+                files: dataBackup.files,
+                mb: (Number(dataBackup.bytes) / 1048576).toFixed(1),
+              }))
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('dataImportTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('dataImportHint')),
+          h('div', { className: 'md-settings-row' },
+            h('input', {
+              className: 'md-settings-input', type: 'text',
+              value: dataPath,
+              placeholder: 'D:\\backup\\dsh-workbench-backup-....zip',
+              onChange: event => setDataPath(event.target.value),
+            }),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: dataBusy === 'inspect' || dataPath.trim() === '',
+              onClick: inspectDataBackup,
+            }, format('dataInspect'))
+          ),
+          dataInfo === null
+            ? null
+            : h(React.Fragment, null,
+              h('p', { className: 'md-shelf-sub' },
+                `v${dataInfo.plugin !== null && dataInfo.plugin !== undefined ? dataInfo.plugin.version : '?'} · ${new Date(dataInfo.createdAt).toLocaleString()} · ${dataInfo.files} files`),
+              Object.keys(dataInfo.paths !== null && typeof dataInfo.paths === 'object' && dataInfo.paths.libraries !== null && typeof dataInfo.paths.libraries === 'object' ? dataInfo.paths.libraries : {})
+                .map(id => h('div', { className: 'md-settings-row', key: id },
+                  h('span', null, format('dataRootHint', { id })),
+                  h('input', {
+                    className: 'md-settings-input', type: 'text',
+                    value: dataRoots[id] ?? '',
+                    onChange: event => setDataRoots(current => ({ ...current, [id]: event.target.value })),
+                  })
+                )),
+              h('div', { className: 'md-settings-row' },
+                h('span', null, format('dataStrategy')),
+                h('select', {
+                  className: 'md-settings-input',
+                  value: dataStrategy,
+                  onChange: event => setDataStrategy(event.target.value),
+                },
+                  h('option', { value: 'merge' }, format('dataMerge')),
+                  h('option', { value: 'overwrite' }, format('dataOverwrite')),
+                  h('option', { value: 'skip' }, format('dataSkip'))),
+                h(KitButton, {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  disabled: dataBusy === 'import',
+                  onClick: runDataImport,
+                }, format('dataImport'))
+              )
+            ),
+          dataReport === null
+            ? null
+            : h('p', { className: 'md-settings-note' },
+              format('dataReport', {
+                imported: Array.isArray(dataReport.imported) ? dataReport.imported.length : 0,
+                renamed: Array.isArray(dataReport.renamed) ? dataReport.renamed.length : 0,
+                skipped: Array.isArray(dataReport.skipped) ? dataReport.skipped.length : 0,
+                rewritten: Array.isArray(dataReport.rewrittenLibraries) ? dataReport.rewrittenLibraries.length : 0,
+              }))
+        )
+      )
       return h(KitModal, {
         title: format('settings'),
         onClose: props.onClose,
@@ -4518,7 +4699,7 @@ window.__ModuleLoader__.load({
               onClick: () => setTab(item.id),
             }, item.label))
           ),
-          tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : about
+          tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : tab === 'data' ? data : about
         ),
       })
     }
