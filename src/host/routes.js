@@ -35,6 +35,7 @@ import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolv
 import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from './annotations.js'
 import { clearAllChapterCache, clearChapterCache, prepareChapterCache, readChapterCache } from './chapter-cache.js'
 import { readQuestions, writeQuestions } from './questions.js'
+import { prepareChapterText } from './chapter-text.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -558,6 +559,38 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, blocks })
         } catch (error) {
           fail(response, 500, 'blocks-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/chapter-text`) {
+        try {
+          const book = url.searchParams.get('book') ?? ''
+          const code = (url.searchParams.get('code') ?? '').toLowerCase()
+          const library = await activeLibrary()
+          const source = await chapterPdf(library, book, code)
+          if (source === null) {
+            fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
+            return
+          }
+          const result = await prepareChapterText({
+            script: join(config.toolsDir, 'pdf_text.py'),
+            source,
+            libraryDir: library.libraryDir,
+            book,
+            code,
+            refresh: url.searchParams.get('refresh') === '1',
+            run: (script, args) => toolOutput(script, args),
+          })
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          const noText = error !== null && error !== undefined && error.code === 'no-text'
+          fail(
+            response,
+            noText ? 422 : 500,
+            noText ? 'no-text' : 'text-failed',
+            String(error && error.message ? error.message : error)
+          )
         }
         return
       }
