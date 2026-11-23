@@ -10203,6 +10203,7 @@ window.__ModuleLoader__.load({
             const lib = await loadPdfjs()
             const make = variant => {
               const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
+              if (reader.name !== '') params.set('name', reader.name)
               if (variant !== '') params.set('variant', variant)
               // A fresh translation or overlay rebuild must be fetched again; the
               // revision defeats any document cache inside pdf.js or the browser.
@@ -13496,6 +13497,8 @@ window.__ModuleLoader__.load({
 .md-canvas-capture[data-tool="line"], .md-canvas-capture[data-tool="arrow"], .md-canvas-capture[data-tool="rect"], .md-canvas-capture[data-tool="diamond"], .md-canvas-capture[data-tool="ellipse"] { cursor: crosshair; }
 .md-canvas-capture[data-tool="erase"] { cursor: cell; }
 .md-canvas-capture[data-tool="select"] { cursor: default; }
+.md-hand-capture { cursor: grab; }
+.md-hand-capture:active { cursor: grabbing; }
 .md-annot[data-extended="true"] .md-annot-ink { overflow: visible; }
 .md-annot-static { pointer-events: none; }
 .md-canvas-hint { font-size: 11.5px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
@@ -13570,7 +13573,7 @@ window.__ModuleLoader__.load({
 .md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
-.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; z-index: 3; }
+.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; z-index: 3; pointer-events: auto; }
 .md-question-input input { min-width: 130px; }
 .md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
@@ -14068,6 +14071,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // marquee that picks a mark on this page so it can be moved or deleted.
       const [sideDrag, setSideDrag] = useState(null)
       const [sideMarquee, setSideMarquee] = useState(null)
+      const [sideTextDraft, setSideTextDraft] = useState(null)
       const sideBasePanNeeds = offPageExtent(strokes)
       const sidePanNeeds = sideExpanded === 0
         ? sideBasePanNeeds
@@ -14368,10 +14372,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (tool === 'text') {
-          // A click always starts a note where it lands: an editor left open is
-          // saved first, so a page can hold as many notes as the reader places.
+          // Match the reader: a drag creates the box; a click on an existing
+          // note selects and moves it instead of stacking another one.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          openNote(point)
+          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+          if (found >= 0) {
+            setSelection({ index: found, kind: 'text' })
+            setSideDrag({ index: found, start: point, dx: 0, dy: 0 })
+            return
+          }
+          setSideTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
           return
         }
         if (SHAPE_TOOLS.includes(tool)) {
@@ -14393,6 +14403,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (point === null) return
           event.preventDefault()
           setSideMarquee(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          return
+        }
+        if (sideTextDraft !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          setSideTextDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
           return
         }
         if (tool === 'erase' && erasingRef.current) {
@@ -14427,6 +14444,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         sideGestures.move(event, point)
       }
       const editUp = () => {
+        if (sideTextDraft !== null) {
+          const draft = sideTextDraft
+          setSideTextDraft(null)
+          const x = Math.min(draft.x0, draft.x1)
+          const y = Math.min(draft.y0, draft.y1)
+          const w = Math.abs(draft.x1 - draft.x0)
+          const h = Math.abs(draft.y1 - draft.y0)
+          if (w > 0.012 && h > 0.012) openNote([x, y], { x, y, w, h })
+          return
+        }
         if (sideDrag !== null) {
           const moved = sideDrag
           setSideDrag(null)
@@ -15040,6 +15067,35 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
+      const handDrag = useRef(null)
+      const handDown = event => {
+        if (tool !== 'hand' || event.button !== 0) return
+        event.preventDefault()
+        const scrollport = stage.current
+        handDrag.current = {
+          start: [event.clientX, event.clientY],
+          pan: { ...sidePan },
+          left: scrollport === null ? 0 : scrollport.scrollLeft,
+          top: scrollport === null ? 0 : scrollport.scrollTop,
+        }
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const handMove = event => {
+        if (handDrag.current === null) return
+        event.preventDefault()
+        const dx = event.clientX - handDrag.current.start[0]
+        const dy = event.clientY - handDrag.current.start[1]
+        if (mode === 'continuous') {
+          const scrollport = stage.current
+          if (scrollport !== null) {
+            scrollport.scrollLeft = handDrag.current.left - dx
+            scrollport.scrollTop = handDrag.current.top - dy
+          }
+          return
+        }
+        setSidePan({ x: handDrag.current.pan.x + dx, y: handDrag.current.pan.y + dy })
+      }
+      const handUp = () => { handDrag.current = null }
       const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'mask' && tool !== 'question'
       const sideCapture = sideMarkTool
         ? h('div', {
@@ -15284,7 +15340,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               registerSlot,
               onError,
               pan: mode === 'single' ? sidePan : null,
-              panNeeds: sidePanNeeds,
+              panNeeds: null,
               margins: planeMargins,
               onPan: setSidePan,
               onExpandPlane: expandSidePlane,
@@ -15427,6 +15483,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: phase !== 'ready',
             onClick: () => zoomTo(renderScale * 1.2),
           }, '+'),
+          h(KitButton, {
+            type: 'button', className: 'md-btn md-btn-small',
+            title: format('canvasCenterHint'),
+            'aria-label': format('canvasCenter'),
+            onClick: () => {
+              setSidePan({ x: 0, y: 0 })
+              if (mode === 'continuous') scrollToPage(page)
+            },
+          }, format('canvasCenter')),
           h('span', { className: 'md-side-gap' }),
           h(KitButton, {
             type: 'button',
@@ -15508,7 +15573,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         // The pointer layer lives beside the scroller, not inside it: it must
         // cover the visible preview at any scroll offset, and it must not be
         // pushed around by the stage's own positioning.
-        h('div', { className: 'md-side-body' }, body, sideCapture),
+        h('div', { className: 'md-side-body' }, body, sideCapture,
+          tool === 'hand'
+            ? h('div', {
+              className: 'md-canvas-capture md-hand-capture',
+              'data-tool': 'hand',
+              onPointerDown: handDown,
+              onWheel: event => { const node = stage.current; if (node !== null) node.scrollBy({ top: event.deltaY, left: event.deltaX }) },
+              onPointerMove: handMove,
+              onPointerUp: handUp,
+              onPointerCancel: handUp,
+              onPointerLeave: handUp,
+            })
+            : null),
         h('div', { className: 'md-rail-tab md-side-rail-tab', 'data-side': 'right', 'aria-hidden': true }, '‹'),
         h('div', {
           className: 'md-rail-wrap md-side-rail-wrap',
