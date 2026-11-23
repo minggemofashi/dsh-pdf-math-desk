@@ -8536,7 +8536,10 @@ window.__ModuleLoader__.load({
         })
         : h('div', {
           className: 'md-reader-single',
-          style: pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
+          // Relative offsets, not a transform: a transform creates a stacking
+          // context, which would put the plane's "+" handles under the pointer
+          // layer as soon as the page is panned (they must stay clickable).
+          style: pan !== null ? { left: `${pan.x}px`, top: `${pan.y}px` } : undefined,
         },
           // The plane's outline: a dashed line where the hand and the pen stop,
           // so the edge is visible instead of guessed. It is the page box plus
