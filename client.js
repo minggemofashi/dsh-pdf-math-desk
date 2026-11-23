@@ -7377,6 +7377,80 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The ink gestures both panes share: one freehand stroke and the eraser
+     * sweep. Text boxes, shapes, selection and masks keep their own per-pane
+     * logic for now; the raw pointer → points conversion and the commit call are
+     * injected so the reader's plane-aware measurement and the preview's page
+     * box both fit.
+     * @param {{ tool: string, strokesRef: object, draftRef: object, erasing: object,
+     *   saveAnnots: Function, setDraftStroke: Function, hitTest: Function,
+     *   color: string, width: number, smooth?: boolean, sample?: Function }} options - the gesture environment.
+     * @returns {{ down: Function, move: Function, up: Function }} the gestures.
+     */
+    function createInkGestures(options) {
+      const { strokesRef, draftRef, erasing, saveAnnots, setDraftStroke, hitTest } = options
+      const tool = options.tool
+      const sample = typeof options.sample === 'function' ? options.sample : (_event, point) => point
+      const eraseAt = point => saveAnnots(strokesRef.current.filter(entry => !hitTest(entry, point)))
+      return {
+        /**
+         * @param {MouseEvent} event - pointer event.
+         * @param {[number, number]} point - the point on the page.
+         * @returns {boolean} whether the gesture consumed the press.
+         */
+        down(event, point) {
+          if (tool === 'erase') {
+            erasing.current = true
+            eraseAt(point)
+            return true
+          }
+          if (tool !== 'pen') return false
+          draftRef.current = {
+            kind: 'stroke',
+            points: [sample(event, point)],
+            color: options.color,
+            width: options.width,
+          }
+          setDraftStroke(draftRef.current)
+          return true
+        },
+        /**
+         * @param {MouseEvent} event - pointer event.
+         * @param {[number, number]} point - the point on the page.
+         * @returns {boolean} whether the gesture consumed the move.
+         */
+        move(event, point) {
+          if (tool === 'erase' && erasing.current) {
+            eraseAt(point)
+            return true
+          }
+          const current = draftRef.current
+          if (current === null) return false
+          const next = sample(event, point)
+          const last = current.points[current.points.length - 1]
+          if (last !== undefined && Math.hypot(next[0] - last[0], next[1] - last[1]) < 0.0025) return true
+          draftRef.current = { ...current, points: [...current.points, next] }
+          setDraftStroke(draftRef.current)
+          return true
+        },
+        /**
+         * @returns {boolean} whether anything was in progress.
+         */
+        up() {
+          const wasErasing = erasing.current
+          erasing.current = false
+          const current = draftRef.current
+          if (current === null) return wasErasing
+          draftRef.current = null
+          setDraftStroke(null)
+          const points = options.smooth === true ? smoothStroke(current.points) : current.points
+          if (points.length > 1) saveAnnots([...strokesRef.current, { ...current, points }])
+          return true
+        },
+      }
+    }
+
+    /**
      * Wrap the local persona in an explicit, user-owned instruction block. The
      * workspace's default answer format outranks a bare quoted personality, so
      * the block names the user's override and its scope.
@@ -9760,6 +9834,20 @@ window.__ModuleLoader__.load({
         onPointerEnter: event => beginRailPanel(event.currentTarget, id),
         onClick: () => setAnnotTool(value => (value === id ? '' : id)),
       }, annotIcon(path))
+      const strokeDraft = useRef(null)
+      const inkGestures = createInkGestures({
+        tool: annotTool,
+        strokesRef,
+        draftRef: strokeDraft,
+        erasing,
+        saveAnnots: savePageAnnots,
+        setDraftStroke,
+        hitTest: annotHit,
+        color: annotColor,
+        width: annotWidth,
+        smooth: true,
+        sample: (event, point) => [point[0], point[1], strokePressure(event)],
+      })
       const annotDown = (event, side) => {
         if (event.button !== 0) return
         if (annotTool === '') return
@@ -9804,8 +9892,7 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'erase') {
-          erasing.current = true
-          savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
+          inkGestures.down(event, point)
           return
         }
         if (annotTool === 'text') {
@@ -9821,7 +9908,7 @@ window.__ModuleLoader__.load({
           setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1], side })
           return
         }
-        setDraftStroke({ kind: 'stroke', points: [[point[0], point[1], strokePressure(event)]], color: annotColor, width: annotWidth })
+        if (annotTool === 'pen') inkGestures.down(event, point)
       }
       const annotMove = event => {
         if (annotTool === 'erase' && erasing.current) {
@@ -9830,7 +9917,7 @@ window.__ModuleLoader__.load({
           const point = annotPoint(event)
           if (point === null) return
           event.preventDefault()
-          savePageAnnots(strokesRef.current.filter(entry => !annotHit(entry, point)))
+          inkGestures.move(event, point)
           return
         }
         if (textDraft !== null) {
@@ -9880,19 +9967,14 @@ window.__ModuleLoader__.load({
           setDrag(current => (current === null ? null : { ...current, dx: point[0] - current.start[0], dy: point[1] - current.start[1] }))
           return
         }
-        if (draftStroke === null) return
+        if (strokeDraft.current === null) return
         const point = annotPoint(event)
         if (point === null) return
-        setDraftStroke(current => {
-          if (current === null) return null
-          const last = current.points[current.points.length - 1]
-          if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return current
-          return { ...current, points: [...current.points, [point[0], point[1], strokePressure(event)]] }
-        })
+        inkGestures.move(event, point)
       }
       const annotUp = () => {
         drawingRef.current = false
-        erasing.current = false
+        inkGestures.up()
         if (textDraft !== null) {
           const draft = textDraft
           setTextDraft(null)
@@ -9939,11 +10021,6 @@ window.__ModuleLoader__.load({
           }
           return
         }
-        if (draftStroke === null) return
-        if (draftStroke.points.length > 1) {
-          savePageAnnots([...strokesRef.current, { ...draftStroke, points: smoothStroke(draftStroke.points) }])
-        }
-        setDraftStroke(null)
       }
 
       // Restore masks/notes from the sidecar written by "export chapter": the
@@ -13086,10 +13163,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }
       const toleranceFor = widthPx => inkReach(widthPx, boxSize.current.width)
       const hitTest = (entry, point) => inkHit(entry, point, toleranceFor)
-      const eraseAt = point => {
-        const next = strokesRef.current.filter(entry => !hitTest(entry, point))
-        if (next.length !== strokesRef.current.length) commitStrokes(next)
-      }
       const openNote = point => {
         const list = strokesRef.current
         const found = list.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
@@ -13147,6 +13220,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (draft.index < 0 && noteText.current.trim() === '') return
         commitStrokes(applyNote(strokesRef.current, draft, noteText.current))
       }
+      const sideGestures = createInkGestures({
+        tool,
+        strokesRef,
+        draftRef,
+        erasing: erasingRef,
+        saveAnnots: commitStrokes,
+        setDraftStroke,
+        hitTest,
+        color: sideColor,
+        width: sideWidth,
+      })
       const editDown = event => {
         if (tool === '') return
         const point = pointOf(event)
@@ -13154,8 +13238,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         event.preventDefault()
         event.stopPropagation()
         if (tool === 'erase') {
-          erasingRef.current = true
-          eraseAt(point)
+          sideGestures.down(event, point)
           return
         }
         if (tool === 'mask') {
@@ -13180,15 +13263,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           })
           return
         }
-        draftRef.current = { kind: 'stroke', points: [point], color: sideColor, width: sideWidth }
-        setDraftStroke(draftRef.current)
+        if (tool === 'pen') sideGestures.down(event, point)
       }
       const editMove = event => {
         if (tool === 'erase' && erasingRef.current) {
           const point = pointOf(event)
           if (point === null) return
           event.preventDefault()
-          eraseAt(point)
+          sideGestures.move(event, point)
           return
         }
         if (tool === 'mask' && maskStartRef.current !== null) {
@@ -13213,14 +13295,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (draftRef.current === null) return
         const point = pointOf(event)
         if (point === null) return
-        const current = draftRef.current
-        const last = current.points[current.points.length - 1]
-        if (last !== undefined && Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.0025) return
-        draftRef.current = { ...current, points: [...current.points, point] }
-        setDraftStroke(draftRef.current)
+        sideGestures.move(event, point)
       }
       const editUp = () => {
-        erasingRef.current = false
+        sideGestures.up()
         if (tool === 'mask') {
           const start = maskStartRef.current
           const draft = maskDraftRef.current
@@ -13253,10 +13331,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }
           return
         }
-        const draft = draftRef.current
-        draftRef.current = null
-        setDraftStroke(null)
-        if (draft !== null && draft.points.length > 1) commitStrokes([...strokesRef.current, draft])
       }
       const toggleTool = name => setTool(current => (current === name ? '' : name))
 
