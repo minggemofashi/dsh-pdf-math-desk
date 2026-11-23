@@ -755,6 +755,12 @@ window.__ModuleLoader__.load({
       canvasCenterHint: '回到当前页居中',
       annotHand: '手（平移）',
       handPanelHint: '拖动页面平移，页外笔记也能看到；也可按住空格临时切手；「居中」回到当前页',
+      planeExpand: '扩展画布',
+      planeLeft: '向左扩一页',
+      planeRight: '向右扩一页',
+      planeUp: '向上扩一页',
+      planeDown: '向下扩一页',
+      planeBoundsHint: '虚线是画布边界',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: '在工作台打开',
       sideOpenInDeskHint: '回到阅读器，停在同一页',
@@ -1097,10 +1103,10 @@ window.__ModuleLoader__.load({
       readerJumpPage: '跳页',
       readerJumpPageHint: '跳到指定页：聚焦页码框输入',
       questionTool: '疑问框',
-      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放。改名：双击框上的名称；删除：先选中疑问框工具，再右键框（立即删除、不可恢复）',
+      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放。改名：双击框上的名称；删除：先选中疑问框工具，再右键框（可撤回）',
       questionJump: '疑问跳转',
       questionJumpEmpty: '本章没有疑问',
-      questionNameHint: '双击改名（先选中疑问框工具）；右键删除',
+      questionNameHint: '双击改名；删除须先选中疑问框工具再右键',
       questionRename: '疑问名称',
       questionsTitle: '疑问',
       questionsEmpty: '本章还没有疑问标记',
@@ -1366,6 +1372,12 @@ window.__ModuleLoader__.load({
       canvasCenterHint: 'Center the current page again',
       annotHand: 'Hand (pan)',
       handPanelHint: 'Drag the page to pan, even to marks outside it; hold Space for the same gesture; “Center” returns to the current page',
+      planeExpand: 'Extend canvas',
+      planeLeft: 'Add one page to the left',
+      planeRight: 'Add one page to the right',
+      planeUp: 'Add one page above',
+      planeDown: 'Add one page below',
+      planeBoundsHint: 'The dashed line is the plane edge',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: 'Open in workbench',
       sideOpenInDeskHint: 'Return to the workbench reader at the same page',
@@ -1709,10 +1721,10 @@ window.__ModuleLoader__.load({
       readerLastHint: 'Go to the last page',
       readerJumpPage: 'Jump to page',
       readerJumpPageHint: 'Jump to a page: focus the page box and type',
-      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize. Rename: double-click the name. Delete: pick the question tool first, then right-click the box (immediate, no undo)',
+      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize. Rename: double-click the name. Delete: pick the question tool first, then right-click the box (undo puts it back)',
       questionJump: 'Jump to a question',
       questionJumpEmpty: 'No questions in this chapter',
-      questionNameHint: 'Double-click to rename (question tool active); right-click to delete',
+      questionNameHint: 'Double-click to rename; to delete, pick the question tool first and right-click',
       questionRename: 'Question name',
       questionsTitle: 'Questions',
       questionsEmpty: 'No questions marked in this chapter yet',
@@ -5749,24 +5761,63 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * How far a mark may sit outside its page, in page units: five page widths
-     * to each side, one page height above and below. The shared plane is large
-     * enough to write beside a page, but it is not infinite: the hand tool stops
-     * at these margins, so the page can always be found again.
+     * How far a mark may sit outside its page, in page units. These are the
+     * defaults: five page widths to each side and one page height above and
+     * below. The toolbar can add a page at a time; the value is remembered.
      */
-    const INK_MARGIN_X = 5
-    const INK_MARGIN_Y = 1
+    const PLANE_MARGINS_KEY = 'pdfdesk:plane-margins'
+    const PLANE_MARGINS = { left: 5, right: 5, top: 1, bottom: 1 }
+
+    /**
+     * The margins of the shared plane, as the user last widened them.
+     * @returns {{ left: number, right: number, top: number, bottom: number }} page units.
+     */
+    function readPlaneMargins() {
+      try {
+        const raw = window.localStorage.getItem(PLANE_MARGINS_KEY)
+        if (raw === null) return { ...PLANE_MARGINS }
+        const parsed = JSON.parse(raw)
+        const source = parsed !== null && typeof parsed === 'object' ? parsed : {}
+        const pick = (value, fallback) => {
+          const number = Math.round(Number(value))
+          return Number.isFinite(number) ? Math.min(50, Math.max(0, number)) : fallback
+        }
+        return {
+          left: pick(source.left, PLANE_MARGINS.left),
+          right: pick(source.right, PLANE_MARGINS.right),
+          top: pick(source.top, PLANE_MARGINS.top),
+          bottom: pick(source.bottom, PLANE_MARGINS.bottom),
+        }
+      } catch {
+        return { ...PLANE_MARGINS }
+      }
+    }
+
+    /**
+     * Remember the plane's margins.
+     * @param {{ left: number, right: number, top: number, bottom: number }} margins - page units.
+     * @returns {void}
+     */
+    function writePlaneMargins(margins) {
+      try {
+        window.localStorage.setItem(PLANE_MARGINS_KEY, JSON.stringify(margins))
+      } catch {
+        // storage unavailable: the wider plane lasts this visit
+      }
+    }
 
     /**
      * Keep a free pointer point inside the shared plane's margin.
      * @param {[number, number]} point - unclamped page coordinates.
+     * @param {{ left: number, right: number, top: number, bottom: number }} [margins] - the plane.
      * @returns {[number, number]} the point inside the plane.
      */
-    function clampInkPoint(point) {
+    function clampInkPoint(point, margins) {
+      const plane = margins === undefined || margins === null ? PLANE_MARGINS : margins
       const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
       return [
-        clamp(point[0], -INK_MARGIN_X, 1 + INK_MARGIN_X),
-        clamp(point[1], -INK_MARGIN_Y, 1 + INK_MARGIN_Y),
+        clamp(point[0], -plane.left, 1 + plane.right),
+        clamp(point[1], -plane.top, 1 + plane.bottom),
       ]
     }
 
@@ -6345,6 +6396,115 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One chapter's question undo/redo stacks, shared by the reader and the
+     * right preview: deleting or moving a mark is an edit like ink is, and the
+     * toolbar's undo puts it back. Memory only: it is a gesture log, not part
+     * of the chapter.
+     */
+    const questionHistory = new Map()
+
+    /** The last kind of edit per chapter, so undo knows which stack to use. */
+    const chapterEditKind = new Map()
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {string} the chapter key both panes share.
+     */
+    function chapterKey(bookId, code) {
+      return `${bookId}|${code}`
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @param {'ink'|'question'} kind - what was edited last.
+     * @returns {void}
+     */
+    function markEditKind(key, kind) {
+      chapterEditKind.set(key, kind)
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @returns {{ undo: object[], redo: object[] }} the chapter's stacks.
+     */
+    function questionBucket(key) {
+      let bucket = questionHistory.get(key)
+      if (bucket === undefined) {
+        bucket = { undo: [], redo: [] }
+        questionHistory.set(key, bucket)
+        while (questionHistory.size > 60) {
+          const oldest = questionHistory.keys().next().value
+          if (oldest === key) break
+          questionHistory.delete(oldest)
+        }
+      }
+      return bucket
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @returns {number} how many question steps can be undone.
+     */
+    function questionUndoDepth(key) {
+      const bucket = questionHistory.get(key)
+      return bucket === undefined ? 0 : bucket.undo.length
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @returns {number} how many question steps can be redone.
+     */
+    function questionRedoDepth(key) {
+      const bucket = questionHistory.get(key)
+      return bucket === undefined ? 0 : bucket.redo.length
+    }
+
+    /**
+     * File a question edit, dropping the redo branch.
+     * @param {string} key - chapter key.
+     * @param {{ questions: object[], next: number }} snapshot - the marks before the edit.
+     * @returns {void}
+     */
+    function recordQuestionEdit(key, snapshot) {
+      const bucket = questionBucket(key)
+      bucket.undo.push(snapshot)
+      if (bucket.undo.length > 50) bucket.undo.shift()
+      bucket.redo.length = 0
+      markEditKind(key, 'question')
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @param {{ questions: object[], next: number }} current - the marks now.
+     * @returns {{ questions: object[], next: number } | null} what to restore.
+     */
+    function undoQuestionEdit(key, current) {
+      const bucket = questionBucket(key)
+      const previous = bucket.undo.pop()
+      if (previous === undefined) return null
+      bucket.redo.push(current)
+      if (bucket.redo.length > 50) bucket.redo.shift()
+      markEditKind(key, 'question')
+      return previous
+    }
+
+    /**
+     * @param {string} key - chapter key.
+     * @param {{ questions: object[], next: number }} current - the marks now.
+     * @returns {{ questions: object[], next: number } | null} what to restore.
+     */
+    function redoQuestionEdit(key, current) {
+      const bucket = questionBucket(key)
+      const next = bucket.redo.pop()
+      if (next === undefined) return null
+      bucket.undo.push(current)
+      if (bucket.undo.length > 50) bucket.undo.shift()
+      markEditKind(key, 'question')
+      return next
+    }
+
+    /**
      * Question marks on one page: a thin border per mark, its name on hover, and
      * the drag / resize / rename / right-click-delete gestures. The layer only
      * takes pointer events while a mark tool is picked, so drawing behind it
@@ -6499,7 +6659,8 @@ window.__ModuleLoader__.load({
                 className: 'md-question-name',
                 title: format('questionNameHint'),
                 onDoubleClick: event => {
-                  if (!active) return
+                  // Renaming is a reading gesture too: the name appears on
+                  // hover, so double-clicking it works without picking the tool.
                   event.preventDefault()
                   event.stopPropagation()
                   setEditing({ id: question.id, value: question.name })
@@ -7713,6 +7874,7 @@ window.__ModuleLoader__.load({
         ref: node => {
           holder.current = node
           props.registerSlot(props.pageNumber, node)
+          if (typeof props.onPageNode === 'function') props.onPageNode(props.pageNumber, node)
         },
       },
         h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(props.pageNumber)),
@@ -7769,6 +7931,10 @@ window.__ModuleLoader__.load({
           bookId: props.bookId,
           code: props.code,
           onError: props.onError,
+          // Every page reports its own box: the plane measures pointers
+          // against the page being read, and that page can change while the
+          // reader scrolls.
+          onPageNode: props.onPageNode,
           overlay,
           overlayPage: page,
         }))
@@ -8142,21 +8308,29 @@ window.__ModuleLoader__.load({
       const pan = props.pan !== null && props.pan !== undefined ? props.pan : null
       const panEnabled = props.panEnabled === true
       const panDrag = useRef(null)
-      // The plane is finite: with the page on screen, the hand may move it five
-      // page widths sideways and one page height up or down. The clamp uses the
-      // painted canvas size, so it follows the zoom.
+      // The plane is finite: with the page on screen, the hand may move it by
+      // the plane's margins (five page widths each side, one page height each
+      // way by default). The clamp follows the zoom because it uses the painted
+      // canvas size.
+      const planeMargins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
       const panLimit = () => {
         const node = canvas.current
         const rect = node === null ? null : node.getBoundingClientRect()
         const width = rect === null || rect.width === 0 ? 600 : rect.width
         const height = rect === null || rect.height === 0 ? 800 : rect.height
-        return { x: Math.round(width * INK_MARGIN_X), y: Math.round(height * INK_MARGIN_Y + 24) }
+        return {
+          minX: -Math.round(width * planeMargins.left),
+          maxX: Math.round(width * planeMargins.right),
+          minY: -Math.round(height * planeMargins.top),
+          // The gap before the neighbour page belongs to the plane too.
+          maxY: Math.round(height * planeMargins.bottom + 24),
+        }
       }
       const clampPan = value => {
         const limit = panLimit()
         return {
-          x: Math.max(-limit.x, Math.min(limit.x, value.x)),
-          y: Math.max(-limit.y, Math.min(limit.y, value.y)),
+          x: Math.max(limit.minX, Math.min(limit.maxX, value.x)),
+          y: Math.max(limit.minY, Math.min(limit.maxY, value.y)),
         }
       }
       const beginPan = event => {
@@ -8213,6 +8387,8 @@ window.__ModuleLoader__.load({
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
           onError: props.onError,
+          // The current page reports its box for pointer measurement.
+          onPageNode: props.onPageNode,
           // The page being read gets the interactive layer; the others get a
           // read-only copy of their own marks, so a turn never blanks them.
           overlay: props.overlay,
@@ -8223,11 +8399,14 @@ window.__ModuleLoader__.load({
           className: 'md-reader-single',
           style: pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
         },
+          // The plane's outline: a dashed line where the hand and the pen stop,
+          // so the edge is visible instead of guessed. It is the page box plus
+          // the margins, in page units. Rendered with the page's own layers.
           neighbour(props.page - 1, 'before'),
           h('div', {
             className: 'md-reader-single-page',
             ref: node => {
-              if (typeof props.onPageNode === 'function') props.onPageNode(node)
+              if (typeof props.onPageNode === 'function') props.onPageNode(props.page, node)
             },
           },
             h('canvas', { className: 'md-reader-canvas', ref: canvas }),
@@ -8341,6 +8520,16 @@ window.__ModuleLoader__.load({
       // committed marks through a read-only copy, so a page turn never paints
       // the previous page's ink on top of the new one for a frame.
       const [inkPage, setInkPage] = useState(reader.page)
+      // The plane is finite but the user may widen it a page at a time; the
+      // choice is global, like the reading width.
+      const [planeMargins, setPlaneMargins] = useState(() => readPlaneMargins())
+      const expandPlane = side => {
+        setPlaneMargins(current => {
+          const next = { ...current, [side]: Math.min(50, current[side] + 1) }
+          writePlaneMargins(next)
+          return next
+        })
+      }
       const [draftStroke, setDraftStroke] = useState(null)
       // The note being typed in place: `index` is its slot in `strokes`, or -1
       // for one that does not exist yet. `id` keeps a stale save (a blur that
@@ -8522,6 +8711,7 @@ window.__ModuleLoader__.load({
         strokesRef.current = next
         setStrokes(next)
         seenAnnotRev.current = rev
+        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
       }
       const savePageMasks = next => {
         const rev = inkStore.save(reader.page, 'masks', next, currentSnapshot())
@@ -8531,6 +8721,7 @@ window.__ModuleLoader__.load({
         masksRef.current = next
         setMasks(next)
         seenAnnotRev.current = rev
+        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
       }
       // Undo/redo restore both lists at once: one step is one action, even when
       // it touched ink and boxes together.
@@ -8540,6 +8731,7 @@ window.__ModuleLoader__.load({
         setStrokes(snapshot.annots)
         setMasks(snapshot.masks)
         seenAnnotRev.current = inkStore.restore(reader.page, snapshot)
+        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
@@ -8942,15 +9134,25 @@ window.__ModuleLoader__.load({
       // single page, where the shared plane can be drawn outside the page) is
       // measured against the page node and does not clamp.
       const annotBox = useRef({ width: 400, height: 600 })
-      const canvasPage = useRef(null)
+      // The page boxes the pointer can be measured against, by page number: in
+      // continuous mode the box of the page being read changes as the reader
+      // scrolls, and a stale box would put a stroke a page height off.
+      const pageNodes = useRef(new Map())
       const annotPoint = event => {
-        const node = extended && canvasPage.current !== null ? canvasPage.current : event.currentTarget
-        // The shared plane is finite: a point is clamped to five page widths to
-        // each side and one page height above/below, so a stray drag can never
-        // leave a mark so far away that the page is lost.
-        const raw = extended ? inkPointOfFree(event, node) : inkPointOf(event, node)
+        // The page's own node is the ruler in both views (the capture layer is
+        // stage-sized). If it is missing, the event's own layer is page-sized
+        // and works the same way.
+        const candidate = pageNodes.current.get(reader.page)
+        const usable = candidate !== null && candidate !== undefined
+          && typeof candidate.getBoundingClientRect === 'function'
+          && candidate.isConnected !== false && candidate.getBoundingClientRect().width > 0
+        const node = usable ? candidate : event.currentTarget
+        const raw = inkPointOfFree(event, node)
         if (raw === null) return null
-        const point = extended ? clampInkPoint(raw) : raw
+        // The shared plane is finite: a point is clamped to the plane's margins,
+        // so a stray drag can never leave a mark so far away that the page is
+        // lost.
+        const point = clampInkPoint(raw, planeMargins)
         const rect = node.getBoundingClientRect()
         annotBox.current = { width: rect.width, height: rect.height }
         return point
@@ -9003,7 +9205,8 @@ window.__ModuleLoader__.load({
         const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
         // The shared plane lets a note live outside the page; continuous keeps
         // the box on the page, as page views always have.
-        const free = extended
+        // A note may sit where the plane allows, in either view.
+        const free = true
         const x = free
           ? (box === undefined ? point[0] : box.x)
           : (box === undefined
@@ -9112,9 +9315,6 @@ window.__ModuleLoader__.load({
       const erasing = useRef(false)
       const annotDown = (event, side) => {
         if (event.button !== 0) return
-        // The page's list is not loaded yet: a stroke must not land on the
-        // previous page's marks while the page is changing.
-        if (inkPage !== reader.page) return
         if (annotTool === '') return
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
@@ -9766,18 +9966,39 @@ window.__ModuleLoader__.load({
       // the boxes it made, plain when the user has moved or added their own.
       const autoBoxed = autoBoxes !== null && sameMasks(masks, autoBoxes)
       // In the bilingual view the translated column keeps its own undo stack;
-      // the toolbar acts on the column that was used last.
+      // the toolbar acts on the column that was used last. Question marks share
+      // one chapter-wide stack, and the last kind of edit picks the stack: a
+      // deleted mark comes back from the question stack, a stroke from ink.
+      const editKey = chapterKey(reader.bookId, reader.code)
+      const [, bumpQuestionEdits] = useState(0)
+      const questionUndoCount = questionUndoDepth(editKey)
+      const questionRedoCount = questionRedoDepth(editKey)
+      const questionKindActive = annotTool === 'question' || (chapterEditKind.get(editKey) ?? 'ink') === 'question'
       const undoAvailable = dual
         ? (activeSide === 'right' ? rightHistory.undo : historyCounts.undo)
-        : historyCounts.undo
+        : questionKindActive ? questionUndoCount : historyCounts.undo
       const redoAvailable = dual
         ? (activeSide === 'right' ? rightHistory.redo : historyCounts.redo)
-        : historyCounts.redo
+        : questionKindActive ? questionRedoCount : historyCounts.redo
       const undoEither = () => {
+        if (questionKindActive && questionUndoCount > 0) {
+          const snapshot = undoQuestionEdit(editKey, { questions: questionsRef.current, next: questionsNext.current })
+          if (snapshot !== null) {
+            commitQuestions(snapshot.questions, snapshot.next, false)
+            return
+          }
+        }
         if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.undo()
         else undoPage()
       }
       const redoEither = () => {
+        if (questionKindActive && questionRedoCount > 0) {
+          const snapshot = redoQuestionEdit(editKey, { questions: questionsRef.current, next: questionsNext.current })
+          if (snapshot !== null) {
+            commitQuestions(snapshot.questions, snapshot.next, false)
+            return
+          }
+        }
         if (dual && activeSide === 'right' && rightInk.current !== null) rightInk.current.redo()
         else redoPage()
       }
@@ -10100,9 +10321,9 @@ window.__ModuleLoader__.load({
                     (event.clientX - annot.left) / annot.width,
                     (event.clientY - annot.top) / annot.height,
                   ]
-                  const point = extended
-                    ? raw
-                    : [Math.min(1, Math.max(0, raw[0])), Math.min(1, Math.max(0, raw[1]))]
+                  // Handles use the annot layer's own rect: the plane lets a
+                  // mark sit outside the page in both views, so no clamping.
+                  const point = raw
                   const original = selectedEntry.kind === 'text' ? { ...selectedEntry, ...box } : box
                   setResize({ index: selection.index, corner: item[0], start: point, original })
                   setResizeEntry(original)
@@ -10117,7 +10338,7 @@ window.__ModuleLoader__.load({
             draft: noteEdit,
             // The shared plane lets a note box live off the page; continuous
             // keeps it on the page.
-            unbounded: extended,
+            unbounded: true,
             onChange: changeNote,
             onSave: () => saveNote(noteEdit.id),
             onCancel: cancelNote,
@@ -10210,7 +10431,15 @@ window.__ModuleLoader__.load({
        * @param {number} next - the next default number.
        * @returns {void}
        */
-      const commitQuestions = (list, next) => {
+      const commitQuestions = (list, next, record = true) => {
+        if (record) {
+          // The stack lives in memory: undo is a gesture log, not chapter data.
+          recordQuestionEdit(chapterKey(reader.bookId, reader.code), {
+            questions: questionsRef.current,
+            next: questionsNext.current,
+          })
+          bumpQuestionEdits(value => value + 1)
+        }
         questionsRef.current = list
         questionsNext.current = next
         setQuestions(list)
@@ -10288,12 +10517,13 @@ window.__ModuleLoader__.load({
         onDelete: id => deleteQuestion(id),
         onRename: (id, name) => renameQuestion(id, name),
       })
-      // In the single page a stage-sized layer captures the pointers while a mark
-      // tool is picked, because ink may continue outside the page box. Questions
-      // stay page-area marks and keep their own page-sized layer, the mask tool
-      // keeps its own pointer handling, and the open note editor needs the
-      // pointer for itself.
-      const captureInk = extended && inkTool && noteEdit === null
+      // Both views let a mark start outside the page: a stage-sized layer takes
+      // the pointers while a mark tool is picked, and the point is measured
+      // against the page being read (continuous mode keeps the page association
+      // simple; a mark drawn far from the page is still that page's mark).
+      // Questions stay page-area marks, the mask tool keeps its own pointer
+      // handling, and the open note editor needs the pointer for itself.
+      const captureInk = inkTool && noteEdit === null
       const canvasCapture = captureInk
         ? h('div', {
           className: 'md-canvas-capture',
@@ -10306,6 +10536,20 @@ window.__ModuleLoader__.load({
           onContextMenu: openStylePanelOnLayer,
         })
         : null
+      // The plane's outline: the page box plus its margins, in page units. It
+      // rides with the page (and with the current page in continuous mode), so
+      // the edge is visible instead of guessed.
+      const planeBoundsLayer = h('div', {
+        className: 'md-plane-bounds',
+        'aria-hidden': true,
+        title: format('planeBoundsHint'),
+        style: {
+          left: `${-planeMargins.left * 100}%`,
+          top: `${-planeMargins.top * 100}%`,
+          width: `${(1 + planeMargins.left + planeMargins.right) * 100}%`,
+          height: `${(1 + planeMargins.top + planeMargins.bottom) * 100}%`,
+        },
+      })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -10425,13 +10669,35 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous')),
-            extended && (inkPan.x !== 0 || inkPan.y !== 0 || annotTool === 'hand')
-              ? h(KitButton, {
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              title: format('canvasCenterHint'),
+              onClick: () => setInkPan({ x: 0, y: 0 }),
+            }, format('canvasCenter')),
+            // The plane is finite; these add a page at a time. The dashed edge
+            // moves with them, so "enough room" is a visible choice.
+            h('span', { className: 'md-plane-tools', role: 'group', 'aria-label': format('planeExpand') },
+              h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                title: format('canvasCenterHint'),
-                onClick: () => setInkPan({ x: 0, y: 0 }),
-              }, format('canvasCenter'))
-              : null,
+                title: format('planeLeft'), 'aria-label': format('planeLeft'),
+                onClick: () => expandPlane('left'),
+              }, '←'),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                title: format('planeRight'), 'aria-label': format('planeRight'),
+                onClick: () => expandPlane('right'),
+              }, '→'),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                title: format('planeUp'), 'aria-label': format('planeUp'),
+                onClick: () => expandPlane('top'),
+              }, '↑'),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                title: format('planeDown'), 'aria-label': format('planeDown'),
+                onClick: () => expandPlane('bottom'),
+              }, '↓')
+            ),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
               title: format('blocksHint'),
@@ -10726,11 +10992,16 @@ window.__ModuleLoader__.load({
                 registerSlot,
                 onError: props.onError,
                 pan: extended ? inkPan : null,
+                margins: planeMargins,
                 onPan: setInkPan,
                 panEnabled: extended && handActive && noteEdit === null,
                 captureLayer: canvasCapture,
-                onPageNode: node => { canvasPage.current = node },
+                onPageNode: (page, node) => {
+                  if (node === null || node === undefined) pageNodes.current.delete(page)
+                  else pageNodes.current.set(page, node)
+                },
                 children: [
+                  planeBoundsLayer,
                   masksLayer,
                   annotLayer('main'),
                   questionLayer,
@@ -10742,8 +11013,8 @@ window.__ModuleLoader__.load({
                 // for a frame (the flicker) and never leaves a page bare.
                 overlay: inkPage === reader.page
                   ? (masksLayer === null
-                    ? [annotLayer('main'), questionLayer]
-                    : [masksLayer, annotLayer('main'), questionLayer])
+                    ? [planeBoundsLayer, annotLayer('main'), questionLayer]
+                    : [planeBoundsLayer, masksLayer, annotLayer('main'), questionLayer])
                   : h(StaticInk, {
                     key: `ink-${reader.page}`,
                     bookId: reader.bookId,
@@ -11743,6 +12014,9 @@ window.__ModuleLoader__.load({
 .md-reader-neighbour { position: absolute; left: 50%; transform: translateX(-50%); }
 .md-reader-neighbour-before { bottom: calc(100% + 24px); }
 .md-reader-neighbour-after { top: calc(100% + 24px); }
+/* The edge of the plane: where the hand and the pen stop. */
+.md-plane-bounds { position: absolute; z-index: 0; pointer-events: none; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); border-radius: 4px; }
+.md-plane-tools { display: inline-flex; gap: 2px; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 /* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
    row from the page. It now takes no layout height at all: the note floats as an
@@ -12140,6 +12414,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [questions, setQuestions] = useState([])
       const questionsRef = useRef([])
       const questionsNext = useRef(1)
+      // The reader writes the same chapter stack; a redraw after an undo is
+      // what keeps this pane's toolbar in step with it.
+      const [, bumpQuestionEdits] = useState(0)
       const [questionRev, setQuestionRev] = useState(0)
       const [questionFlash, setQuestionFlash] = useState('')
       const seenQuestionRev = useRef(0)
@@ -12407,6 +12684,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         strokesRef.current = next
         setStrokes(next)
         seenAnnotRev.current = rev
+        markEditKind(chapterKey(bookId, code), 'ink')
       }
       const commitMasks = next => {
         const rev = inkStore.save(pageRef.current, 'masks', next, currentSnapshot())
@@ -12415,6 +12693,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         masksRef.current = next
         setMasks(next)
         seenAnnotRev.current = rev
+        markEditKind(chapterKey(bookId, code), 'ink')
       }
       // Undo/redo restore ink and boxes together, then announce once.
       const restorePage = snapshot => {
@@ -12423,6 +12702,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setStrokes(snapshot.annots)
         setMasks(snapshot.masks)
         seenAnnotRev.current = inkStore.restore(pageRef.current, snapshot)
+        markEditKind(chapterKey(bookId, code), 'ink')
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
@@ -13087,7 +13367,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
         return () => { cancelled = true }
       }, [bookId, code, questionRev])
-      const commitQuestions = (list, next) => {
+      const commitQuestions = (list, next, record = true) => {
+        if (record) {
+          recordQuestionEdit(chapterKey(bookId, code), {
+            questions: questionsRef.current,
+            next: questionsNext.current,
+          })
+          bumpQuestionEdits(value => value + 1)
+        }
         questionsRef.current = list
         questionsNext.current = next
         setQuestions(list)
@@ -13119,6 +13406,34 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setQuestionFlash(id)
         window.setTimeout(() => setQuestionFlash(current => (current === id ? '' : current)), 1800)
       }
+      // Undo follows the last kind of edit, like the reader: a deleted mark is
+      // restored from the chapter's question stack, ink from the page's stack.
+      const editKey = chapterKey(bookId, code)
+      const questionUndoCount = questionUndoDepth(editKey)
+      const questionRedoCount = questionRedoDepth(editKey)
+      const questionKindActive = tool === 'question' || (chapterEditKind.get(editKey) ?? 'ink') === 'question'
+      const undoCount = questionKindActive ? questionUndoCount : historyCounts.undo
+      const redoCount = questionKindActive ? questionRedoCount : historyCounts.redo
+      const undoOne = () => {
+        if (questionKindActive && questionUndoCount > 0) {
+          const snapshot = undoQuestionEdit(editKey, { questions: questionsRef.current, next: questionsNext.current })
+          if (snapshot !== null) {
+            commitQuestions(snapshot.questions, snapshot.next, false)
+            return
+          }
+        }
+        undoPage()
+      }
+      const redoOne = () => {
+        if (questionKindActive && questionRedoCount > 0) {
+          const snapshot = redoQuestionEdit(editKey, { questions: questionsRef.current, next: questionsNext.current })
+          if (snapshot !== null) {
+            commitQuestions(snapshot.questions, snapshot.next, false)
+            return
+          }
+        }
+        redoPage()
+      }
       const questionLayer = h(QuestionMarks, {
         questions: questions.filter(item => Number(item.page) === displayPage),
         active: tool === 'question',
@@ -13143,13 +13458,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       menuState.current = {
         page, count, mode, autoFit, follow, phase, bookId, code, target, tool, toolsHidden,
         strokes: strokes.length, masks: masks.length,
-        undo: historyCounts.undo, redo: historyCounts.redo,
+        undo: undoCount, redo: redoCount,
         tabActions: info.tab.actions,
       }
       // The menu resolves once per target kind; reading the actions from a ref
       // keeps it from capturing a stale page's undo stack.
       const historyActions = useRef({ undo: undoPage, redo: redoPage })
-      historyActions.current = { undo: undoPage, redo: redoPage }
+      // The hidden-toolbar menu captures its actions through this ref; point it
+      // at the same routing the visible buttons use.
+      historyActions.current = { undo: undoOne, redo: redoOne }
       const menuActions = useCallback(() => {
         const state = menuState.current
         if (state === null) return []
@@ -13513,18 +13830,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
-            disabled: historyCounts.undo === 0,
+            disabled: undoCount === 0,
             title: format('undoHint'),
             'aria-label': format('undo'),
-            onClick: () => undoPage(),
+            onClick: () => undoOne(),
           }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
-            disabled: historyCounts.redo === 0,
+            disabled: redoCount === 0,
             title: format('redoHint'),
             'aria-label': format('redo'),
-            onClick: () => redoPage(),
+            onClick: () => redoOne(),
           }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
           h('span', { className: 'md-side-gap' }),
           h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
@@ -13559,15 +13876,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
             h(KitButton, {
               type: 'button', className: 'md-rail-btn',
-              disabled: historyCounts.undo === 0,
+              disabled: undoCount === 0,
               title: format('undoHint'), 'aria-label': format('undo'),
-              onClick: () => undoPage(),
+              onClick: () => undoOne(),
             }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
             h(KitButton, {
               type: 'button', className: 'md-rail-btn',
-              disabled: historyCounts.redo === 0,
+              disabled: redoCount === 0,
               title: format('redoHint'), 'aria-label': format('redo'),
-              onClick: () => redoPage(),
+              onClick: () => redoOne(),
             }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3'))
           ),
           sidePanel && sidePanelTool !== ''
