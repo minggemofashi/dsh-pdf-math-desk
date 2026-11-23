@@ -10075,6 +10075,12 @@ window.__ModuleLoader__.load({
       const previousMode = useRef(reader.mode)
       useEffect(() => {
         switchingMode.current = true
+        // A report queued by the view we are leaving must not rename the page
+        // after the switch.
+        if (visibleTimer.current !== null) {
+          clearTimeout(visibleTimer.current)
+          visibleTimer.current = null
+        }
         const timer = setTimeout(() => { switchingMode.current = false }, 600)
         const from = previousMode.current
         previousMode.current = reader.mode
@@ -13343,6 +13349,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         // The page is read but not watched: pages reported by scrolling must not
         // scroll the column again. `jump` marks the explicit moves.
       }, [jump, mode, phase, scrollToPage])
+
+      // A mode switch invalidates any report the view being left had queued:
+      // that report would otherwise rename the shared page right after the
+      // switch, so the toolbar number and the page on screen disagree.
+      const lastSideMode = useRef(mode)
+      useEffect(() => {
+        const from = lastSideMode.current
+        lastSideMode.current = mode
+        if (from === mode) return
+        if (visibleTimer.current !== null) {
+          clearTimeout(visibleTimer.current)
+          visibleTimer.current = null
+        }
+        jumping.current = true
+        const timer = setTimeout(() => { jumping.current = false }, 700)
+        return () => clearTimeout(timer)
+      }, [mode])
 
       // Where this preview is, for the reader; its zoom never travels back. The
       // page does not travel this way: it moves through setChapterPage. A
