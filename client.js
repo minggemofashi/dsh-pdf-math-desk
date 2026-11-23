@@ -8556,6 +8556,10 @@ window.__ModuleLoader__.load({
       // committed marks through a read-only copy, so a page turn never paints
       // the previous page's ink on top of the new one for a frame.
       const [inkPage, setInkPage] = useState(reader.page)
+      // The page the pen writes on. It follows `reader.page` when the reader
+      // moves, and in continuous mode a pointer on another page adopts that page
+      // (reports are debounced, so the paper under the pen can be ahead).
+      const annotPage = useRef(reader.page)
       // The plane is finite but the user may widen it a page at a time; the
       // choice is global, like the reading width.
       const [planeMargins, setPlaneMargins] = useState(() => readPlaneMargins())
@@ -8740,7 +8744,7 @@ window.__ModuleLoader__.load({
       const historyKeyOf = inkStore.historyKeyOf
       const [, bumpHistory] = useState(0)
       const savePageAnnots = next => {
-        const rev = inkStore.save(reader.page, 'annots', next, currentSnapshot())
+        const rev = inkStore.save(annotPage.current, 'annots', next, currentSnapshot())
         if (rev === null) return
         annotPrefetch.current.clear()
         bumpHistory(value => value + 1)
@@ -8750,7 +8754,7 @@ window.__ModuleLoader__.load({
         markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
       }
       const savePageMasks = next => {
-        const rev = inkStore.save(reader.page, 'masks', next, currentSnapshot())
+        const rev = inkStore.save(annotPage.current, 'masks', next, currentSnapshot())
         if (rev === null) return
         annotPrefetch.current.clear()
         bumpHistory(value => value + 1)
@@ -8766,23 +8770,23 @@ window.__ModuleLoader__.load({
         masksRef.current = snapshot.masks
         setStrokes(snapshot.annots)
         setMasks(snapshot.masks)
-        seenAnnotRev.current = inkStore.restore(reader.page, snapshot)
+        seenAnnotRev.current = inkStore.restore(annotPage.current, snapshot)
         markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
-        const previous = inkStore.undo(reader.page, currentSnapshot())
+        const previous = inkStore.undo(annotPage.current, currentSnapshot())
         if (previous === null) return
         restorePage(previous)
         bumpHistory(value => value + 1)
       }
       const redoPage = () => {
-        const next = inkStore.redo(reader.page, currentSnapshot())
+        const next = inkStore.redo(annotPage.current, currentSnapshot())
         if (next === null) return
         restorePage(next)
         bumpHistory(value => value + 1)
       }
-      const historyCounts = inkStore.depth(reader.page)
+      const historyCounts = inkStore.depth(inkPage)
       // Reconcile with the library mirror on open: a cleared browser gets its
       // pages back, a browser that predates the mirror hands them over.
       useEffect(() => {
@@ -9108,9 +9112,26 @@ window.__ModuleLoader__.load({
         const prefetched = annotPrefetch.current.get(reader.page)
         const list = prefetched === undefined ? inkStore.readList('annots', reader.page) : prefetched.annots
         strokesRef.current = list
+        annotPage.current = reader.page
         setStrokes(list)
         setInkPage(reader.page)
       }, [inkStore, annotKey, remoteAnnotRev])
+      // Load one page's ink into the editor. Used when a pointer lands on a page
+      // the reader has not reported yet: continuous scrolling is debounced, so
+      // the paper under the pen can be a page ahead of `reader.page`.
+      const loadPageAnnots = page => {
+        const list = inkStore.readList('annots', page)
+        strokesRef.current = list
+        annotPage.current = page
+        setStrokes(list)
+        setInkPage(page)
+        setSelection(null)
+        setDraftStroke(null)
+        setTextDraft(null)
+        setDrag(null)
+        setResize(null)
+        setResizeEntry(null)
+      }
       // Warm the neighbouring pages' marks: the reader usually turns one page,
       // and a page must not appear bare while its ink is read.
       useEffect(() => {
@@ -9174,11 +9195,31 @@ window.__ModuleLoader__.load({
       // continuous mode the box of the page being read changes as the reader
       // scrolls, and a stale box would put a stroke a page height off.
       const pageNodes = useRef(new Map())
+      // The page whose paper is under the pointer, nearest by vertical distance.
+      // Every mounted page reports its box, so this works while the reader
+      // scrolls and during a debounced page report.
+      const pageAtPointer = event => {
+        let best = null
+        let bestDistance = Number.POSITIVE_INFINITY
+        for (const [page, node] of pageNodes.current) {
+          if (node === null || node === undefined || node.isConnected === false) continue
+          const rect = node.getBoundingClientRect()
+          if (rect.width === 0 || rect.height === 0) continue
+          const distance = event.clientY < rect.top
+            ? rect.top - event.clientY
+            : event.clientY > rect.bottom ? event.clientY - rect.bottom : 0
+          if (distance < bestDistance) {
+            bestDistance = distance
+            best = page
+          }
+        }
+        return best
+      }
       const annotPoint = event => {
         // The page's own node is the ruler in both views (the capture layer is
         // stage-sized). If it is missing, the event's own layer is page-sized
         // and works the same way.
-        const candidate = pageNodes.current.get(reader.page)
+        const candidate = pageNodes.current.get(annotPage.current)
         const usable = candidate !== null && candidate !== undefined
           && typeof candidate.getBoundingClientRect === 'function'
           && candidate.isConnected !== false && candidate.getBoundingClientRect().width > 0
@@ -9221,7 +9262,7 @@ window.__ModuleLoader__.load({
           noteText.current = String(entry.text ?? '')
           setNoteEdit({
             id: noteSeq.current,
-            page: reader.page,
+            page: annotPage.current,
             side,
             index: found,
             x: bounds.x,
@@ -9256,7 +9297,7 @@ window.__ModuleLoader__.load({
         noteText.current = ''
         setNoteEdit({
           id: noteSeq.current,
-          page: reader.page,
+          page: annotPage.current,
           side,
           index: -1,
           x,
@@ -9289,7 +9330,7 @@ window.__ModuleLoader__.load({
         // A blur that lands after the page moved must not write onto the new
         // page: keep the words as a draft of the page they belong to.
         const page = draft.page ?? reader.page
-        if (page !== reader.page) {
+        if (page !== annotPage.current) {
           pageDrafts.stash(page, { noteEdit: { ...draft, text: noteText.current }, text: noteText.current })
           return
         }
@@ -9352,6 +9393,19 @@ window.__ModuleLoader__.load({
       const annotDown = (event, side) => {
         if (event.button !== 0) return
         if (annotTool === '') return
+        // Continuous mode: the paper under the pen is the page being written on,
+        // even when the reader's page report has not caught up yet (it is
+        // debounced while scrolling). Adopt that page before the stroke starts,
+        // and report it without a jump so the shared page, the preview and the
+        // export all point at the page that now carries the ink.
+        if (!extended) {
+          const target = pageAtPointer(event)
+          if (target === null) return
+          if (target !== annotPage.current) {
+            loadPageAnnots(target)
+            if (typeof props.onVisible === 'function') props.onVisible(target)
+          }
+        }
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
         const point = annotPoint(event)
@@ -10066,7 +10120,7 @@ window.__ModuleLoader__.load({
         setSelection({ index: found, kind: 'text' })
         setNoteEdit({
           id: noteSeq.current,
-          page: reader.page,
+          page: annotPage.current,
           side,
           index: found,
           x: bounds.x,
@@ -10311,7 +10365,7 @@ window.__ModuleLoader__.load({
                   noteText.current = String(entry.text ?? '')
                   setNoteEdit({
                     id: noteSeq.current,
-                    page: reader.page,
+                    page: annotPage.current,
                     side,
                     index,
                     x: bounds.x,
@@ -10495,7 +10549,7 @@ window.__ModuleLoader__.load({
         const question = {
           id: createQuestionId(),
           name: `疑问 ${number}`,
-          page: reader.page,
+          page: inkPage,
           rect,
           createdAt: Date.now(),
         }
@@ -10542,7 +10596,7 @@ window.__ModuleLoader__.load({
             })
         )
         : null
-      const pageQuestions = questions.filter(item => Number(item.page) === reader.page)
+      const pageQuestions = questions.filter(item => Number(item.page) === inkPage)
       const questionLayer = h(QuestionMarks, {
         questions: pageQuestions,
         active: annotTool === 'question',
@@ -10574,11 +10628,21 @@ window.__ModuleLoader__.load({
         })
         : null
       // The plane's outline: the page box plus its margins, in page units. It
-      // rides with the page (and with the current page in continuous mode), so
-      // the edge is visible instead of guessed.
+      // rides with the page (and with the editing page in continuous mode), so
+      // the edge is visible instead of guessed. Each edge carries a small "+"
+      // square: adding a page there is a gesture on the paper itself, not a new
+      // toolbar button.
+      const planeHandle = (side, style) => h(KitButton, {
+        key: side,
+        type: 'button',
+        className: 'md-plane-add md-icon-btn',
+        style,
+        title: format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
+        'aria-label': format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
+        onClick: () => expandPlane(side),
+      }, '+')
       const planeBoundsLayer = h('div', {
         className: 'md-plane-bounds',
-        'aria-hidden': true,
         title: format('planeBoundsHint'),
         style: {
           left: `${-planeMargins.left * 100}%`,
@@ -10586,7 +10650,11 @@ window.__ModuleLoader__.load({
           width: `${(1 + planeMargins.left + planeMargins.right) * 100}%`,
           height: `${(1 + planeMargins.top + planeMargins.bottom) * 100}%`,
         },
-      })
+      },
+        planeHandle('top', { left: '50%', top: '0%', transform: 'translate(-50%, -50%)' }),
+        planeHandle('bottom', { left: '50%', top: '100%', transform: 'translate(-50%, -50%)' }),
+        planeHandle('left', { left: '0%', top: '50%', transform: 'translate(-50%, -50%)' }),
+        planeHandle('right', { left: '100%', top: '50%', transform: 'translate(-50%, -50%)' }))
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -10711,30 +10779,6 @@ window.__ModuleLoader__.load({
               title: format('canvasCenterHint'),
               onClick: () => setInkPan({ x: 0, y: 0 }),
             }, format('canvasCenter')),
-            // The plane is finite; these add a page at a time. The dashed edge
-            // moves with them, so "enough room" is a visible choice.
-            h('span', { className: 'md-plane-tools', role: 'group', 'aria-label': format('planeExpand') },
-              h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                title: format('planeLeft'), 'aria-label': format('planeLeft'),
-                onClick: () => expandPlane('left'),
-              }, '←'),
-              h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                title: format('planeRight'), 'aria-label': format('planeRight'),
-                onClick: () => expandPlane('right'),
-              }, '→'),
-              h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                title: format('planeUp'), 'aria-label': format('planeUp'),
-                onClick: () => expandPlane('top'),
-              }, '↑'),
-              h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                title: format('planeDown'), 'aria-label': format('planeDown'),
-                onClick: () => expandPlane('bottom'),
-              }, '↓')
-            ),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
               title: format('blocksHint'),
@@ -11044,21 +11088,15 @@ window.__ModuleLoader__.load({
                   questionLayer,
                   h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
                 ],
-                // Only the page whose list is loaded gets the interactive layer.
-                // Every other page shows its committed marks read-only, so a
-                // page turn never paints the previous page's ink on the new page
-                // for a frame (the flicker) and never leaves a page bare.
-                overlay: inkPage === reader.page
-                  ? (masksLayer === null
-                    ? [planeBoundsLayer, annotLayer('main'), questionLayer]
-                    : [planeBoundsLayer, masksLayer, annotLayer('main'), questionLayer])
-                  : h(StaticInk, {
-                    key: `ink-${reader.page}`,
-                    bookId: reader.bookId,
-                    code: reader.code,
-                    page: reader.page,
-                    rev: remoteAnnotRev,
-                  }),
+                // The editing page owns the interactive layer. In continuous
+                // mode that is the page under the pen (`inkPage`), which can be
+                // ahead of the debounced reader page; every other page shows its
+                // committed marks read-only, so a page turn never paints the
+                // previous page's ink on the new page for a frame and never
+                // leaves a page bare.
+                overlay: masksLayer === null
+                  ? [planeBoundsLayer, annotLayer('main'), questionLayer]
+                  : [planeBoundsLayer, masksLayer, annotLayer('main'), questionLayer],
                 // Every other page keeps a read-only copy of its own marks, so a
                 // page turn never shows a page bare or drags the previous page's
                 // ink onto it for a frame.
@@ -11069,7 +11107,7 @@ window.__ModuleLoader__.load({
                   page,
                   rev: remoteAnnotRev,
                 }),
-                overlayPage: visiblePage,
+                overlayPage: inkPage,
               }),
         diag
           ? h(DiagPanel, {
@@ -12059,9 +12097,11 @@ window.__ModuleLoader__.load({
 .md-reader-neighbour-after { top: calc(100% + 24px); }
 /* Blank paper at the plane's top and bottom edges in continuous mode. */
 .md-reader-plane-pad { flex: 0 0 auto; width: 100%; }
-/* The edge of the plane: where the hand and the pen stop. */
-.md-plane-bounds { position: absolute; z-index: 0; pointer-events: none; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); border-radius: 4px; }
-.md-plane-tools { display: inline-flex; gap: 2px; }
+/* The edge of the plane: where the hand and the pen stop. Each edge carries a
+   small "+" square, so adding a page is a gesture on the paper itself. */
+.md-plane-bounds { position: absolute; z-index: 30; pointer-events: none; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); border-radius: 4px; }
+.md-plane-add { position: absolute; width: 18px; height: 18px; min-width: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 13px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); border-radius: 4px; box-shadow: var(--dsw-elevation-soft); cursor: pointer; pointer-events: auto; opacity: .8; }
+.md-plane-add:hover { opacity: 1; color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 /* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
    row from the page. It now takes no layout height at all: the note floats as an
