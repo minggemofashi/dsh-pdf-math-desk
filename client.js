@@ -11160,6 +11160,9 @@ window.__ModuleLoader__.load({
           const stage = props.stageRef === null || props.stageRef === undefined ? null : props.stageRef.current
           const node = slotRefs.current.get(page)
           if (stage === null || stage === undefined || node === null || node === undefined) return
+          // A delayed retry from the view we already left must not scroll the
+          // single page back out of view.
+          if (stage.getAttribute('data-mode') !== 'continuous') return
           // Scroll the stage itself. `scrollIntoView` also scrolls an outer
           // ancestor while the stage is still measuring, which left the reader
           // on a blank area after a mode switch.
@@ -14665,6 +14668,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const node = slots.current.get(number)
           const scrollport = stage.current
           if (node === null || node === undefined || scrollport === null || scrollport === undefined) return
+          if (scrollport.getAttribute('data-mode') !== 'continuous') return
           const top = node.getBoundingClientRect().top - scrollport.getBoundingClientRect().top + scrollport.scrollTop
           scrollport.scrollTop = Math.max(0, top)
         }
