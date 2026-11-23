@@ -9795,10 +9795,10 @@ window.__ModuleLoader__.load({
       // content, so after scrolling it no longer covers the visible page (which
       // is why continuous mode stopped accepting strokes once it was scrolled).
       // The host frame is not a scroller; the stage inside it still is.
-      if (props.captureLayer === undefined && planeOverlay === null) return stageNode
+      // Keep the same host wrapper in both modes: swapping the root between the
+      // stage and a wrapper unmounts the scroller on every mode switch.
       return h('div', { className: 'md-reader-stage-host', ref: stageHostRef }, stageNode, props.captureLayer, planeOverlay)
     }
-
     /**
      * The full-page PDF reader: one page or a continuous column, page
      * navigation, zoom, reading-mode switch, and the chapter's three New
@@ -11157,14 +11157,18 @@ window.__ModuleLoader__.load({
       // the wrong offset, so repeat once after the placeholders settle.
       const scrollToPage = useCallback(page => {
         const jump = () => {
+          const stage = props.stageRef === null || props.stageRef === undefined ? null : props.stageRef.current
           const node = slotRefs.current.get(page)
-          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
-            node.scrollIntoView({ block: 'start' })
-          }
+          if (stage === null || stage === undefined || node === null || node === undefined) return
+          // Scroll the stage itself. `scrollIntoView` also scrolls an outer
+          // ancestor while the stage is still measuring, which left the reader
+          // on a blank area after a mode switch.
+          const top = node.getBoundingClientRect().top - stage.getBoundingClientRect().top + stage.scrollTop
+          stage.scrollTop = Math.max(0, top)
         }
         jump()
-        setTimeout(jump, 320)
-      }, [])
+        for (const delay of [80, 240, 600, 1000]) window.setTimeout(jump, delay)
+      }, [props.stageRef])
 
       // The same callback instance for every page: a new one on each render
       // recreated every IntersectionObserver and made scrolling jittery.
@@ -11312,12 +11316,17 @@ window.__ModuleLoader__.load({
 
       // Switching back to a single page starts that page at the top of the stage.
       useEffect(() => {
-        if (reader.mode !== 'single') return
-        const stage = props.stageRef.current
-        if (stage !== null) {
-          stage.scrollTop = 0
-          stage.scrollLeft = 0
+        if (reader.mode !== 'single') return undefined
+        const reset = () => {
+          const stage = props.stageRef.current
+          if (stage !== null) {
+            stage.scrollTop = 0
+            stage.scrollLeft = 0
+          }
         }
+        reset()
+        const timer = window.setTimeout(reset, 80)
+        return () => window.clearTimeout(timer)
       }, [reader.mode, props.stageRef])
       // Entering continuous mode keeps the page you were reading instead of
       // starting at the top of the chapter. Only a real single->continuous
