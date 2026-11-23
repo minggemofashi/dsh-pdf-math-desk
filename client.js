@@ -810,6 +810,8 @@ window.__ModuleLoader__.load({
       shapeDiamond: '菱形',
       shapeEllipse: '椭圆',
       selectionTitle: '已选中',
+      selectionPanelDragHint: '拖动标题移动面板；点面板外关闭',
+      selectionPanelRightClickHint: '右键文本框打开调整面板；双击编辑文字',
       fillTitle: '填充',
       fillNone: '无',
       fillStyleTitle: '填充样式',
@@ -1416,6 +1418,8 @@ window.__ModuleLoader__.load({
       shapeDiamond: 'Diamond',
       shapeEllipse: 'Ellipse',
       selectionTitle: 'Selected',
+      selectionPanelDragHint: 'Drag the title to move the panel; click outside to close',
+      selectionPanelRightClickHint: 'Right-click a text box to adjust it; double-click to edit',
       fillTitle: 'Fill',
       fillNone: 'None',
       fillStyleTitle: 'Fill style',
@@ -8052,6 +8056,12 @@ window.__ModuleLoader__.load({
       const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
       // Which existing mark the select tool has picked (index into `strokes`).
       const [selection, setSelection] = useState(null)
+      // The text adjustment panel: opened by a right-click on a text box, never
+      // by a plain selection. It floats, moves by its header, closes with its
+      // button or with a press anywhere else.
+      const [stylePanel, setStylePanel] = useState(null)
+      const stylePanelRef = useRef(null)
+      const stylePanelDrag = useRef(null)
       // A shape being dragged out, and a selected mark being moved.
       const [shapeDraft, setShapeDraft] = useState(null)
       // A text box being dragged out before the editor opens.
@@ -8801,6 +8811,7 @@ window.__ModuleLoader__.load({
       }, annotIcon(path))
       const erasing = useRef(false)
       const annotDown = (event, side) => {
+        if (event.button !== 0) return
         if (annotTool === '') return
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
@@ -9512,6 +9523,68 @@ window.__ModuleLoader__.load({
         })
       }
 
+      // The adjustment panel is a right-click gesture: a plain press must stay a
+      // press (select, move, edit), so a click on a text box never pops a panel
+      // under the pointer. The panel floats over the reader, moves by its
+      // header, and any press outside it leaves the adjustment.
+      const openStylePanelAt = (event, index) => {
+        const entry = strokesRef.current[index]
+        if (entry === undefined || entry.kind !== 'text') return
+        event.preventDefault()
+        event.stopPropagation()
+        setSelection({ index, kind: 'text' })
+        const pane = props.paneRef === null || props.paneRef === undefined ? null : props.paneRef.current
+        const box = pane === null ? null : pane.getBoundingClientRect()
+        const width = 300
+        const height = 280
+        const left = box === null
+          ? 220
+          : Math.min(Math.max(8, event.clientX - box.left - 24), Math.max(8, box.width - width - 8))
+        const top = box === null
+          ? 120
+          : Math.min(Math.max(8, event.clientY - box.top + 14), Math.max(8, box.height - height - 8))
+        setStylePanel({ x: left, y: top })
+      }
+      const openStylePanelOnLayer = event => {
+        if (annotTool !== '' && annotTool !== 'text' && annotTool !== 'select') return
+        const point = annotPoint(event)
+        if (point === null) return
+        const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+        if (found >= 0) openStylePanelAt(event, found)
+      }
+      const beginStylePanelDrag = event => {
+        if (stylePanel === null || event.button !== 0) return
+        // The close button lives in the header too; a press on it must not drag.
+        if (event.target !== null && event.target !== undefined && typeof event.target.closest === 'function'
+          && event.target.closest('.md-selection-close') !== null) return
+        event.preventDefault()
+        stylePanelDrag.current = { from: [event.clientX, event.clientY], x: stylePanel.x, y: stylePanel.y }
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const moveStylePanel = event => {
+        const drag = stylePanelDrag.current
+        if (drag === null) return
+        event.preventDefault()
+        setStylePanel({
+          x: drag.x + (event.clientX - drag.from[0]),
+          y: drag.y + (event.clientY - drag.from[1]),
+        })
+      }
+      const endStylePanelDrag = () => { stylePanelDrag.current = null }
+      useEffect(() => {
+        if (stylePanel === null) return undefined
+        const onDown = event => {
+          const node = stylePanelRef.current
+          if (node !== null && node.contains(event.target)) return
+          setStylePanel(null)
+        }
+        window.addEventListener('pointerdown', onDown)
+        return () => window.removeEventListener('pointerdown', onDown)
+      }, [stylePanel])
+      // The panel belongs to one note on one page: turning the page or a remote
+      // edit puts it away instead of letting it edit a mark it no longer shows.
+      useEffect(() => { setStylePanel(null) }, [annotKey])
+
       const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
@@ -9524,6 +9597,7 @@ window.__ModuleLoader__.load({
         onPointerUp: reader.mode === 'canvas' ? undefined : annotUp,
         onPointerLeave: reader.mode === 'canvas' ? undefined : annotUp,
         onDoubleClick: event => editNoteAt(event, side),
+        onContextMenu: openStylePanelOnLayer,
       },
         h('svg', {
           className: 'md-annot-ink',
@@ -9667,6 +9741,7 @@ window.__ModuleLoader__.load({
                 fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
               },
               onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
+              onContextMenu: event => openStylePanelAt(event, index),
               onDoubleClick: annotTool === ''
                 ? event => {
                   event.preventDefault()
@@ -10421,14 +10496,26 @@ window.__ModuleLoader__.load({
             )
             : null
         ),
-        selection === null || selectedEntry === undefined
+        selection === null || selectedEntry === undefined || stylePanel === null
           ? null
-          : h('div', { className: 'md-selection-panel', 'data-side': railSide },
-            h('div', { className: 'md-selection-head' },
+          : h('div', {
+            className: 'md-selection-panel',
+            ref: stylePanelRef,
+            style: { left: `${stylePanel.x}px`, top: `${stylePanel.y}px` },
+          },
+            h('div', {
+              className: 'md-selection-head',
+              title: format('selectionPanelDragHint'),
+              onPointerDown: beginStylePanelDrag,
+              onPointerMove: moveStylePanel,
+              onPointerUp: endStylePanelDrag,
+              onPointerCancel: endStylePanelDrag,
+            },
               h('span', null, format('selectionTitle')),
               h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
-                'aria-label': format('previewClose'), onClick: () => setSelection(null),
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-selection-close',
+                'aria-label': format('previewClose'), title: format('previewClose'),
+                onClick: () => { setStylePanel(null); setSelection(null) },
               }, '×')
             ),
             selectedEntry.kind === 'text'
@@ -11360,10 +11447,10 @@ window.__ModuleLoader__.load({
 .md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); }
 .md-rail-btn:disabled { opacity: .35; cursor: default; }
 .md-rail-sep { height: 1px; margin: 3px 4px; background: var(--dsw-alias-border-l2); }
-.md-selection-panel { position: absolute; top: 64px; z-index: 15; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: var(--dsw-elevation-prominent); }
-.md-selection-panel[data-side="right"] { right: 58px; }
-.md-selection-panel[data-side="left"] { left: 58px; }
-.md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); }
+.md-selection-panel { position: absolute; z-index: 15; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: var(--dsw-elevation-prominent); }
+.md-selection-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 550; color: var(--dsw-alias-label-primary); cursor: grab; user-select: none; touch-action: none; }
+.md-selection-head:active { cursor: grabbing; }
+.md-selection-close { cursor: pointer; }
 .md-selection-delete { align-self: flex-start; color: var(--dsw-alias-state-error-primary); }
 .md-selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .md-reader[data-rail="right"] .md-reader-stage { padding-right: 58px; }
