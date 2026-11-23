@@ -11608,6 +11608,7 @@ window.__ModuleLoader__.load({
         setStylePanel({ x: left, y: top })
       }
       const openStylePanelOnLayer = event => {
+        event.preventDefault()
         if (annotTool !== '' && annotTool !== 'text' && annotTool !== 'select') return
         const point = annotPoint(event)
         if (point === null) return
@@ -15124,6 +15125,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onPointerLeave: editUp,
           onPointerCancel: editUp,
           onContextMenu: event => {
+            event.preventDefault()
             const point = pointOf(event)
             const found = point === null ? -1 : strokesRef.current.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
             if (found < 0) return
