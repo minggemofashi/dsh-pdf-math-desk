@@ -4766,18 +4766,22 @@ window.__ModuleLoader__.load({
             h('span', { className: 'md-settings-version' }, `${format('version')} ${props.version}`),
             h('span', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
           ),
-          h('div', { className: 'md-settings-tabs', role: 'tablist' },
-            tabs.map(item => h(KitButton, {
-              key: item.id,
-              type: 'button',
-              role: 'tab',
-              className: 'md-btn md-btn-small md-tab-btn',
-              'data-on': tab === item.id ? 'true' : 'false',
-              'aria-selected': tab === item.id ? 'true' : 'false',
-              onClick: () => setTab(item.id),
-            }, item.label))
-          ),
-          tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : tab === 'data' ? data : about
+          h('div', { className: 'md-settings-body' },
+            h('div', { className: 'md-settings-nav', role: 'tablist' },
+              tabs.map(item => h(KitButton, {
+                key: item.id,
+                type: 'button',
+                role: 'tab',
+                className: 'md-btn md-btn-small md-tab-btn',
+                'data-on': tab === item.id ? 'true' : 'false',
+                'aria-selected': tab === item.id ? 'true' : 'false',
+                onClick: () => setTab(item.id),
+              }, item.label))
+            ),
+            h('div', { className: 'md-settings-pane' },
+              tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : tab === 'data' ? data : about
+            )
+          )
         ),
       })
     }
@@ -12575,6 +12579,11 @@ window.__ModuleLoader__.load({
 .md-kit-select-option:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .md-kit-select-option:disabled { opacity: .4; cursor: not-allowed; }
 .md-settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
+.md-settings-body { display: flex; gap: 16px; align-items: flex-start; min-height: 240px; }
+.md-settings-nav { display: flex; flex-direction: column; gap: 6px; flex: 0 0 116px; position: sticky; top: 0; }
+.md-settings-nav .md-tab-btn { justify-content: flex-start; width: 100%; }
+.md-settings-pane { flex: 1 1 auto; min-width: 0; max-height: min(64vh, 620px); overflow: auto; padding-right: 4px; }
+@media (max-width: 640px) { .md-settings-body { flex-direction: column; } .md-settings-nav { flex-direction: row; flex-wrap: wrap; flex-basis: auto; position: static; } .md-settings-pane { max-height: none; } }
 .md-tab-btn[data-on='true'] { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-brand-primary); font-weight: 600; }
 .md-settings-note { margin: 0; font-size: 12px; color: var(--dsw-alias-brand-primary); }
 .md-settings-actions { display: flex; gap: 8px; padding-top: 4px; }
