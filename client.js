@@ -6045,7 +6045,7 @@ window.__ModuleLoader__.load({
           return
         }
         if (props.tool === 'text') {
-          // Press-drag draws a box; a click still opens a default box on release.
+          // Drag creates the box; a click alone creates nothing.
           if (noteRef.current !== null) saveNote(noteRef.current.id)
           setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
           return
@@ -6086,7 +6086,6 @@ window.__ModuleLoader__.load({
           const w = Math.abs(box.x1 - box.x0)
           const h = Math.abs(box.y1 - box.y0)
           if (w > 0.012 && h > 0.012) openNote([x, y], { x, y, w, h })
-          else openNote([box.x0, box.y0])
           return
         }
         const current = draftRef.current
@@ -7474,9 +7473,15 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'text') {
-          // A press-drag draws the box; a simple click still opens a default
-          // box on release, so both PPT-style and point-style placement work.
+          // Only a drag creates a new text box. Starting on an existing box
+          // selects and moves it instead of stacking another box on top.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
+          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+          if (found >= 0) {
+            setSelection({ index: found, kind: 'text' })
+            setDrag({ index: found, start: point, dx: 0, dy: 0 })
+            return
+          }
           setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1], side })
           return
         }
@@ -7559,7 +7564,6 @@ window.__ModuleLoader__.load({
           const w = Math.abs(draft.x1 - draft.x0)
           const h = Math.abs(draft.y1 - draft.y0)
           if (w > 0.012 && h > 0.012) openNote([x, y], draft.side, { x, y, w, h })
-          else openNote([draft.x0, draft.y0], draft.side)
           return
         }
         if (resizeEntry !== null && resize !== null) {
@@ -8123,6 +8127,36 @@ window.__ModuleLoader__.load({
         onPointerMove: annotMove,
         onPointerUp: annotUp,
         onPointerLeave: annotUp,
+        onDoubleClick: event => {
+          // Double-clicking a box edits it even while the text or select tool
+          // is active; the text div itself is pointer-transparent then.
+          if (annotTool !== '' && annotTool !== 'text' && annotTool !== 'select') return
+          const point = annotPoint(event)
+          if (point === null) return
+          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+          if (found < 0) return
+          event.preventDefault()
+          event.stopPropagation()
+          const entry = strokesRef.current[found]
+          const bounds = noteBox(entry)
+          noteSeq.current += 1
+          noteText.current = String(entry.text ?? '')
+          setSelection({ index: found, kind: 'text' })
+          setNoteEdit({
+            id: noteSeq.current,
+            side,
+            index: found,
+            x: bounds.x,
+            y: bounds.y,
+            w: bounds.w,
+            h: bounds.h,
+            text: noteText.current,
+            color: entry.color ?? annotColor,
+            fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+            fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+          })
+        },
       },
         h('svg', {
           className: 'md-annot-ink',
@@ -8243,7 +8277,8 @@ window.__ModuleLoader__.load({
         // with the stored list, so a double-click edits the right entry.
         strokes.map((entry, index) => (entry.kind === 'text'
           ? (() => {
-            const shown = drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry
+            const live = resizeEntry !== null && resize !== null && resize.index === index ? resizeEntry : entry
+            const shown = drag !== null && drag.index === index ? translateEntry(live, drag.dx, drag.dy) : live
             const bounds = noteBox(shown)
             const hasBox = Number.isFinite(shown.w) && shown.w > 0 && Number.isFinite(shown.h) && shown.h > 0
             return h('div', {
@@ -8286,9 +8321,11 @@ window.__ModuleLoader__.load({
             }, entry.text)
           })()
           : null)),
-        selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text') && annotTool === 'select'
+        selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text')
+          && (annotTool === 'select' || (annotTool === 'text' && selectedEntry.kind === 'text'))
           ? (() => {
-            const box = selectedEntry.kind === 'text' ? noteBox(selectedEntry) : selectedEntry
+            const live = resizeEntry !== null && resize !== null && resize.index === selection.index ? resizeEntry : selectedEntry
+            const box = live.kind === 'text' ? noteBox(live) : live
             return h('div', { className: 'md-shape-handles' },
               (selectedEntry.kind === 'shape' && (selectedEntry.shape === 'line' || selectedEntry.shape === 'arrow')
                 ? [['start', box.x0, box.y0], ['end', box.x1, box.y1]]
