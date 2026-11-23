@@ -10186,6 +10186,7 @@ window.__ModuleLoader__.load({
       }
       const [hasTranslation, setHasTranslation] = useState(false)
       const [dualDoc, setDualDoc] = useState(null)
+      const rebuilt = useRef(new Set())
       const dualLeft = useRef(null)
       const dualRight = useRef(null)
       useEffect(() => setPageText(String(reader.page)), [reader.page])
@@ -10206,7 +10207,11 @@ window.__ModuleLoader__.load({
             // keeps it a one-off), so old `\(...\)` left-overs get fixed without
             // paying for the translation again.
             try {
-              await request('POST', 'rebuild-translated', { book: reader.bookId, code: reader.code })
+              const key = `${reader.bookId}|${reader.code}|${docRev}|translated`
+              if (!rebuilt.current.has(key)) {
+                await request('POST', 'rebuild-translated', { book: reader.bookId, code: reader.code })
+                rebuilt.current.add(key)
+              }
             } catch {
               // no cached pages yet, or XeLaTeX failed: read what exists
             }
@@ -10227,7 +10232,11 @@ window.__ModuleLoader__.load({
               // Rebuild from the cached per-page blocks so an old overlay PDF
               // rendered by an earlier release cannot hide the fix.
               try {
-                await request('POST', 'rebuild-overlay', { book: reader.bookId, code: reader.code })
+                const key = `${reader.bookId}|${reader.code}|${docRev}|overlay`
+                if (!rebuilt.current.has(key)) {
+                  await request('POST', 'rebuild-overlay', { book: reader.bookId, code: reader.code })
+                  rebuilt.current.add(key)
+                }
               } catch {
                 // keep the existing overlay if the rebuild fails
               }
@@ -10685,6 +10694,15 @@ window.__ModuleLoader__.load({
         if (selection === null) return
         savePageAnnots(strokesRef.current.filter((entry, index) => index !== selection.index))
         setSelection(null)
+      }
+      // Right-click deletes a text box (the gesture the note UI promises); the
+      // page-annotation store records it, so Cmd/Ctrl+Z brings it back.
+      const deleteNoteAt = (index, event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        savePageAnnots(strokesRef.current.filter((entry, item) => item !== index))
+        setSelection(null)
+        setGroupSelection([])
       }
       // Backspace/Delete removes the picked marks (single or marquee group) so
       // selections can be cleared without reaching for the toolbar.
@@ -11656,7 +11674,7 @@ window.__ModuleLoader__.load({
           selection,
           noteTitle: annotTool === '' ? format('annotTextEditHint') : undefined,
           onNotePointerDown: annotTool === '' ? (index, event) => event.stopPropagation() : undefined,
-          onNoteContextMenu: (index, event) => openStylePanelAt(event, index),
+          onNoteContextMenu: (index, event) => deleteNoteAt(index, event),
           onNoteDoubleClick: annotTool === ''
             ? (index, event, entry) => {
               event.preventDefault()
@@ -13555,7 +13573,8 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page-image { display: block; }
-.md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
+.md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; overflow: visible; }
+.md-annot-readonly { overflow: visible; }
 .md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); border-radius: 2px; pointer-events: none; }
 .md-marquee-group { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); }
 .md-selection-outline { position: absolute; z-index: 7; border: 1.5px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); pointer-events: none; }
@@ -13632,9 +13651,9 @@ window.__ModuleLoader__.load({
 .md-annot-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 /* A text note is transparent: it sits straight on the page, and a faint outline
    appears only on hover, when it can be double-clicked for editing. */
-.md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; }
+.md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; user-select: text; -webkit-user-select: text; }
 /* With no tool picked, a note is clickable so a double-click can edit it. */
-.md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; }
+.md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; user-select: text; -webkit-user-select: text; }
 .md-annot[data-tool=""] .md-annot-text:hover { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 /* The in-place editor is transparent too: only the text and the caret show.
    The style row never takes focus, so changing a font cannot blur-save. */
@@ -13802,6 +13821,7 @@ window.__ModuleLoader__.load({
    dsh-whale-widget-bowl; with that plugin absent the rule matches nothing. */
 body[data-pdfdesk-reading='1'] .dshwv-root { opacity: .28; }
 .md-annot-readonly { pointer-events: none; }
+.md-annot-readonly .md-annot-text { pointer-events: auto; cursor: text; }
 /* The side preview's own ink: only the tool layer takes pointer events. */
 .md-annot-edit { pointer-events: auto; cursor: crosshair; touch-action: none; }
 .md-annot-edit[data-tool='erase'] { cursor: cell; }
@@ -14840,6 +14860,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           roughness: shapeRoughness,
           hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index,
           drag: sideDrag,
+          onNoteContextMenu: (index, event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            commitStrokes(strokesRef.current.filter((entry, item) => item !== index))
+            setSelection(null)
+          },
         }),
         selection === null
           ? null
