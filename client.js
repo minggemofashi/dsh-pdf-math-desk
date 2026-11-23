@@ -11765,6 +11765,7 @@ window.__ModuleLoader__.load({
           const dx = groupDrag === null ? 0 : groupDrag.dx
           const dy = groupDrag === null ? 0 : groupDrag.dy
           return indices.map(index => {
+            if (strokes[index] !== undefined && strokes[index].kind === 'text') return null
             const box = entryBounds(strokes[index])
             if (box.w <= 0 && box.h <= 0) return null
             return h('div', {
@@ -12009,7 +12010,12 @@ window.__ModuleLoader__.load({
           onPointerLeave: annotUp,
           onPointerCancel: annotUp,
           onDoubleClick: event => editNoteAt(event, 'main'),
-          onContextMenu: openStylePanelOnLayer,
+          onContextMenu: event => {
+            const point = annotPoint(event)
+            const found = point === null ? -1 : strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+            if (found >= 0) { deleteNoteAt(found, event); return }
+            openStylePanelOnLayer(event)
+          },
         })
         : null
       // The plane's outline: the page box plus its margins, with one "+" square
@@ -13607,7 +13613,7 @@ window.__ModuleLoader__.load({
 .md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
 .md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: 0; }
+.md-annot-text.md-annot-selected { outline: none; border-radius: 0; }
 .md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
@@ -14870,6 +14876,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         selection === null
           ? null
           : (() => {
+            if (strokes[selection.index] !== undefined && strokes[selection.index].kind === 'text') return null
             const box = entryBounds(strokes[selection.index])
             const dx = sideDrag === null ? 0 : sideDrag.dx
             const dy = sideDrag === null ? 0 : sideDrag.dy
@@ -15143,6 +15150,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onPointerUp: editUp,
           onPointerLeave: editUp,
           onPointerCancel: editUp,
+          onContextMenu: event => {
+            const point = pointOf(event)
+            const found = point === null ? -1 : strokesRef.current.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
+            if (found < 0) return
+            event.preventDefault()
+            event.stopPropagation()
+            commitStrokes(strokesRef.current.filter((entry, index) => index !== found))
+            setSelection(null)
+          },
         })
         : null
 
@@ -15823,18 +15839,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The handwriting face is optional: ask once, then inject its @font-face
       // only when the Host has the file.
       useEffect(() => { void refreshXiaolaiFont() }, [])
-      // Warm the pdf.js module while the shelf is idle: opening the first reader
-      // no longer waits for the 1–2 MB vendor import.
-      useEffect(() => {
-        const start = () => { void loadPdfjs().catch(() => {}) }
-        const idle = typeof requestIdleCallback === 'function'
-          ? requestIdleCallback(start, { timeout: 2500 })
-          : window.setTimeout(start, 1800)
-        return () => {
-          if (typeof cancelIdleCallback === 'function' && typeof idle === 'number') cancelIdleCallback(idle)
-          else window.clearTimeout(idle)
-        }
-      }, [])
       const [catalog, setCatalog] = useState(null)
       const [work, setWork] = useState(null)
       const [phase, setPhase] = useState('loading')
