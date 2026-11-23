@@ -1097,6 +1097,14 @@ window.__ModuleLoader__.load({
       questionInjectToggle: '疑问：创建时注入当前会话',
       questionInjectHint: '创建疑问时把「看到疑问：名称」追加到当前会话输入框，不自动发送；没有打开的会话时只创建标记',
       questionSaveFailed: '疑问保存失败',
+      printAction: '打印',
+      printHint: '用浏览器打印这个 Markdown（HTML 打印页，不需要 TeX）',
+      printTitle: '打印预览',
+      printBusy: '正在生成打印页…',
+      printFailed: '打印页生成失败',
+      printBlocked: '浏览器拒绝了打印对话框；可在打印预览里按 Ctrl+P',
+      close: '关闭',
+      officeArtifactHint: 'Office 文件不在插件内预览；请在 DSH 文件预览或 Office 中打开（文件就在本章产物目录）',
       workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
       workspaceTitle: '需要工作区',
       workspaceBody: '会话需要一个工作区来存放。工作区只保存对话，不会移动、复制或删除书库文件。',
@@ -1695,6 +1703,14 @@ window.__ModuleLoader__.load({
       questionInjectToggle: 'Questions: append to the open conversation',
       questionInjectHint: 'When a question is created, append “看到疑问：<name>” to the open conversation’s input (never sent). Without an open conversation only the mark is created.',
       questionSaveFailed: 'The question could not be saved',
+      printAction: 'Print',
+      printHint: 'Print this Markdown with the browser (HTML print page, no TeX needed)',
+      printTitle: 'Print preview',
+      printBusy: 'Building the print page…',
+      printFailed: 'The print page could not be built',
+      printBlocked: 'The browser refused the print dialog; press Ctrl+P inside the preview',
+      close: 'Close',
+      officeArtifactHint: 'Office files are not previewed inside the plugin; open them in the DSH file preview or in Office (the file is in this chapter’s product folder)',
       workflowActiveHint: 'Enabled; click this card again to return to General.',
       workspaceTitle: 'Workspace required',
       workspaceBody: 'A conversation needs a workspace. The workspace stores conversations only; it never moves, copies or deletes library files.',
@@ -4915,6 +4931,61 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The HTML print page in a modal: the Host renders Markdown to a
+     * self-contained page, the browser prints it. No TeX, no temporary PDF.
+     * @param {{ name: string, html: string, busy: boolean, error: string, onClose: Function }} props - the page and handlers.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function PrintDialog(props) {
+      const frame = useRef(null)
+      const [blocked, setBlocked] = useState('')
+      const print = () => {
+        const node = frame.current
+        const win = node === null ? null : node.contentWindow
+        if (win === null) {
+          setBlocked(format('printBlocked'))
+          return
+        }
+        try {
+          win.focus()
+          win.print()
+        } catch {
+          setBlocked(format('printBlocked'))
+        }
+      }
+      return h(KitModal, {
+        title: `${format('printTitle')}：${props.name}`,
+        onClose: props.onClose,
+        className: 'md-print-modal',
+        contentClassName: 'md-print-content',
+        children: h(React.Fragment, null,
+          props.busy
+            ? h('p', { className: 'md-shelf-sub', role: 'status' }, format('printBusy'))
+            : props.error !== ''
+              ? h('p', { className: 'md-alert-text', role: 'alert' }, `${format('printFailed')}（${props.error}）`)
+              : h('iframe', {
+                className: 'md-print-frame',
+                ref: frame,
+                title: props.name,
+                srcDoc: props.html,
+                // The page needs scripts for the optional formula renderer, and
+                // modals for the print dialog. It is our own generated markup.
+                sandbox: 'allow-scripts allow-modals',
+              }),
+          h('div', { className: 'md-settings-actions' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn',
+              disabled: props.busy || props.error !== '',
+              onClick: print,
+            }, format('printAction')),
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-ghost', onClick: props.onClose }, format('close'))
+          ),
+          blocked === '' ? null : h('p', { className: 'md-alert-text', role: 'alert' }, blocked)
+        ),
+      })
+    }
+
+    /**
      * Pick an existing conversation to place under one chapter. A modal, because
      * it replaces the page's attention: search, a list, and nothing else.
      * @param {{ target: object, candidates: object[], onPick: Function, onClose: Function }} props - the chapter to attach to, candidate rows, picker handlers.
@@ -5078,6 +5149,22 @@ window.__ModuleLoader__.load({
             }, format('renderAction'))
             : null
           ),
+          /\.md$/i.test(item.name) && typeof props.onPrint === 'function'
+            ? h('span', {
+              className: 'md-file-action', role: 'button', tabIndex: 0,
+              title: format('printHint'),
+              onClick: event => {
+                event.stopPropagation()
+                props.onPrint(item, props.code)
+              },
+              onKeyDown: event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                event.stopPropagation()
+                props.onPrint(item, props.code)
+              },
+            }, format('printAction'))
+            : null,
           (item.kind === 'pdf' || props.allowNonPdfDelete === true || /_export\.annots\.json$/i.test(String(item.name ?? '')))
             ? h('span', {
               className: 'md-file-action', role: 'button', tabIndex: 0,
@@ -10647,6 +10734,7 @@ window.__ModuleLoader__.load({
             onRetry: props.onRetryArtifacts,
             onReload: props.onReloadArtifacts,
             onRender: (item, code) => props.onRenderArtifact(item, code),
+            onPrint: (item, code) => props.onPrint(item, code),
             onTrashArtifact: (item, code) => props.onTrashArtifact(item, code),
             onCopyPath: props.onCopyPath,
             registerRef: props.registerFileRef,
@@ -10734,6 +10822,7 @@ window.__ModuleLoader__.load({
                 onOpenArtifact: props.onOpenArtifact,
                 onRenderArtifact: props.onRenderArtifact,
                 onTrashArtifact: props.onTrashArtifact,
+                onPrint: props.onPrint,
                 onRetryArtifacts: props.onRetryArtifacts,
                 onReloadArtifacts: props.onReloadArtifacts,
                 onCopyPath: props.onCopyPath,
@@ -10931,6 +11020,9 @@ window.__ModuleLoader__.load({
 .md-file-meta { flex: none; font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-file-action { flex: none; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); cursor: pointer; }
 .md-file-action:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l4); }
+.md-print-modal { width: min(980px, 96vw); }
+.md-print-content { display: flex; flex-direction: column; gap: 10px; }
+.md-print-frame { width: 100%; height: min(70vh, 720px); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: #fff; }
 .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
 .md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
 .md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
@@ -13260,6 +13352,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const linksRef = useRef({})
       const [renaming, setRenaming] = useState(null)
       const [picker, setPicker] = useState(null)
+      // The HTML print page of one produced Markdown file (built on demand).
+      const [printPage, setPrintPage] = useState(null)
       const [digest, setDigest] = useState(null)
       const [libs, setLibs] = useState({ items: [], activeId: '' })
       const [library, setLibrary] = useState(null)
@@ -14030,6 +14124,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [reloadArtifacts, showNotice, work])
 
+      /**
+       * Build a printable HTML page for one Markdown product and show it. The
+       * Host does the conversion; no TeX is involved and no PDF is written.
+       * @param {object} item - `{ name, kind }`.
+       * @param {string} code - chapter code.
+       * @returns {void}
+       */
+      const printArtifact = useCallback((item, code) => {
+        if (work === null || work.bookId === null || item === null || item === undefined) return
+        if (!/\.md$/i.test(String(item.name ?? ''))) return
+        const bookId = work.bookId
+        const name = String(item.name)
+        setPrintPage({ name, html: '', busy: true, error: '' })
+        void request('POST', 'print-page', { book: bookId, code, name })
+          .then(payload => {
+            setPrintPage(current => (current === null || current.name !== name
+              ? current
+              : { ...current, html: typeof payload.html === 'string' ? payload.html : '', busy: false, error: '' }))
+          })
+          .catch(reason => {
+            setPrintPage(current => (current === null || current.name !== name
+              ? current
+              : { ...current, html: '', busy: false, error: errorText(reason) }))
+          })
+      }, [work])
+
       /** Right-click a hidden book: move its chapter PDFs to the recycle bin. */
       const trashBook = useCallback(async bookId => {
         if (!window.confirm(format('trashBookConfirm', { id: bookId }))) return
@@ -14105,6 +14225,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           })
           return
         }
+        // Word documents are shown by DSH/Office, not by this plugin: point at
+        // the file instead of pretending to render it.
+        if (item.kind === 'office') {
+          showNotice(format('officeArtifactHint'))
+          return
+        }
         const token = previewToken.current + 1
         previewToken.current = token
         const base = {
@@ -14149,7 +14275,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             errorCode: typeof reason?.code === 'string' ? reason.code : '',
           })
         })
-      }, [book, openReader])
+      }, [book, openReader, showNotice])
 
       const retryPreview = useCallback(() => {
         const current = previewRef.current
@@ -16149,6 +16275,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           allowNonPdfDelete,
           onRenderArtifact: renderArtifact,
           onTrashArtifact: trashArtifact,
+          onPrint: printArtifact,
           onRetryArtifacts: retryArtifacts,
           onReloadArtifacts: reloadArtifacts,
           onCopyPath: copyPath,
@@ -16372,6 +16499,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             digest,
             onClose: closeDigest,
             onCopy: copyDigest,
+          }),
+        printPage === null
+          ? null
+          : h(PrintDialog, {
+            name: printPage.name,
+            html: printPage.html,
+            busy: printPage.busy,
+            error: printPage.error,
+            onClose: () => setPrintPage(null),
           }),
         settingsOpen
           ? h(SettingsDialog, {

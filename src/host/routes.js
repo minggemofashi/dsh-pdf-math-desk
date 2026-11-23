@@ -12,6 +12,7 @@
  *   POST /pdfdesk/chapter-cache    request a brief, forget one, or forget all
  *   GET  /pdfdesk/questions        one chapter's page-mark questions
  *   PUT  /pdfdesk/questions        replace one chapter's questions
+ *   POST /pdfdesk/print-page       one Markdown product as a printable HTML page
  *   POST /pdfdesk/digest           summarize a chapter's conversations
  *   GET  /pdfdesk/vendor/<file>    the reader's pdf.js build
  *   POST /pdfdesk/links            attach an existing session to a chapter
@@ -34,6 +35,7 @@ import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolv
 import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from './annotations.js'
 import { clearAllChapterCache, clearChapterCache, prepareChapterCache, readChapterCache } from './chapter-cache.js'
 import { readQuestions, writeQuestions } from './questions.js'
+import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
@@ -475,6 +477,36 @@ async function activeLibrary() {
         } catch (error) {
           fail(response, 503, 'render-failed', String(error && error.message ? error.message : error))
         }
+        return
+      }
+
+      if (path === `${PREFIX}/print-page`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        const name = typeof record.name === 'string' ? record.name : ''
+        // Only a text product can become a print page; a PDF prints itself.
+        if (!/\.(md|markdown|txt)$/i.test(name)) {
+          fail(response, 400, 'not-printable', '只有 Markdown 产物可以生成打印页')
+          return
+        }
+        const library = await activeLibrary()
+        const artifact = await readArtifact(library, match.book, match.chapter, name)
+        if (artifact.ok !== true) {
+          fail(response, artifact.reason === 'not-found' ? 404 : 400, 'print-read-failed', '读不到这个产物')
+          return
+        }
+        const html = printPageHtml(`${match.book.id} / ${match.chapter.code} / ${name}`, markdownToHtml(artifact.text))
+        sendJson(response, 200, { ok: true, title: name, html })
         return
       }
 

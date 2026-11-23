@@ -43,19 +43,40 @@ const TEXT_EXTENSIONS = new Set([
 /** Extensions shown as an image badge; the reader does not draw them yet. */
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'])
 
+/** Word documents: listed, but previewed by DSH/Office rather than in this plugin. */
+const OFFICE_EXTENSIONS = new Set(['doc', 'docx'])
+
+/**
+ * Products the workbench does not list. TeX sources are build intermediates;
+ * spreadsheets and slides are not reading material for this plugin, and neither
+ * is a CSV dump. The files stay on disk untouched.
+ */
+const HIDDEN_EXTENSIONS = new Set(['tex', 'xlsx', 'xls', 'xlsm', 'ods', 'csv', 'pptx', 'ppt', 'pptm', 'odp'])
+
+/**
+ * Whether one produced file belongs in the list.
+ * @param {string} name - file name.
+ * @returns {boolean} true when the row should be shown.
+ */
+function visibleName(name) {
+  const extension = extname(name).replace(/^\./, '').toLowerCase()
+  return !HIDDEN_EXTENSIONS.has(extension)
+}
+
 /** Decoders tried in order for a preview; UTF-8 first, then the common Chinese Windows code page. */
 const DECODERS = ['utf-8', 'gb18030']
 
 /**
  * The kind shown as a badge and used to decide whether the reader can draw it.
  * @param {string} name - file name.
- * @returns {'pdf' | 'text' | 'image' | 'other'} the kind.
+ * @returns {'pdf' | 'text' | 'image' | 'office' | 'other'} the kind.
  */
 export function kindOf(name) {
   const extension = extname(name).replace(/^\./, '').toLowerCase()
   if (extension === 'pdf') return 'pdf'
   if (TEXT_EXTENSIONS.has(extension)) return 'text'
   if (IMAGE_EXTENSIONS.has(extension)) return 'image'
+  if (OFFICE_EXTENSIONS.has(extension)) return 'office'
   return 'other'
 }
 
@@ -202,8 +223,9 @@ async function readingNames(dir) {
   return entries
     .filter(entry => entry.isFile() || entry.isSymbolicLink())
     .map(entry => entry.name)
-    // Office lock files and editor droppings are noise in a reading list.
-    .filter(name => !name.startsWith('.') && !name.startsWith('~$'))
+    // Office lock files and editor droppings are noise in a reading list; TeX
+    // sources, spreadsheets and slides are not reading material for this plugin.
+    .filter(name => !name.startsWith('.') && !name.startsWith('~$') && visibleName(name))
     .sort((left, right) => left.localeCompare(right, 'zh'))
 }
 
