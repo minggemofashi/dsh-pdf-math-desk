@@ -998,6 +998,14 @@ window.__ModuleLoader__.load({
       settings: '设置',
       version: '版本',
       githubRepo: 'GitHub 仓库',
+      feedbackIssue: '反馈问题',
+      feedbackHint: '打开 GitHub 新建 issue，自动带入插件版本与系统信息；不会上传文件或本机路径',
+      feedbackTitle: '问题：',
+      feedbackBodyVersion: '插件版本',
+      feedbackBodyEnv: '环境（系统 / 浏览器）',
+      feedbackBodyDesc: '问题描述',
+      feedbackBodySteps: '复现步骤',
+      feedbackBodyNote: '请勿粘贴本机路径、密钥或日志；需要时脱敏后附加。',
       aiPromptTitle: 'AI 生成 Markdown',
       libraryPathsTitle: '书库路径与书 id',
       libraryPathHint: '这里统一显示为 {root}；绝对路径只在本机有效',
@@ -1611,6 +1619,14 @@ window.__ModuleLoader__.load({
       settings: 'Settings',
       version: 'Version',
       githubRepo: 'GitHub repository',
+      feedbackIssue: 'Report an issue',
+      feedbackHint: 'Opens a prefilled GitHub issue with the plugin version and system info; no files or local paths are sent',
+      feedbackTitle: 'Issue: ',
+      feedbackBodyVersion: 'Plugin version',
+      feedbackBodyEnv: 'Environment (OS / browser)',
+      feedbackBodyDesc: 'What happened',
+      feedbackBodySteps: 'Steps to reproduce',
+      feedbackBodyNote: 'Do not paste local paths, keys or logs; redact before attaching.',
       manualIdNote: 'A book id is its folder name / filename prefix. Do not rename it after adding the library: session titles and artifact folders key off it, so renaming breaks old sessions and artifacts (display names may change; keep the folder stable).',
       aiPromptTitle: 'AI-generated Markdown',
       libraryPathsTitle: 'Library paths and book ids',
@@ -4280,12 +4296,37 @@ window.__ModuleLoader__.load({
           )
         )
       )
+      // A prefilled GitHub issue: version + system only, never files or local
+      // paths. The user reviews and submits it in the browser.
+      const openFeedback = () => {
+        const body = [
+          `### ${format('feedbackBodyVersion')}`,
+          typeof props.version === 'string' ? props.version : '',
+          '',
+          `### ${format('feedbackBodyEnv')}`,
+          typeof navigator === 'object' && navigator !== null ? String(navigator.userAgent ?? '') : '',
+          '',
+          `### ${format('feedbackBodyDesc')}`,
+          '',
+          '',
+          `### ${format('feedbackBodySteps')}`,
+          '1. ',
+          '',
+          `> ${format('feedbackBodyNote')}`,
+        ].join('\n')
+        openLink(`${GITHUB_URL}/issues/new?title=${encodeURIComponent(format('feedbackTitle'))}&body=${encodeURIComponent(body)}`)
+      }
       const about = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('githubRepo')),
         h(KitButton, {
           type: 'button', className: 'md-btn md-btn-small',
           onClick: () => openLink(GITHUB_URL),
         }, format('githubRepo')),
+        h(KitButton, {
+          type: 'button', className: 'md-btn md-btn-small',
+          title: format('feedbackHint'),
+          onClick: openFeedback,
+        }, format('feedbackIssue')),
         h(KitButton, {
           className: 'md-btn md-btn-small', disabled: props.updateBusy === true,
           title: format('updateHint'),
