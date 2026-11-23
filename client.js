@@ -9107,8 +9107,6 @@ window.__ModuleLoader__.load({
         roughReady.then(() => { if (alive) setRoughTick(value => value + 1) })
         return () => { alive = false }
       }, [])
-      const noteEditRef = useRef(null)
-      noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
       // The editor owns the text while typing; this ref is what gets saved.
       const noteText = useRef('')
@@ -9213,6 +9211,10 @@ window.__ModuleLoader__.load({
         redoPage,
         historyCounts,
       } = inkEditor
+      // `noteEdit` lives in the shared hook; this ref mirrors it for handlers
+      // that run after the render (keyboard, blur).
+      const noteEditRef = useRef(null)
+      noteEditRef.current = noteEdit
       useEffect(() => {
         annotPrefetch.current.clear()
       }, [inkStore])
@@ -12827,12 +12829,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         onPointerEnter: event => beginSidePanel(event.currentTarget, id),
         onClick: () => toggleTool(id),
       }, annotIcon(path))
-      const noteEditRef = useRef(null)
-      noteEditRef.current = noteEdit
       const noteSeq = useRef(0)
       const noteText = useRef('')
-      strokesRef.current = strokes
-      masksRef.current = masks
       const draftRef = useRef(null)
       const maskDraftRef = useRef(null)
       const maskStartRef = useRef(null)
@@ -12875,6 +12873,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         redoPage,
         historyCounts,
       } = inkEditor
+      const noteEditRef = useRef(null)
+      noteEditRef.current = noteEdit
       strokesRef.current = strokes
       masksRef.current = masks
       countRef.current = count
