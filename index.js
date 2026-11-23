@@ -127,7 +127,6 @@ export function apply(ctx, rawConfig) {
     // Session services the base-session route drives (stage 7.6).
     sessionServices: () => ({
       agents: ctx.get('agents'),
-      sessions: ctx.get('sessions'),
       query: ctx.get('sessionQuery'),
       workspace: ctx.get('workspaceRegistry'),
     }),
