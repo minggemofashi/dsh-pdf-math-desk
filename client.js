@@ -143,6 +143,45 @@ window.__ModuleLoader__.load({
     const WORKFLOW_STORAGE = 'pdfdesk:workflow'
     const WORKFLOW_EVENT = 'pdfdesk:workflow'
     const WORKSPACE_STORAGE = 'pdfdesk:workspace:'
+    const SPLIT_SESSION_STORAGE = 'pdfdesk:split-session:'
+
+    /**
+     * The split-tool conversation remembered for one library.
+     * @param {string} libraryId - library id.
+     * @returns {{ sessionId: string, workspaceId: string } | null} the stored pointer.
+     */
+    function readStoredSplitSession(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return null
+      try {
+        const raw = window.localStorage.getItem(`${SPLIT_SESSION_STORAGE}${libraryId}`)
+        if (raw === null || raw === '') return null
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return null
+        if (typeof parsed.sessionId !== 'string' || parsed.sessionId === '') return null
+        return {
+          sessionId: parsed.sessionId,
+          workspaceId: typeof parsed.workspaceId === 'string' ? parsed.workspaceId : '',
+        }
+      } catch {
+        return null
+      }
+    }
+
+    /**
+     * Remember the split-tool conversation of one library.
+     * @param {string} libraryId - library id.
+     * @param {string} sessionId - the conversation.
+     * @param {string} workspaceId - its workspace.
+     * @returns {void}
+     */
+    function writeStoredSplitSession(libraryId, sessionId, workspaceId) {
+      if (typeof libraryId !== 'string' || libraryId === '' || typeof sessionId !== 'string' || sessionId === '') return
+      try {
+        window.localStorage.setItem(`${SPLIT_SESSION_STORAGE}${libraryId}`, JSON.stringify({ sessionId, workspaceId }))
+      } catch {
+        // storage unavailable
+      }
+    }
 
     /**
      * The workspace the user explicitly chose for one library, if any.
@@ -360,6 +399,10 @@ window.__ModuleLoader__.load({
       aiPromptCopied: '提示词已复制',
       splitStart: '拆分工具：开一个会话',
       splitHint: '把工具复制到 工具\\，并新建一个带预设提示词的会话',
+      splitReopened: '已打开这个书库的拆分会话',
+      splitWorkspace: '工作区',
+      workspaceNotChosen: '未选择工作区',
+      workspaceChange: '更改',
       importStart: '导入文件',
       importBusy: '导入中…',
       importFilesHint: '导入 md/txt/pdf：md/txt 渲染成 PDF 放进 整本\\，PDF 直接放进去',
@@ -903,6 +946,10 @@ window.__ModuleLoader__.load({
       aiPromptCopied: 'Prompt copied',
       splitStart: 'Split a book (opens a conversation)',
       splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
+      splitReopened: 'Opened this library\'s split conversation',
+      splitWorkspace: 'Workspace',
+      workspaceNotChosen: 'No workspace selected',
+      workspaceChange: 'Change',
       importStart: 'Import files',
       importBusy: 'Importing…',
       importFilesHint: 'Import md/txt/pdf: md/txt are rendered to PDF in this library\'s 整本\\ as a whole book; PDFs go there directly.',
@@ -3987,10 +4034,19 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
           h('p', { className: 'md-shelf-sub' }, format('splitHint')),
-          h(KitButton, {
-            type: 'button', className: 'md-btn', disabled: busy,
-            onClick: props.onSplit,
-          }, busy ? format('libraryBusy') : format('splitStart'))
+          h('p', { className: 'md-shelf-sub' }, `${format('splitWorkspace')}：${props.workspaceLabel === '' ? format('workspaceNotChosen') : props.workspaceLabel}`),
+          h('div', { className: 'md-library-tools' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn',
+              disabled: busy,
+              onClick: props.onSplit,
+            }, busy ? format('libraryBusy') : format('splitStart')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: busy,
+              onClick: props.onChooseWorkspace,
+            }, format('workspaceChange'))
+          )
         ),
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('importToolTitle')),
@@ -13338,6 +13394,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       /**
+       * Open the workspace picker even when one is already remembered, so the
+       * choice shown on the split-tool card can be changed explicitly.
+       * @returns {void}
+       */
+      const chooseWorkspace = useCallback(() => {
+        if (workspaceRequest.current !== null) return
+        const request = new Promise(resolve => setWorkspacePrompt({ resolve }))
+        workspaceRequest.current = request
+      }, [])
+
+      /**
        * A session needs an explicit workspace. Never silently fall back to a
        * cwd: when the library has no owning workspace, ask the user.
        * @returns {Promise<{ workspaceId: string, cwd: string } | null>} the chosen target, or null when cancelled.
@@ -13973,13 +14040,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setLibBusy(true)
         setLibError('')
         try {
+          const target = await ensureWorkspaceTarget()
+          if (target === null) return
+          const libraryId = library === null ? catalog.libraryId : library.id
+          const stored = readStoredSplitSession(libraryId)
+          if (stored !== null && stored.workspaceId === target.workspaceId) {
+            const sessions = sessionService()
+            const list = sessions === null || sessions.list === undefined ? null : sessions.list.getSnapshot()
+            const workspaces = workspacesService()
+            const archived = workspaces === null || workspaces.list === undefined
+              ? new Set()
+              : new Set(workspaces.list.getSnapshot().archivedSessionIds ?? [])
+            const known = list === null || list.phase !== 'ready' ? undefined : list.byId?.[stored.sessionId]
+            if (!archived.has(stored.sessionId) && (known !== undefined || list === null || list.phase !== 'ready')) {
+              if (openHostSession(stored.sessionId)) {
+                showNotice(format('splitReopened'))
+                return
+              }
+            }
+          }
           try {
             await request('POST', 'toolkit/install', {})
           } catch {
             // Without the copy the conversation can still guide the user.
           }
-          const base = catalog.target.workspaceId !== null ? { workspaceId: catalog.target.workspaceId } : { cwd: catalog.target.cwd }
+          const base = { workspaceId: target.workspaceId, cwd: target.cwd }
           const sessionId = await createSessionId(base)
+          writeStoredSplitSession(libraryId, sessionId, target.workspaceId)
           const prefill = await beginPrefill(sessionId, format('splitPrompt', {
             dir: library === null ? catalog.libraryDir : library.libraryDir,
           }))
@@ -13998,7 +14085,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         } finally {
           setLibBusy(false)
         }
-      }, [catalog, libBusy, library, showNotice])
+      }, [catalog, ensureWorkspaceTarget, libBusy, library, showNotice])
 
       const backToLibraries = useCallback(() => {
         setReader(null)
@@ -14156,6 +14243,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onAdd: addLibrary,
           onPick: pickLibraryDir,
           onSplit: startSplitSession,
+          onChooseWorkspace: chooseWorkspace,
+          workspaceLabel,
           sample,
           sampleBusy,
           importBusy,
@@ -14309,6 +14398,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         pickerCandidates.sort((left, right) => right.updatedAt - left.updatedAt)
       }
 
+      const activeWorkspace = catalog === null || catalog.target === null
+        || catalog.target.workspaceId === null || catalog.target.workspaceId === ''
+        ? undefined
+        : workspaces.find(item => String(item.id) === String(catalog.target.workspaceId))
+      const workspaceLabel = activeWorkspace === undefined
+        ? (catalog !== null && catalog.target !== null && catalog.target !== undefined
+          && catalog.target.workspaceId !== null && catalog.target.workspaceId !== undefined && catalog.target.workspaceId !== ''
+          ? (typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '')
+          : '')
+        : (activeWorkspace.title === '' ? activeWorkspace.path : activeWorkspace.title)
       return h('div', { className: 'md-root', 'data-preview': preview === null ? undefined : 'open', ref: rootRef },
         h('style', null, CSS),
         h('input', {
