@@ -673,6 +673,7 @@ async function activeLibrary() {
           const base = await ensureBaseSession({
             agents: services.agents,
             workspace: services.workspace,
+            sessionQuery: services.query,
             libraryDir: library.libraryDir,
             book,
             code,

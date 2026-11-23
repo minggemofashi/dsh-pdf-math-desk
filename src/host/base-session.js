@@ -76,7 +76,18 @@ export async function ensureBaseSession(options) {
   agent.followup(options.createMessage(prompt))
   await agent.whenIdle()
   const boundary = agents.turnBoundaryOf(agent.session ?? agent)
-  const atSeq = options.atSeqOf(boundary)
+  let atSeq = options.atSeqOf(boundary)
+  // `lastStepBoundary` can end a step rather than the turn; a branch may only
+  // fork at a closed turn, so prefer the log's last `turn/end` when readable.
+  if (options.sessionQuery !== undefined && typeof options.sessionQuery.readSession === 'function') {
+    try {
+      const snapshot = await options.sessionQuery.readSession(id)
+      const ends = Array.isArray(snapshot.events) ? snapshot.events.filter(event => event.type === 'turn/end' && Number.isFinite(event.seq)) : []
+      if (ends.length > 0) atSeq = Math.max(...ends.map(event => Number(event.seq)))
+    } catch {
+      // Keep the boundary value; the branch step will reject an open turn.
+    }
+  }
   if (!Number.isFinite(atSeq) || atSeq < 1) throw Object.assign(new Error('基础会话没有可用的轮次边界'), { code: 'no-boundary' })
   const manifest = withBaseSession(null, { id, atSeq }, pdf)
   await writeChapterSessions(libraryDir, book, code, manifest)
@@ -108,7 +119,11 @@ export async function ensureBranchSession(options) {
   const existing = branchSessionId(manifest, mode)
   if (existing !== '') return { manifest, sessionId: existing, created: false }
   const snapshot = await sessionQuery.readSession(manifest.base.id)
-  const prefix = Array.isArray(snapshot.events) ? snapshot.events.filter(event => Number(event.seq) <= manifest.base.atSeq) : []
+  // Fork through the base's last completed turn, never a step boundary.
+  const events = Array.isArray(snapshot.events) ? snapshot.events : []
+  const ends = events.filter(event => event.type === 'turn/end' && Number.isFinite(event.seq))
+  const boundary = ends.length === 0 ? manifest.base.atSeq : Math.max(...ends.map(event => Number(event.seq)))
+  const prefix = events.filter(event => Number(event.seq) <= boundary)
   if (prefix.length === 0) throw Object.assign(new Error('基础会话日志为空'), { code: 'no-seed' })
   const sessionId = options.newId()
   await agents.create({
