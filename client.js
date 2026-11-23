@@ -5910,6 +5910,77 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The shared plane as one object: margins plus every geometry question both
+     * panes and the viewer ask from them. Kept in one place so the reader and
+     * the right preview cannot drift apart again.
+     * @param {{ left: number, right: number, top: number, bottom: number }} [margins] - the plane; defaults to the stored one.
+     * @returns {object} `clampPoint`, `panLimit`, `clampPan`, `pageAtPointer`.
+     */
+    function createPlane(margins) {
+      const plane = margins === undefined || margins === null ? readPlaneMargins() : margins
+      return {
+        margins: plane,
+        /**
+         * @param {[number, number]} point - unclamped page coordinates.
+         * @returns {[number, number]} the point inside the plane.
+         */
+        clampPoint(point) {
+          return clampInkPoint(point, plane)
+        },
+        /**
+         * How far a page may move, in pixels, at this painted size.
+         * @param {{ width: number, height: number }} size - painted page size.
+         * @returns {{ minX: number, maxX: number, minY: number, maxY: number }} the range.
+         */
+        panLimit(size) {
+          const width = size.width > 0 ? size.width : 600
+          const height = size.height > 0 ? size.height : 800
+          return {
+            minX: -Math.round(width * plane.left),
+            maxX: Math.round(width * plane.right),
+            minY: -Math.round(height * plane.top),
+            maxY: Math.round(height * plane.bottom + 24),
+          }
+        },
+        /**
+         * @param {{ x: number, y: number }} value - the wanted pan.
+         * @param {{ width: number, height: number }} size - painted page size.
+         * @returns {{ x: number, y: number }} the pan clamped to the plane.
+         */
+        clampPan(value, size) {
+          const limit = this.panLimit(size)
+          return {
+            x: Math.min(limit.maxX, Math.max(limit.minX, value.x)),
+            y: Math.min(limit.maxY, Math.max(limit.minY, value.y)),
+          }
+        },
+        /**
+         * The page whose paper is under the pointer, nearest by vertical distance.
+         * @param {MouseEvent} event - pointer event.
+         * @param {Map<number, HTMLElement>} nodes - mounted page boxes by page number.
+         * @returns {number | null} the page number.
+         */
+        pageAtPointer(event, nodes) {
+          let best = null
+          let distance = Number.POSITIVE_INFINITY
+          for (const [page, node] of nodes) {
+            if (node === null || node === undefined || node.isConnected === false) continue
+            const rect = node.getBoundingClientRect()
+            if (rect.width === 0 || rect.height === 0) continue
+            const gap = event.clientY < rect.top
+              ? rect.top - event.clientY
+              : event.clientY > rect.bottom ? event.clientY - rect.bottom : 0
+            if (gap < distance) {
+              distance = gap
+              best = page
+            }
+          }
+          return best
+        },
+      }
+    }
+
+    /**
      * Whether one mark lies inside its page. Off-page marks belong to the shared
      * plane; the page views hide them so they cannot bleed over the toolbar.
      * @param {object} entry - a stored annotation.
@@ -8446,8 +8517,10 @@ window.__ModuleLoader__.load({
       // The plane is finite: with the page on screen, the hand may move it by
       // the plane's margins (five page widths each side, one page height each
       // way by default). The clamp follows the zoom because it uses the painted
-      // canvas size.
-      const planeMargins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
+      // canvas size. The geometry lives in `createPlane`, the same object the
+      // reader and the preview use.
+      const plane = createPlane(props.margins === undefined ? null : props.margins)
+      const planeMargins = plane.margins
       // Continuous mode's blank margins at the two ends of the column, in pixels.
       const padTop = Math.round(pageHeight * planeMargins.top)
       const padBottom = Math.round(pageHeight * planeMargins.bottom)
@@ -8463,26 +8536,15 @@ window.__ModuleLoader__.load({
         if (node === null || delta === 0) return
         node.scrollTop += delta
       }, [padTop])
-      const panLimit = () => {
+      const pageSize = () => {
         const node = canvas.current
         const rect = node === null ? null : node.getBoundingClientRect()
-        const width = rect === null || rect.width === 0 ? 600 : rect.width
-        const height = rect === null || rect.height === 0 ? 800 : rect.height
         return {
-          minX: -Math.round(width * planeMargins.left),
-          maxX: Math.round(width * planeMargins.right),
-          minY: -Math.round(height * planeMargins.top),
-          // The gap before the neighbour page belongs to the plane too.
-          maxY: Math.round(height * planeMargins.bottom + 24),
+          width: rect === null ? 0 : rect.width,
+          height: rect === null ? 0 : rect.height,
         }
       }
-      const clampPan = value => {
-        const limit = panLimit()
-        return {
-          x: Math.max(limit.minX, Math.min(limit.maxX, value.x)),
-          y: Math.max(limit.minY, Math.min(limit.maxY, value.y)),
-        }
-      }
+      const clampPan = value => plane.clampPan(value, pageSize())
       const beginPan = event => {
         if (!panEnabled || event.button !== 0) return
         panDrag.current = { start: [event.clientX, event.clientY], origin: pan ?? { x: 0, y: 0 } }
@@ -8697,6 +8759,7 @@ window.__ModuleLoader__.load({
       // The plane is finite but the user may widen it a page at a time; the
       // choice is global, like the reading width.
       const planeMargins = usePlaneMargins()
+      const plane = createPlane(planeMargins)
       const expandPlane = side => { expandPlaneMargin(side) }
       const [draftStroke, setDraftStroke] = useState(null)
       // The note being typed in place: `index` is its slot in `strokes`, or -1
@@ -9339,26 +9402,6 @@ window.__ModuleLoader__.load({
       // continuous mode the box of the page being read changes as the reader
       // scrolls, and a stale box would put a stroke a page height off.
       const pageNodes = useRef(new Map())
-      // The page whose paper is under the pointer, nearest by vertical distance.
-      // Every mounted page reports its box, so this works while the reader
-      // scrolls and during a debounced page report.
-      const pageAtPointer = event => {
-        let best = null
-        let bestDistance = Number.POSITIVE_INFINITY
-        for (const [page, node] of pageNodes.current) {
-          if (node === null || node === undefined || node.isConnected === false) continue
-          const rect = node.getBoundingClientRect()
-          if (rect.width === 0 || rect.height === 0) continue
-          const distance = event.clientY < rect.top
-            ? rect.top - event.clientY
-            : event.clientY > rect.bottom ? event.clientY - rect.bottom : 0
-          if (distance < bestDistance) {
-            bestDistance = distance
-            best = page
-          }
-        }
-        return best
-      }
       const annotPoint = event => {
         // The page's own node is the ruler in both views (the capture layer is
         // stage-sized). If it is missing, the event's own layer is page-sized
@@ -9373,7 +9416,7 @@ window.__ModuleLoader__.load({
         // The shared plane is finite: a point is clamped to the plane's margins,
         // so a stray drag can never leave a mark so far away that the page is
         // lost.
-        const point = clampInkPoint(raw, planeMargins)
+        const point = plane.clampPoint(raw)
         const rect = node.getBoundingClientRect()
         annotBox.current = { width: rect.width, height: rect.height }
         return point
@@ -9543,7 +9586,7 @@ window.__ModuleLoader__.load({
         // and report it without a jump so the shared page, the preview and the
         // export all point at the page that now carries the ink.
         if (!extended) {
-          const target = pageAtPointer(event)
+          const target = plane.pageAtPointer(event, pageNodes.current)
           if (target === null) return
           if (target !== annotPage.current) {
             loadPageAnnots(target)
@@ -12636,6 +12679,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The shared plane is the same object in both panes: same margins, same
       // edge, same "+" handles, same writable area outside the page.
       const planeMargins = usePlaneMargins()
+      const plane = createPlane(planeMargins)
       const [sidePan, setSidePan] = useState({ x: 0, y: 0 })
       useEffect(() => { setSidePan({ x: 0, y: 0 }) }, [bookId, code, shownVariant, mode])
       // Question marks: the same chapter data the reader and the chapter list
@@ -12975,7 +13019,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (raw === null) return null
         const rect = node.getBoundingClientRect()
         boxSize.current = { width: rect.width, height: rect.height }
-        return clampInkPoint(raw, planeMargins)
+        return plane.clampPoint(raw)
       }
       const toleranceFor = widthPx => inkReach(widthPx, boxSize.current.width)
       const hitTest = (entry, point) => inkHit(entry, point, toleranceFor)
