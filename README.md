@@ -120,6 +120,10 @@
 - **数据**：迁移包创建 / 下载 / 导入，书籍包导入，应用导入的浏览器设置；
 - **关于**：版本、GitHub、反馈入口（预填版本与系统信息，不含本机路径）。
 
+<p align="center"><img src="./assets/screenshot-settings-reading.jpg" alt="设置 → 阅读：右侧预览、手绘强度、手写字体与备份入口" width="920" /></p>
+
+<p align="center"><img src="./assets/screenshot-settings-data.jpg" alt="设置 → 数据：迁移包、导入迁移包与书籍包导入" width="920" /></p>
+
 ## 数据与隐私
 
 - 书库列表与插件设置：`~/.dsh/pdfdesk/`；
