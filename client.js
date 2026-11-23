@@ -9158,30 +9158,36 @@ window.__ModuleLoader__.load({
       // they belong to and restored when the reader comes back; a remote edit
       // (the same page, a new revision) still cancels the open editor.
       const lastAnnotKey = useRef(annotKey)
+      // True between a mark tool's press and its release. A page report that
+      // lands in between (the reader reports continuous pages on a debounce) may
+      // not wipe the stroke that is being drawn.
+      const drawingRef = useRef(false)
       useEffect(() => {
         const pageChanged = lastAnnotKey.current !== annotKey
         lastAnnotKey.current = annotKey
-        if (pageChanged) {
-          const draft = noteEditRef.current
-          if (draft !== null) {
-            const page = draft.page ?? reader.page
-            pageDrafts.stash(page, { noteEdit: { ...draft, text: noteText.current }, text: noteText.current })
+        if (!drawingRef.current) {
+          if (pageChanged) {
+            const draft = noteEditRef.current
+            if (draft !== null) {
+              const page = draft.page ?? reader.page
+              pageDrafts.stash(page, { noteEdit: { ...draft, text: noteText.current }, text: noteText.current })
+            }
+            setNoteEdit(null)
+            const restored = pageDrafts.take(reader.page)
+            if (restored !== undefined) {
+              noteText.current = restored.text
+              setNoteEdit({ ...restored.noteEdit, page: reader.page })
+            }
+          } else if (noteEditRef.current !== null) {
+            setNoteEdit(null)
           }
-          setNoteEdit(null)
-          const restored = pageDrafts.take(reader.page)
-          if (restored !== undefined) {
-            noteText.current = restored.text
-            setNoteEdit({ ...restored.noteEdit, page: reader.page })
-          }
-        } else if (noteEditRef.current !== null) {
-          setNoteEdit(null)
+          setDraftStroke(null)
+          setTextDraft(null)
+          setSelection(null)
+          setDrag(null)
+          setResize(null)
+          setResizeEntry(null)
         }
-        setDraftStroke(null)
-        setTextDraft(null)
-        setSelection(null)
-        setDrag(null)
-        setResize(null)
-        setResizeEntry(null)
         // The block pass belongs to one page: keep its signature only while the
         // boxes on screen are still that page's.
         setAutoBoxes(null)
@@ -9410,6 +9416,7 @@ window.__ModuleLoader__.load({
         setActiveSide('main')
         const point = annotPoint(event)
         if (point === null) return
+        drawingRef.current = true
         event.preventDefault()
         if (annotTool === 'select') {
           const found = strokesRef.current.findIndex(entry => annotHit(entry, point))
@@ -9517,6 +9524,7 @@ window.__ModuleLoader__.load({
         })
       }
       const annotUp = () => {
+        drawingRef.current = false
         erasing.current = false
         if (textDraft !== null) {
           const draft = textDraft
@@ -10640,6 +10648,9 @@ window.__ModuleLoader__.load({
         title: format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
         'aria-label': format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
         onClick: () => expandPlane(side),
+        // The handle is above the paper's capture layer on purpose; its press
+        // must not also start a pan or a stroke.
+        onPointerDown: event => event.stopPropagation(),
       }, '+')
       const planeBoundsLayer = h('div', {
         className: 'md-plane-bounds',
