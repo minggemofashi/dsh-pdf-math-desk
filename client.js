@@ -7391,6 +7391,9 @@ window.__ModuleLoader__.load({
       const { strokesRef, draftRef, erasing, saveAnnots, setDraftStroke, hitTest } = options
       const tool = options.tool
       const sample = typeof options.sample === 'function' ? options.sample : (_event, point) => point
+      const shapeTools = Array.isArray(options.shapeTools) ? options.shapeTools : []
+      const shapeRef = options.shapeDraftRef === undefined ? null : options.shapeDraftRef
+      const setShapeDraft = typeof options.setShapeDraft === 'function' ? options.setShapeDraft : null
       const eraseAt = point => saveAnnots(strokesRef.current.filter(entry => !hitTest(entry, point)))
       return {
         /**
@@ -7402,6 +7405,17 @@ window.__ModuleLoader__.load({
           if (tool === 'erase') {
             erasing.current = true
             eraseAt(point)
+            return true
+          }
+          if (shapeTools.includes(tool) && shapeRef !== null && setShapeDraft !== null) {
+            shapeRef.current = {
+              shape: tool,
+              x0: point[0], y0: point[1],
+              x1: point[0], y1: point[1],
+              color: options.color,
+              width: options.width,
+            }
+            setShapeDraft(shapeRef.current)
             return true
           }
           if (tool !== 'pen') return false
@@ -7424,6 +7438,11 @@ window.__ModuleLoader__.load({
             eraseAt(point)
             return true
           }
+          if (shapeRef !== null && shapeRef.current !== null && setShapeDraft !== null) {
+            shapeRef.current = { ...shapeRef.current, x1: point[0], y1: point[1] }
+            setShapeDraft(shapeRef.current)
+            return true
+          }
           const current = draftRef.current
           if (current === null) return false
           const next = sample(event, point)
@@ -7439,6 +7458,27 @@ window.__ModuleLoader__.load({
         up() {
           const wasErasing = erasing.current
           erasing.current = false
+          if (shapeRef !== null && shapeRef.current !== null && setShapeDraft !== null) {
+            const draft = shapeRef.current
+            shapeRef.current = null
+            setShapeDraft(null)
+            const x = Math.min(draft.x0, draft.x1)
+            const y = Math.min(draft.y0, draft.y1)
+            const w = Math.abs(draft.x1 - draft.x0)
+            const h = Math.abs(draft.y1 - draft.y0)
+            if (w > 0.008 || h > 0.008) {
+              saveAnnots([...strokesRef.current, {
+                kind: 'shape',
+                shape: draft.shape,
+                x, y, w, h,
+                x0: draft.x0, y0: draft.y0, x1: draft.x1, y1: draft.y1,
+                color: draft.color,
+                width: draft.width,
+                seed: Math.floor(Math.random() * 2147483647),
+              }])
+            }
+            return true
+          }
           const current = draftRef.current
           if (current === null) return wasErasing
           draftRef.current = null
@@ -9835,6 +9875,7 @@ window.__ModuleLoader__.load({
         onClick: () => setAnnotTool(value => (value === id ? '' : id)),
       }, annotIcon(path))
       const strokeDraft = useRef(null)
+      const shapeDraftRef = useRef(null)
       const inkGestures = createInkGestures({
         tool: annotTool,
         strokesRef,
@@ -9847,6 +9888,9 @@ window.__ModuleLoader__.load({
         width: annotWidth,
         smooth: true,
         sample: (event, point) => [point[0], point[1], strokePressure(event)],
+        shapeTools: SHAPE_TOOLS,
+        shapeDraftRef,
+        setShapeDraft,
       })
       const annotDown = (event, side) => {
         if (event.button !== 0) return
@@ -9882,13 +9926,7 @@ window.__ModuleLoader__.load({
           return
         }
         if (SHAPE_TOOLS.includes(annotTool)) {
-          setShapeDraft({
-            shape: annotTool,
-            x0: point[0], y0: point[1],
-            x1: point[0], y1: point[1],
-            color: annotColor,
-            width: annotWidth,
-          })
+          inkGestures.down(event, point)
           return
         }
         if (annotTool === 'erase') {
@@ -9953,11 +9991,11 @@ window.__ModuleLoader__.load({
           }
           return
         }
-        if (shapeDraft !== null) {
+        if (shapeDraftRef.current !== null) {
           const point = annotPoint(event)
           if (point === null) return
           event.preventDefault()
-          setShapeDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          inkGestures.move(event, point)
           return
         }
         if (drag !== null) {
@@ -9989,26 +10027,6 @@ window.__ModuleLoader__.load({
           savePageAnnots(strokesRef.current.map((entry, index) => (index === resize.index ? resizeEntry : entry)))
           setResize(null)
           setResizeEntry(null)
-          return
-        }
-        if (shapeDraft !== null) {
-          const draft = shapeDraft
-          setShapeDraft(null)
-          const x = Math.min(draft.x0, draft.x1)
-          const y = Math.min(draft.y0, draft.y1)
-          const w = Math.abs(draft.x1 - draft.x0)
-          const h = Math.abs(draft.y1 - draft.y0)
-          if (w > 0.008 || h > 0.008) {
-            savePageAnnots([...strokesRef.current, {
-              kind: 'shape',
-              shape: draft.shape,
-              x, y, w, h,
-              x0: draft.x0, y0: draft.y0, x1: draft.x1, y1: draft.y1,
-              color: draft.color,
-              width: draft.width,
-              seed: Math.floor(Math.random() * 2147483647),
-            }])
-          }
           return
         }
         if (drag !== null) {
@@ -13220,6 +13238,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (draft.index < 0 && noteText.current.trim() === '') return
         commitStrokes(applyNote(strokesRef.current, draft, noteText.current))
       }
+      const shapeDraftRef = useRef(null)
       const sideGestures = createInkGestures({
         tool,
         strokesRef,
@@ -13230,6 +13249,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         hitTest,
         color: sideColor,
         width: sideWidth,
+        shapeTools: SHAPE_TOOLS,
+        shapeDraftRef,
+        setShapeDraft,
       })
       const editDown = event => {
         if (tool === '') return
@@ -13255,12 +13277,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (SHAPE_TOOLS.includes(tool)) {
-          setShapeDraft({
-            shape: tool,
-            x0: point[0], y0: point[1], x1: point[0], y1: point[1],
-            color: sideColor,
-            width: sideWidth,
-          })
+          sideGestures.down(event, point)
           return
         }
         if (tool === 'pen') sideGestures.down(event, point)
@@ -13286,10 +13303,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setMaskDraft(maskDraftRef.current)
           return
         }
-        if (shapeDraft !== null) {
+        if (shapeDraftRef.current !== null) {
           const point = pointOf(event)
           if (point === null) return
-          setShapeDraft(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          sideGestures.move(event, point)
           return
         }
         if (draftRef.current === null) return
@@ -13309,26 +13326,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // A drag small enough to be a click draws nothing; boxes are deleted
           // with a right-click now, not by tapping them.
           if (draft.w > 0.02 && draft.h > 0.02) commitMasks([...masksRef.current, draft])
-          return
-        }
-        if (shapeDraft !== null) {
-          const draft = shapeDraft
-          setShapeDraft(null)
-          const x = Math.min(draft.x0, draft.x1)
-          const y = Math.min(draft.y0, draft.y1)
-          const w = Math.abs(draft.x1 - draft.x0)
-          const h = Math.abs(draft.y1 - draft.y0)
-          if (w > 0.008 || h > 0.008) {
-            commitStrokes([...strokesRef.current, {
-              kind: 'shape',
-              shape: draft.shape,
-              x, y, w, h,
-              x0: draft.x0, y0: draft.y0, x1: draft.x1, y1: draft.y1,
-              color: draft.color,
-              width: draft.width,
-              seed: Math.floor(Math.random() * 2147483647),
-            }])
-          }
           return
         }
       }
