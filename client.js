@@ -2114,7 +2114,12 @@ window.__ModuleLoader__.load({
      * @param {number} [timeoutMs] - how long to wait, in milliseconds.
      * @returns {Promise<any>} the response payload.
      */
+    /** Concurrent identical GETs share one request; nothing is cached afterwards. */
+    const inflightGets = new Map()
+
     function request(method, path, body, timeoutMs) {
+      const key = method === 'GET' && body === undefined ? path : ''
+      if (key !== '' && inflightGets.has(key)) return inflightGets.get(key)
       const budget = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS
       const controller = typeof AbortController === 'function' ? new AbortController() : null
       const timer = controller === null ? null : setTimeout(() => controller.abort(), budget)
@@ -2127,7 +2132,7 @@ window.__ModuleLoader__.load({
       }
       if (body !== undefined) init.body = JSON.stringify(body)
       if (controller !== null) init.signal = controller.signal
-      return fetch(ENDPOINT + path, init)
+      const promise = fetch(ENDPOINT + path, init)
         .then(response => response.json()
           .catch(() => null)
           .then(payload => {
@@ -2150,6 +2155,11 @@ window.__ModuleLoader__.load({
         .finally(() => {
           if (timer !== null) clearTimeout(timer)
         })
+      if (key !== '') {
+        inflightGets.set(key, promise)
+        promise.then(() => inflightGets.delete(key), () => inflightGets.delete(key))
+      }
+      return promise
     }
 
     /**
@@ -15787,6 +15797,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The handwriting face is optional: ask once, then inject its @font-face
       // only when the Host has the file.
       useEffect(() => { void refreshXiaolaiFont() }, [])
+      // Warm the pdf.js module while the shelf is idle: opening the first reader
+      // no longer waits for the 1–2 MB vendor import.
+      useEffect(() => {
+        const start = () => { void loadPdfjs().catch(() => {}) }
+        const idle = typeof requestIdleCallback === 'function'
+          ? requestIdleCallback(start, { timeout: 2500 })
+          : window.setTimeout(start, 1800)
+        return () => {
+          if (typeof cancelIdleCallback === 'function' && typeof idle === 'number') cancelIdleCallback(idle)
+          else window.clearTimeout(idle)
+        }
+      }, [])
       const [catalog, setCatalog] = useState(null)
       const [work, setWork] = useState(null)
       const [phase, setPhase] = useState('loading')
