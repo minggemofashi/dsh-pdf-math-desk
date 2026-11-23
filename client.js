@@ -7211,6 +7211,69 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The write path for one chapter's page ink: save, undo, redo and depth.
+     * Both panes edit the same pages, so these rules live here instead of being
+     * re-implemented per pane. UI state (strokes arrays, drafts, selection) stays
+     * with the pane that owns it; the callbacks let it react to a commit.
+     * @param {{ inkStore: object, pageRef: object, editKey: string,
+     *   onPrefetchClear?: Function, onCommit?: Function, onRestore?: Function }} options - the store, the page it writes and the listeners.
+     * @returns {{ save: Function, restore: Function, undo: Function, redo: Function, depth: Function }} the write path.
+     */
+    function createInkEditing(options) {
+      const { inkStore, pageRef, editKey } = options
+      const clearPrefetch = typeof options.onPrefetchClear === 'function' ? options.onPrefetchClear : null
+      const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
+      const onRestore = typeof options.onRestore === 'function' ? options.onRestore : null
+      const markInk = () => markEditKind(editKey, 'ink')
+      return {
+        /**
+         * @param {'annots'|'masks'} kind - which list changed.
+         * @param {object[]} next - the new list.
+         * @param {{ annots: object[], masks: object[] }} current - state before the edit.
+         * @returns {number | null} the new revision, or null when nothing changed.
+         */
+        save(kind, next, current) {
+          const rev = inkStore.save(pageRef.current, kind, next, current)
+          if (rev === null) return null
+          if (clearPrefetch !== null) clearPrefetch()
+          markInk()
+          if (onCommit !== null) onCommit(kind, next, rev)
+          return rev
+        },
+        /**
+         * @param {{ annots: object[], masks: object[] }} snapshot - the state to restore.
+         * @returns {number} the new revision.
+         */
+        restore(snapshot) {
+          const rev = inkStore.restore(pageRef.current, snapshot)
+          markInk()
+          if (onRestore !== null) onRestore(snapshot, rev)
+          return rev
+        },
+        /**
+         * @param {{ annots: object[], masks: object[] }} current - state now.
+         * @returns {{ annots: object[], masks: object[] } | null} the previous state.
+         */
+        undo(current) {
+          return inkStore.undo(pageRef.current, current)
+        },
+        /**
+         * @param {{ annots: object[], masks: object[] }} current - state now.
+         * @returns {{ annots: object[], masks: object[] } | null} the state to restore.
+         */
+        redo(current) {
+          return inkStore.redo(pageRef.current, current)
+        },
+        /**
+         * @returns {number} how many steps can be undone on the current page.
+         */
+        depth() {
+          return inkStore.depth(pageRef.current)
+        },
+      }
+    }
+
+    /**
      * Wrap the local persona in an explicit, user-owned instruction block. The
      * workspace's default answer format outranks a bare quoted personality, so
      * the block names the user's override and its scope.
@@ -9016,48 +9079,46 @@ window.__ModuleLoader__.load({
       // toolbar's undo has something to go back to.
       const historyKeyOf = inkStore.historyKeyOf
       const [, bumpHistory] = useState(0)
-      const savePageAnnots = next => {
-        const rev = inkStore.save(annotPage.current, 'annots', next, currentSnapshot())
-        if (rev === null) return
-        annotPrefetch.current.clear()
-        bumpHistory(value => value + 1)
-        strokesRef.current = next
-        setStrokes(next)
-        seenAnnotRev.current = rev
-        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
-        setInkRev(value => value + 1)
-      }
-      const savePageMasks = next => {
-        const rev = inkStore.save(annotPage.current, 'masks', next, currentSnapshot())
-        if (rev === null) return
-        annotPrefetch.current.clear()
-        bumpHistory(value => value + 1)
-        masksRef.current = next
-        setMasks(next)
-        seenAnnotRev.current = rev
-        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
-        setInkRev(value => value + 1)
-      }
+      const inkEditing = createInkEditing({
+        inkStore,
+        pageRef: annotPage,
+        editKey: chapterKey(reader.bookId, reader.code),
+        onPrefetchClear: () => { annotPrefetch.current.clear() },
+        onCommit: (kind, next, rev) => {
+          bumpHistory(value => value + 1)
+          if (kind === 'annots') {
+            strokesRef.current = next
+            setStrokes(next)
+          } else {
+            masksRef.current = next
+            setMasks(next)
+          }
+          seenAnnotRev.current = rev
+          setInkRev(value => value + 1)
+        },
+        onRestore: (snapshot, rev) => {
+          strokesRef.current = snapshot.annots
+          masksRef.current = snapshot.masks
+          setStrokes(snapshot.annots)
+          setMasks(snapshot.masks)
+          seenAnnotRev.current = rev
+          setInkRev(value => value + 1)
+        },
+      })
+      const savePageAnnots = next => { inkEditing.save('annots', next, currentSnapshot()) }
+      const savePageMasks = next => { inkEditing.save('masks', next, currentSnapshot()) }
       // Undo/redo restore both lists at once: one step is one action, even when
       // it touched ink and boxes together.
-      const restorePage = snapshot => {
-        strokesRef.current = snapshot.annots
-        masksRef.current = snapshot.masks
-        setStrokes(snapshot.annots)
-        setMasks(snapshot.masks)
-        seenAnnotRev.current = inkStore.restore(annotPage.current, snapshot)
-        markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
-        setInkRev(value => value + 1)
-      }
+      const restorePage = snapshot => { inkEditing.restore(snapshot) }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
-        const previous = inkStore.undo(annotPage.current, currentSnapshot())
+        const previous = inkEditing.undo(currentSnapshot())
         if (previous === null) return
         restorePage(previous)
         bumpHistory(value => value + 1)
       }
       const redoPage = () => {
-        const next = inkStore.redo(annotPage.current, currentSnapshot())
+        const next = inkEditing.redo(currentSnapshot())
         if (next === null) return
         restorePage(next)
         bumpHistory(value => value + 1)
@@ -12943,45 +13004,44 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // every local edit persists first and then announces itself.
       const historyKeyOf = inkStore.historyKeyOf
       const [, bumpHistory] = useState(0)
-      const commitStrokes = next => {
-        const rev = inkStore.save(pageRef.current, 'annots', next, currentSnapshot())
-        if (rev === null) return
-        bumpHistory(value => value + 1)
-        strokesRef.current = next
-        setStrokes(next)
-        seenAnnotRev.current = rev
-        markEditKind(chapterKey(bookId, code), 'ink')
-        setInkRev(value => value + 1)
-      }
-      const commitMasks = next => {
-        const rev = inkStore.save(pageRef.current, 'masks', next, currentSnapshot())
-        if (rev === null) return
-        bumpHistory(value => value + 1)
-        masksRef.current = next
-        setMasks(next)
-        seenAnnotRev.current = rev
-        markEditKind(chapterKey(bookId, code), 'ink')
-        setInkRev(value => value + 1)
-      }
+      const inkEditing = createInkEditing({
+        inkStore,
+        pageRef,
+        editKey: chapterKey(bookId, code),
+        onCommit: (kind, next, rev) => {
+          bumpHistory(value => value + 1)
+          if (kind === 'annots') {
+            strokesRef.current = next
+            setStrokes(next)
+          } else {
+            masksRef.current = next
+            setMasks(next)
+          }
+          seenAnnotRev.current = rev
+          setInkRev(value => value + 1)
+        },
+        onRestore: (snapshot, rev) => {
+          strokesRef.current = snapshot.annots
+          masksRef.current = snapshot.masks
+          setStrokes(snapshot.annots)
+          setMasks(snapshot.masks)
+          seenAnnotRev.current = rev
+          setInkRev(value => value + 1)
+        },
+      })
+      const commitStrokes = next => { inkEditing.save('annots', next, currentSnapshot()) }
+      const commitMasks = next => { inkEditing.save('masks', next, currentSnapshot()) }
       // Undo/redo restore ink and boxes together, then announce once.
-      const restorePage = snapshot => {
-        strokesRef.current = snapshot.annots
-        masksRef.current = snapshot.masks
-        setStrokes(snapshot.annots)
-        setMasks(snapshot.masks)
-        seenAnnotRev.current = inkStore.restore(pageRef.current, snapshot)
-        markEditKind(chapterKey(bookId, code), 'ink')
-        setInkRev(value => value + 1)
-      }
+      const restorePage = snapshot => { inkEditing.restore(snapshot) }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
-        const previous = inkStore.undo(pageRef.current, currentSnapshot())
+        const previous = inkEditing.undo(currentSnapshot())
         if (previous === null) return
         restorePage(previous)
         bumpHistory(value => value + 1)
       }
       const redoPage = () => {
-        const next = inkStore.redo(pageRef.current, currentSnapshot())
+        const next = inkEditing.redo(currentSnapshot())
         if (next === null) return
         restorePage(next)
         bumpHistory(value => value + 1)
