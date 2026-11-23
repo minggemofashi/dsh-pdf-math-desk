@@ -668,7 +668,7 @@ async function activeLibrary() {
             run: (script, args) => toolOutput(script, args),
           })
           const services = typeof options.sessionServices === 'function' ? options.sessionServices() : null
-          if (services === null || services === undefined || services.agents === undefined || services.sessions === undefined) {
+          if (services === null || services === undefined || services.agents === undefined || services.query === undefined) {
             fail(response, 503, 'session-unavailable', '会话服务尚未就绪')
             return
           }
@@ -693,12 +693,15 @@ async function activeLibrary() {
           let branch = null
           if (mode !== '') {
             branch = await ensureBranchSession({
-              sessions: services.sessions,
+              agents: services.agents,
+              sessionQuery: services.query,
               libraryDir: library.libraryDir,
               book,
               code,
+              cwd: library.libraryDir,
               manifest: base.manifest,
               mode,
+              newId: () => `session-${randomUUID()}`,
             })
           }
           sendJson(response, 200, {

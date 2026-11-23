@@ -128,6 +128,7 @@ export function apply(ctx, rawConfig) {
     sessionServices: () => ({
       agents: ctx.get('agents'),
       sessions: ctx.get('sessions'),
+      query: ctx.get('sessionQuery'),
       workspace: ctx.get('workspaceRegistry'),
     }),
     pending,

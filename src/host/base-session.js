@@ -3,10 +3,10 @@
  * base session that reads the chapter text once, then fork one independent
  * branch per conversation mode.
  *
- * The DSH calls are injected (`agents`, `sessions`, `workspaceRegistry`, plus
- * the small shape adapters) so this policy is unit-tested without touching a
- * real session; the Host route wires the real services once the probe has
- * confirmed their exact shapes.
+ * A branch is created the way DSH requires: read the base session's raw log up
+ * to the recorded turn boundary and hand that prefix to `ctx.agents.create`
+ * with `meta.isSeeded` — only agent-loop-published sessions persist and get a
+ * driver. The services are injected so the policy is unit-tested.
  * @module dsh-pdf-workbench/base-session
  */
 
@@ -58,8 +58,7 @@ export function baseReadPrompt(input) {
  *   agents: object, workspace?: object, libraryDir: string, book: string, code: string,
  *   cwd: string, pdf: { size: number, mtimeMs: number }, textPath: string,
  *   createMessage: (text: string) => object, newId: () => string,
- *   atSeqOf: (boundary: object) => number, archive?: (id: string) => Promise<void>,
- *   bookTitle?: string, chapterTitle?: string,
+ *   archive?: (id: string) => Promise<void>, bookTitle?: string, chapterTitle?: string,
  * }} options - the services and the chapter identity.
  * @returns {Promise<{ manifest: object, created: boolean, sessionId: string }>} the map and the base id.
  */
@@ -71,7 +70,8 @@ export async function ensureBaseSession(options) {
   }
   if (existing !== null) await staleChapterSessions(libraryDir, book, code)
   const id = options.newId()
-  const agent = await agents.create(id, {}, { cwd: options.cwd })
+  const handle = await agents.create({ sessionId: id, meta: { cwd: options.cwd } })
+  const agent = handle !== null && handle !== undefined && handle.agent !== undefined ? handle.agent : handle
   const prompt = baseReadPrompt({ textPath: options.textPath ?? chapterTextPath(libraryDir, book, code), bookTitle: options.bookTitle, chapterTitle: options.chapterTitle })
   agent.followup(options.createMessage(prompt))
   await agent.whenIdle()
@@ -86,26 +86,37 @@ export async function ensureBaseSession(options) {
       ? (sessionId) => options.workspace.archiveSession(sessionId, { stopActivity: true })
       : null
   if (archive !== null) await archive(id)
+  // The agent is idle and archived; disposing it leaves the persisted log
+  // readable for forks. The base is never handed to the UI.
+  if (handle !== null && handle !== undefined && typeof handle.dispose === 'function') await handle.dispose()
   return { manifest, created: true, sessionId: id }
 }
 
 /**
- * The session one mode should talk in: its existing branch, or a fresh fork of
- * the base at the recorded boundary.
- * @param {{ sessions: object, libraryDir: string, book: string, code: string, manifest: object,
- *   mode: string }} options - the store and the chapter map.
+ * The session one mode should talk in: its existing branch, or a fresh seeded
+ * fork of the base at the recorded boundary.
+ * @param {{ agents: object, sessionQuery: object, libraryDir: string, book: string, code: string,
+ *   cwd: string, manifest: object, mode: string, newId: () => string }} options - the services and the chapter map.
  * @returns {Promise<{ manifest: object, sessionId: string, created: boolean }>} the selected branch.
  */
 export async function ensureBranchSession(options) {
-  const { sessions, libraryDir, book, code, manifest, mode } = options
+  const { agents, sessionQuery, libraryDir, book, code, manifest, mode } = options
   if (!SESSION_MODES.includes(mode)) throw Object.assign(new Error(`未知模式：${mode}`), { code: 'bad-mode' })
   if (manifest === null || typeof manifest !== 'object' || typeof manifest.base !== 'object' || manifest.base === null) {
     throw Object.assign(new Error('本章还没有基础会话'), { code: 'no-base' })
   }
   const existing = branchSessionId(manifest, mode)
   if (existing !== '') return { manifest, sessionId: existing, created: false }
-  const child = sessions.fork(manifest.base.id, manifest.base.atSeq)
-  const sessionId = String(child.id ?? child)
+  const snapshot = await sessionQuery.readSession(manifest.base.id)
+  const prefix = Array.isArray(snapshot.events) ? snapshot.events.filter(event => Number(event.seq) <= manifest.base.atSeq) : []
+  if (prefix.length === 0) throw Object.assign(new Error('基础会话日志为空'), { code: 'no-seed' })
+  const sessionId = options.newId()
+  await agents.create({
+    sessionId,
+    seed: prefix,
+    inheritedEventCount: prefix.length,
+    meta: { cwd: options.cwd, isSeeded: true },
+  })
   const next = withBranchSession(manifest, mode, sessionId)
   await writeChapterSessions(libraryDir, book, code, next)
   return { manifest: next, sessionId, created: true }
