@@ -13475,7 +13475,8 @@ window.__ModuleLoader__.load({
    always covers what is on screen, at any scroll offset. */
 .md-reader-stage-host { position: relative; flex: 1 1 auto; min-height: 0; display: flex; overflow: hidden; }
 .md-reader-stage-host > .md-reader-stage { flex: 1 1 auto; min-height: 0; }
-.md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
+.md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: flex-start; justify-content: flex-start; }
+.md-reader-continuous { width: max-content; min-width: 100%; }
 /* The single page rides on the shared annotation plane: the hand tool (or a
    held space) pans it, and a stage-sized capture layer takes the pointer while
    a mark tool is picked so a stroke may continue outside the page. */
