@@ -1028,6 +1028,11 @@ window.__ModuleLoader__.load({
       settingsTabEnv: '环境',
       settingsTabAbout: '关于',
       settingsNotesTitle: '笔记与备份',
+      sharedPrefixClear: '清除章节共享前缀',
+      sharedPrefixClearHint: '删除各章提取文本、基础会话与模式分支映射（.pdfdesk/cache）；PDF、笔记和已有会话不受影响',
+      sharedPrefixClearAction: '清除',
+      sharedPrefixCleared: '已清除 {n} 个章节的共享前缀',
+      sharedPrefixFailed: '清除共享前缀失败',
       settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.pdfdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
       lastPageLabel: '上次阅读',
       lastPageAt: '读到第 {n} 页',
@@ -1628,6 +1633,11 @@ window.__ModuleLoader__.load({
       settingsTabEnv: 'Toolchain',
       settingsTabAbout: 'About',
       settingsNotesTitle: 'Notes and backup',
+      sharedPrefixClear: 'Clear chapter shared prefix',
+      sharedPrefixClearHint: 'Delete extracted text, base-session and branch maps (.pdfdesk/cache). PDFs, notes and existing sessions stay.',
+      sharedPrefixClearAction: 'Clear',
+      sharedPrefixCleared: 'Cleared the shared prefix of {n} chapters',
+      sharedPrefixFailed: 'Could not clear the shared prefix',
       settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.pdfdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
       lastPageLabel: 'Last read',
       lastPageAt: 'Page {n}',
@@ -4080,7 +4090,15 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('settingsNotesTitle')),
-          h('p', { className: 'md-shelf-sub' }, format('settingsNotesHint'))
+          h('p', { className: 'md-shelf-sub' }, format('settingsNotesHint')),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('sharedPrefixClearHint') }, format('sharedPrefixClear')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('sharedPrefixClearHint'),
+              onClick: props.onClearSharedPrefix,
+            }, format('sharedPrefixClearAction'))
+          )
         )
       )
       const workflow = h(React.Fragment, null,
@@ -17575,6 +17593,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               } catch {
                 // storage unavailable
               }
+            },
+            onClearSharedPrefix: () => {
+              if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                && !window.confirm(format('sharedPrefixClearHint'))) return
+              void (async () => {
+                try {
+                  const result = await request('POST', 'shared-prefix', { action: 'clear' })
+                  const removed = Number(result === null || result === undefined ? 0 : result.removed)
+                  showNotice(format('sharedPrefixCleared', { n: Number.isFinite(removed) ? removed : 0 }))
+                } catch (reason) {
+                  showNotice(`${format('sharedPrefixFailed')} (${errorText(reason)})`)
+                }
+              })()
             },
             onPreview: () => setPreviewPdf(value => {
               const next = !value

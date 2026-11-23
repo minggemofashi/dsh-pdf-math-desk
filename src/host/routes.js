@@ -35,6 +35,7 @@ import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from 
 import { readQuestions, writeQuestions } from './questions.js'
 import { prepareChapterText } from './chapter-text.js'
 import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-session.js'
+import { clearSharedPrefixCache } from './chapter-sessions.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -794,6 +795,26 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true })
         } catch (error) {
           fail(response, 500, 'cancel-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/shared-prefix`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          if (body === null || typeof body !== 'object' || body.action !== 'clear') {
+            fail(response, 400, 'unknown-action', '未知的共享前缀操作')
+            return
+          }
+          const library = await activeLibrary()
+          const result = await clearSharedPrefixCache(library.libraryDir)
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 500, 'shared-prefix-clear-failed', String(error && error.message ? error.message : error))
         }
         return
       }

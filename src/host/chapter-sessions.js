@@ -7,7 +7,7 @@
  * @module dsh-pdf-workbench/chapter-sessions
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** The four conversation modes that can fork from the base session. */
@@ -65,8 +65,7 @@ export async function writeChapterSessions(libraryDir, book, code, value) {
  * @param {{ size: number, mtimeMs: number }} pdf - the PDF's current identity.
  * @returns {boolean} true when the PDF changed (or the map is unusable).
  */
-export function chapterSessionsStale(manifest, pdf) {
-  if (manifest === null || typeof manifest !== 'object') return true
+export function chapterSessionsStale(manifest, pdf) {  if (manifest === null || typeof manifest !== 'object') return true
   if (typeof manifest.base !== 'object' || manifest.base === null) return true
   if (typeof manifest.base.id !== 'string' || manifest.base.id === '') return true
   if (typeof manifest.base.atSeq !== 'number' || manifest.base.atSeq < 1) return true
@@ -132,4 +131,24 @@ export function withBranchSession(manifest, mode, sessionId) {
 export function branchSessionId(manifest, mode) {
   const branches = manifest !== null && typeof manifest.branches === 'object' && manifest.branches !== null ? manifest.branches : {}
   return typeof branches[mode] === 'string' ? branches[mode] : ''
+}
+
+/**
+ * Forget every chapter's shared prefix: extracted text, base/branch maps and
+ * any stale leftovers under `.pdfdesk/cache`. User sessions, PDFs and
+ * annotations live elsewhere and are untouched.
+ * @param {string} libraryDir - the library root.
+ * @returns {Promise<{ removed: number }>} how many chapter folders were dropped.
+ */
+export async function clearSharedPrefixCache(libraryDir) {
+  const root = join(libraryDir, '.pdfdesk', 'cache')
+  let removed = 0
+  const books = await readdir(root, { withFileTypes: true }).catch(() => [])
+  for (const book of books) {
+    if (!book.isDirectory() || book.name === '.stale') continue
+    const chapters = await readdir(join(root, book.name), { withFileTypes: true }).catch(() => [])
+    removed += chapters.filter(chapter => chapter.isDirectory()).length
+  }
+  await rm(root, { recursive: true, force: true })
+  return { removed }
 }
