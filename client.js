@@ -3743,6 +3743,47 @@ window.__ModuleLoader__.load({
     })
 
     /**
+     * The shared plane's dashed edge with one "+" square per side. Used by the
+     * reader and the right preview: the plane is chapter-wide, so both panes
+     * show the same edge and the same handles.
+     * @param {{ margins: object, onExpand: Function }} props - the plane and the action.
+     * @returns {import('react').ReactElement} the edge and its handles.
+     */
+    function PlaneBounds(props) {
+      const margins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
+      const expand = side => {
+        if (typeof props.onExpand === 'function') props.onExpand(side)
+        else expandPlaneMargin(side)
+      }
+      const handle = (side, style) => h(KitButton, {
+        key: side,
+        type: 'button',
+        className: 'md-plane-add md-icon-btn',
+        style,
+        title: format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
+        'aria-label': format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
+        onClick: () => expand(side),
+        // The handle sits above the paper's capture layer on purpose; its press
+        // must not also start a pan or a stroke.
+        onPointerDown: event => event.stopPropagation(),
+      }, '+')
+      return h('div', {
+        className: 'md-plane-bounds',
+        title: format('planeBoundsHint'),
+        style: {
+          left: `${-margins.left * 100}%`,
+          top: `${-margins.top * 100}%`,
+          width: `${(1 + margins.left + margins.right) * 100}%`,
+          height: `${(1 + margins.top + margins.bottom) * 100}%`,
+        },
+      },
+        handle('top', { left: '50%', top: '0%', transform: 'translate(-50%, -50%)' }),
+        handle('bottom', { left: '50%', top: '100%', transform: 'translate(-50%, -50%)' }),
+        handle('left', { left: '0%', top: '50%', transform: 'translate(-50%, -50%)' }),
+        handle('right', { left: '100%', top: '50%', transform: 'translate(-50%, -50%)' }))
+    }
+
+    /**
      * Input adapter: host Input when available; the business onChange always
      * receives the value, never the raw event.
      */
@@ -5804,6 +5845,39 @@ window.__ModuleLoader__.load({
       } catch {
         // storage unavailable: the wider plane lasts this visit
       }
+    }
+
+    /** Everything that shows the plane listens here, so a "+" in one pane is
+     * immediately true in the other. */
+    const planeMarginListeners = new Set()
+
+    /**
+     * The plane's margins, shared by every mounted pane and kept in step when
+     * either pane adds a page.
+     * @returns {{ left: number, right: number, top: number, bottom: number }} page units.
+     */
+    function usePlaneMargins() {
+      const [margins, setMargins] = useState(() => readPlaneMargins())
+      useEffect(() => {
+        planeMarginListeners.add(setMargins)
+        return () => { planeMarginListeners.delete(setMargins) }
+      }, [])
+      return margins
+    }
+
+    /**
+     * Add one page to one side of the plane, in every pane at once.
+     * @param {'left'|'right'|'top'|'bottom'} side - which edge.
+     * @returns {{ left: number, right: number, top: number, bottom: number }} the new margins.
+     */
+    function expandPlaneMargin(side) {
+      const current = readPlaneMargins()
+      const next = { ...current, [side]: Math.min(50, current[side] + 1) }
+      writePlaneMargins(next)
+      for (const listener of [...planeMarginListeners]) {
+        try { listener(next) } catch { /* a pane that is closing */ }
+      }
+      return next
     }
 
     /**
@@ -8573,14 +8647,8 @@ window.__ModuleLoader__.load({
       const annotPage = useRef(reader.page)
       // The plane is finite but the user may widen it a page at a time; the
       // choice is global, like the reading width.
-      const [planeMargins, setPlaneMargins] = useState(() => readPlaneMargins())
-      const expandPlane = side => {
-        setPlaneMargins(current => {
-          const next = { ...current, [side]: Math.min(50, current[side] + 1) }
-          writePlaneMargins(next)
-          return next
-        })
-      }
+      const planeMargins = usePlaneMargins()
+      const expandPlane = side => { expandPlaneMargin(side) }
       const [draftStroke, setDraftStroke] = useState(null)
       // The note being typed in place: `index` is its slot in `strokes`, or -1
       // for one that does not exist yet. `id` keeps a stale save (a blur that
@@ -10659,37 +10727,10 @@ window.__ModuleLoader__.load({
           onContextMenu: openStylePanelOnLayer,
         })
         : null
-      // The plane's outline: the page box plus its margins, in page units. It
-      // rides with the page (and with the editing page in continuous mode), so
-      // the edge is visible instead of guessed. Each edge carries a small "+"
-      // square: adding a page there is a gesture on the paper itself, not a new
-      // toolbar button.
-      const planeHandle = (side, style) => h(KitButton, {
-        key: side,
-        type: 'button',
-        className: 'md-plane-add md-icon-btn',
-        style,
-        title: format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
-        'aria-label': format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
-        onClick: () => expandPlane(side),
-        // The handle is above the paper's capture layer on purpose; its press
-        // must not also start a pan or a stroke.
-        onPointerDown: event => event.stopPropagation(),
-      }, '+')
-      const planeBoundsLayer = h('div', {
-        className: 'md-plane-bounds',
-        title: format('planeBoundsHint'),
-        style: {
-          left: `${-planeMargins.left * 100}%`,
-          top: `${-planeMargins.top * 100}%`,
-          width: `${(1 + planeMargins.left + planeMargins.right) * 100}%`,
-          height: `${(1 + planeMargins.top + planeMargins.bottom) * 100}%`,
-        },
-      },
-        planeHandle('top', { left: '50%', top: '0%', transform: 'translate(-50%, -50%)' }),
-        planeHandle('bottom', { left: '50%', top: '100%', transform: 'translate(-50%, -50%)' }),
-        planeHandle('left', { left: '0%', top: '50%', transform: 'translate(-50%, -50%)' }),
-        planeHandle('right', { left: '100%', top: '50%', transform: 'translate(-50%, -50%)' }))
+      // The plane's outline: the page box plus its margins, with one "+" square
+      // per edge. The right preview renders the same component, so both panes
+      // show the same plane and the same handles.
+      const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -12380,14 +12421,15 @@ window.__ModuleLoader__.load({
    top padding so it never covers the page itself. */
 .md-side-handle { position: absolute; top: 6px; right: 8px; z-index: 7; opacity: 0; transition: opacity .12s ease; font-size: 15px; line-height: 1; padding: 2px 9px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent); }
 .md-side:hover .md-side-handle, .md-side-handle:focus-visible { opacity: 1; }
-.md-side[data-toolbar='hidden'] .md-side-body > .md-reader-stage { padding-top: 32px; }
+.md-side[data-toolbar='hidden'] .md-side-body .md-reader-stage { padding-top: 32px; }
 .md-side-gap { flex: 1 1 auto; }
 .md-side-body { flex: 1 1 auto; min-height: 0; display: flex; }
 /* Horizontal padding must stay in step with the width minus twenty in
    SidePdfView's measurement; the stable gutter keeps that measurement from
    moving when the page grows a scrollbar. */
-.md-side-body > .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
-.md-side .md-side-body > .md-reader-stage { padding-right: 40px; }
+.md-side-body .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
+.md-side-body > .md-reader-stage-host { flex: 1 1 auto; min-height: 0; display: flex; }
+.md-side .md-side-body .md-reader-stage { padding-right: 40px; }
 /* The developer readout (Ctrl+Alt+D): one small overlay, never takes a click. */
 .md-hud { position: absolute; left: 8px; bottom: 8px; z-index: 60; margin: 0; padding: 6px 8px; max-width: calc(100% - 16px); overflow: hidden; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; pointer-events: none; opacity: 0.94; }
 /* The preview's action list when the shared context menu service is absent. */
@@ -12499,6 +12541,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [annotRev, setAnnotRev] = useState(0)
       const [strokes, setStrokes] = useState([])
       const [masks, setMasks] = useState([])
+      // Local edit counter: read-only copies in this pane re-read storage after
+      // every edit, not only after the other pane announces one.
+      const [inkRev, setInkRev] = useState(0)
       // The overlay/translated page the boxes reveal; loaded only when a box exists.
       const [maskDoc, setMaskDoc] = useState(null)
       const maskTask = useRef(null)
@@ -12532,6 +12577,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Annotation and box editing: this end edits too, so both the tool and the
       // in-progress shapes live here and the shared counter tells the reader.
       const [tool, setTool] = useState('')
+      // The shared plane is the same object in both panes: same margins, same
+      // edge, same "+" handles, same writable area outside the page.
+      const planeMargins = usePlaneMargins()
+      const [sidePan, setSidePan] = useState({ x: 0, y: 0 })
+      useEffect(() => { setSidePan({ x: 0, y: 0 }) }, [bookId, code, shownVariant])
       // Question marks: the same chapter data the reader and the chapter list
       // show. Creating one here saves it and (optionally) appends the line to
       // the conversation this column belongs to.
@@ -12809,6 +12859,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setStrokes(next)
         seenAnnotRev.current = rev
         markEditKind(chapterKey(bookId, code), 'ink')
+        setInkRev(value => value + 1)
       }
       const commitMasks = next => {
         const rev = inkStore.save(pageRef.current, 'masks', next, currentSnapshot())
@@ -12818,6 +12869,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setMasks(next)
         seenAnnotRev.current = rev
         markEditKind(chapterKey(bookId, code), 'ink')
+        setInkRev(value => value + 1)
       }
       // Undo/redo restore ink and boxes together, then announce once.
       const restorePage = snapshot => {
@@ -12827,6 +12879,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setMasks(snapshot.masks)
         seenAnnotRev.current = inkStore.restore(pageRef.current, snapshot)
         markEditKind(chapterKey(bookId, code), 'ink')
+        setInkRev(value => value + 1)
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
@@ -12855,16 +12908,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setMaskDraft(null)
       }, [page, annotRev, shownVariant])
 
-      // Point in page coordinates (0..1), measured against the editing layer,
-      // which is exactly the page box at any zoom. The box width is remembered so
-      // the eraser's pixel tolerance can become page units.
+      // Point in page coordinates (0..1 plus the plane's margins). Measured
+      // against the editing layer, which is exactly the page box at any zoom;
+      // the box width is remembered so the eraser's pixel tolerance can become
+      // page units.
       const pointOf = event => {
         const node = boxRef.current
-        const point = inkPointOf(event, node)
-        if (point === null) return null
+        if (node === null) return null
+        const raw = inkPointOfFree(event, node)
+        if (raw === null) return null
         const rect = node.getBoundingClientRect()
         boxSize.current = { width: rect.width, height: rect.height }
-        return point
+        return clampInkPoint(raw, planeMargins)
       }
       const toleranceFor = widthPx => inkReach(widthPx, boxSize.current.width)
       const hitTest = (entry, point) => inkHit(entry, point, toleranceFor)
@@ -13324,10 +13379,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return 1
         }
       })()
-      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape' && entryInsidePage(entry))
-      const shapes = strokes.filter(entry => entry.kind === 'shape' && entryInsidePage(entry))
-      const notes = strokes.filter(entry => entry.kind === 'text' && entryInsidePage(entry))
-      const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'aria-hidden': true },
+      // Both panes share one annotation plane, so off-page marks are shown here
+      // too instead of being filtered out (that is what made the preview look
+      // out of sync with the reader).
+      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape')
+      const shapes = strokes.filter(entry => entry.kind === 'shape')
+      const notes = strokes.filter(entry => entry.kind === 'text')
+      const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'data-extended': 'true', 'aria-hidden': true },
         h('svg', {
           className: 'md-annot-ink',
           viewBox: '0 0 1 1',
@@ -13400,10 +13458,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // The editing surface: an invisible page-sized layer that only takes pointer
       // events while a tool is picked, so scrolling stays untouched otherwise.
-      const editLayer = tool === ''
+      const editLayer = tool === '' || tool === 'hand'
         ? null
         : h('div', {
           className: 'md-annot md-annot-edit',
+          'data-extended': 'true',
           'data-tool': tool,
           ref: boxRef,
           onPointerDown: editDown,
@@ -13472,6 +13531,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             : h(NoteEditor, {
               key: `note-${noteEdit.id}`,
               draft: noteEdit,
+              unbounded: true,
               onChange: changeNote,
               onSave: () => saveNote(noteEdit.id),
               onCancel: cancelNote,
@@ -13568,6 +13628,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         onDelete: id => commitQuestions(questionsRef.current.filter(item => item.id !== id), questionsNext.current),
         onRename: (id, name) => commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, name } : item)), questionsNext.current),
       })
+      // The same plane edge as the reader, with the same "+" squares: the plane
+      // is shared, so widening it in one pane is immediately true in the other.
+      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: side => expandPlaneMargin(side) })
+      // The pointer layer covers the preview's viewport so a mark may start
+      // outside the page, exactly like the reader. PdfViewer wraps it outside
+      // the scroller, so scrolling cannot uncover it.
+      const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'mask' && tool !== 'question'
+      const sideCapture = sideMarkTool
+        ? h('div', {
+          className: 'md-canvas-capture',
+          'data-tool': tool,
+          onPointerDown: editDown,
+          onPointerMove: editMove,
+          onPointerUp: editUp,
+          onPointerLeave: editUp,
+          onPointerCancel: editUp,
+        })
+        : null
 
       // Feedback from a menu action that runs outside a component message line.
       const notifySide = text => {
@@ -13625,6 +13703,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             label: format('sideMenuTools'),
             children: [
               { id: 'pen', label: `${check(state.tool === 'pen')}${format('annotPen')}`, run: () => toggleTool('pen') },
+              { id: 'hand', label: `${check(state.tool === 'hand')}${format('annotHand')}`, run: () => toggleTool('hand') },
               { id: 'erase', label: `${check(state.tool === 'erase')}${format('annotErase')}`, run: () => toggleTool('erase') },
               { id: 'text', label: `${check(state.tool === 'text')}${format('annotText')}`, run: () => toggleTool('text') },
               { id: 'mask', label: `${check(state.tool === 'mask')}${format('overlayToggle')}`, run: () => toggleTool('mask') },
@@ -13669,6 +13748,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 label: `${check(state.follow)}${format('sideMenuFollowReader')}`,
                 separatorBefore: true,
                 run: () => toggleFollow(),
+              },
+              {
+                id: 'center-plane',
+                label: format('canvasCenter'),
+                run: () => setSidePan({ x: 0, y: 0 }),
               },
             ],
           },
@@ -13792,11 +13876,25 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onVisible,
               registerSlot,
               onError,
-              children: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
+              captureLayer: sideCapture,
+              pan: mode === 'single' ? sidePan : null,
+              margins: planeMargins,
+              onPan: setSidePan,
+              panEnabled: tool === 'hand',
+              children: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
               // the page being read, so drawing and boxes work there too.
-              overlay: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
+              overlay: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               overlayPage: displayPage,
+              // Neighbour pages carry their own committed marks, exactly like
+              // the reader, so panning the preview shows the same plane.
+              overlayFor: page => h(StaticInk, {
+                key: `side-ink-${page}`,
+                bookId,
+                code,
+                page,
+                rev: annotRev + inkRev,
+              }),
             })
 
       return h('div', {
@@ -13917,6 +14015,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClick: () => zoomTo(renderScale * 1.2),
           }, '+'),
           h('span', { className: 'md-side-gap' }),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'hand' ? 'true' : 'false',
+            title: format('annotHand'),
+            'aria-label': format('annotHand'),
+            onClick: () => toggleTool('hand'),
+          }, annotIcon('M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15')),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
