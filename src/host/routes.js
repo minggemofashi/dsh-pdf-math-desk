@@ -627,6 +627,12 @@ async function activeLibrary() {
             fail(response, 503, 'session-unavailable', '会话服务尚未就绪')
             return
           }
+          // Archiving is what keeps the base session out of the sidebar; without
+          // it we would create a visible conversation the user never asked for.
+          if (services.workspace === undefined || typeof services.workspace.archiveSession !== 'function') {
+            fail(response, 503, 'archive-unavailable', '会话归档服务尚未就绪')
+            return
+          }
           const base = await ensureBaseSession({
             agents: services.agents,
             workspace: services.workspace,
