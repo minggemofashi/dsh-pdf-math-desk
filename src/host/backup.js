@@ -107,7 +107,7 @@ export async function createBackup(options) {
   const dataDir = options.dataDir
   const staging = await collectBackup(options)
   try {
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 16)
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
     const name = `dsh-workbench-backup-${stamp}.zip`
     const outDir = typeof options.outDir === 'string' && options.outDir !== '' ? options.outDir : join(dataDir, 'backup')
     const outPath = join(outDir, name)
