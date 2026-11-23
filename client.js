@@ -13788,6 +13788,41 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 @container pdfdesk (max-width: 520px) {
   .md-session-time { display: none; }
 }
+/* Library editorial pass: an index-page feel with ruled sections, a serif
+   display voice and book covers treated as plates. No behaviour changes. */
+.md-home { max-width: 1160px; padding: 0 36px 88px; }
+.md-hero { max-width: 780px; padding: 76px 0 4px; }
+.md-hero::before { content: ''; display: block; width: 44px; height: 2px; margin-bottom: 26px; background: var(--dsw-alias-brand-primary); }
+.md-hero-eyebrow { display: flex; align-items: center; gap: 12px; font-size: 10.5px; letter-spacing: .2em; }
+.md-hero-eyebrow::after { content: ''; flex: 1 1 auto; max-width: 120px; height: 1px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent); }
+.md-hero-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif; font-size: 46px; font-weight: 600; line-height: 1.18; letter-spacing: -.025em; margin: 20px 0 20px; }
+.md-hero-lead { font-size: 15px; line-height: 1.95; max-width: 610px; }
+.md-hero-actions { margin-top: 34px; gap: 12px; }
+.md-hero-actions .md-btn-primary { min-width: 132px; }
+.md-hero-meta { margin-top: 26px; font-size: 11.5px; letter-spacing: .04em; }
+.md-hero-whale { width: 380px; top: 34px; right: 0; opacity: .12; }
+.md-home > .md-shelf-head { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 24px; margin: 16px 0 22px; padding-top: 18px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.md-home > .md-shelf-head .md-heading { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.md-home > .md-shelf-head .md-shelf-sub { max-width: 520px; text-align: right; }
+.md-library-list { gap: 10px; }
+.md-library { padding: 18px 20px; border-radius: 10px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); }
+.md-library-active { box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary), 0 1px 0 color-mix(in srgb, var(--dsw-alias-border-l2) 60%, transparent); }
+.md-library-name { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 17px; font-weight: 600; }
+.md-library .md-path { font-size: 11.5px; opacity: .78; }
+.md-grid { grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 26px 22px; padding-top: 4px; }
+.md-card { padding: 0 0 4px; gap: 12px; border-radius: 4px; border-color: transparent; }
+.md-card:hover { background: transparent; border-color: transparent; transform: none; }
+.md-card .md-cover { border-radius: 3px; border-color: color-mix(in srgb, var(--dsw-alias-border-l3) 80%, transparent); box-shadow: 0 14px 28px -18px color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent); transition: transform .18s ease, box-shadow .18s ease; }
+.md-card:hover .md-cover { transform: translateY(-3px); box-shadow: 0 20px 34px -20px color-mix(in srgb, var(--dsw-alias-label-primary) 55%, transparent); }
+.md-card-body { gap: 6px; padding: 0 2px; }
+.md-card-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -.005em; }
+.md-card-sub { font-size: 10.5px; letter-spacing: .035em; text-transform: uppercase; }
+.md-collection { padding: 0 0 4px; gap: 12px; }
+.md-collection:hover { background: transparent; transform: none; }
+.md-collection .md-collection-stack { box-shadow: 0 14px 28px -18px color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent); }
+.md-collection-count { font-size: 10.5px; letter-spacing: .035em; text-transform: uppercase; }
+.md-collection-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 16px; font-weight: 600; }
+.md-shelf-actions { border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); backdrop-filter: blur(12px); }
 `
 
     /* ------------------------------------------------------------ side view -- */
