@@ -247,3 +247,154 @@ export async function extractBackup(options) {
   }
   return { files }
 }
+
+/**
+ * Map one archive entry to its destination on this machine.
+ * @param {string} name - manifest entry path.
+ * @param {{ dataDir: string, dshHome: string, libraryRoots: Record<string, string> }} roots - destinations.
+ * @returns {string|null} absolute target, or null when the entry has no place here.
+ */
+export function destinationOf(name, roots) {
+  if (name.startsWith('sessions/')) return join(roots.dshHome, 'sessions', name.slice('sessions/'.length))
+  if (name === 'storages/workspace.json') return join(roots.dshHome, 'storages', 'workspace.json')
+  if (name.startsWith('plugin-state/')) return join(roots.dataDir, name.slice('plugin-state/'.length))
+  if (name.startsWith('fonts/')) return join(roots.dataDir, 'fonts', name.slice('fonts/'.length))
+  if (name.startsWith('projcache/')) return join(roots.dshHome, 'storages', 'session_projcache', name.slice('projcache/'.length))
+  if (name.startsWith('libraries/')) {
+    const parts = name.split('/')
+    const id = parts[1]
+    const rest = parts.slice(2)
+    if (id === undefined || rest[0] !== '.pdfdesk') return null
+    const root = roots.libraryRoots[id]
+    if (typeof root !== 'string' || root === '') return null
+    return join(root, ...rest)
+  }
+  return null
+}
+
+/**
+ * Rewrite `libraries.json` roots using the manifest's recorded old paths.
+ * @param {{ dataDir: string, manifest: object, libraryRoots: Record<string, string> }} options - current state and mapping.
+ * @returns {Promise<{ rewritten: string[], missing: boolean }>} what changed.
+ */
+export async function rewriteLibraryRoots(options) {
+  const path = join(options.dataDir, 'libraries.json')
+  const raw = await readFile(path, 'utf8').catch(() => null)
+  if (raw === null) return { rewritten: [], missing: true }
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { rewritten: [], missing: true }
+  }
+  if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.items)) return { rewritten: [], missing: true }
+  const recorded = options.manifest.paths !== null && typeof options.manifest.paths === 'object' && options.manifest.paths.libraries !== null
+    ? options.manifest.paths.libraries
+    : {}
+  const rewritten = []
+  for (const item of parsed.items) {
+    if (item === null || typeof item !== 'object') continue
+    const id = String(item.id ?? '')
+    const nextRoot = options.libraryRoots[id]
+    const oldRoot = recorded[id] !== undefined && recorded[id] !== null ? recorded[id].old : undefined
+    if (typeof nextRoot !== 'string' || nextRoot === '') continue
+    if (typeof oldRoot === 'string' && oldRoot !== '' && typeof item.libraryDir === 'string') {
+      const prefix = oldRoot.replace(/[\\/]+$/, '')
+      for (const field of ['libraryDir', 'fragmentDir', 'artifactDir', 'coverDir', 'indexPath']) {
+        if (typeof item[field] === 'string' && item[field].startsWith(prefix)) {
+          item[field] = `${nextRoot}${item[field].slice(prefix.length)}`
+        }
+      }
+    } else if (typeof item.libraryDir !== 'string' || item.libraryDir === '') {
+      item.libraryDir = nextRoot
+    }
+    rewritten.push(id)
+  }
+  if (rewritten.length > 0) {
+    const temporary = `${path}.${process.pid}.tmp`
+    await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
+    await rename(temporary, path)
+  }
+  return { rewritten, missing: false }
+}
+
+/**
+ * Keep only the newest pre-import snapshots.
+ * @param {string} backupDir - the plugin backup folder.
+ * @param {number} [keep] - how many to keep.
+ * @returns {Promise<void>} completion.
+ */
+async function prunePreImports(backupDir, keep = 3) {
+  const names = (await readdir(backupDir).catch(() => []))
+    .filter(name => name.startsWith('pre-import-'))
+    .sort()
+  for (const name of names.slice(0, Math.max(0, names.length - keep))) {
+    await rm(join(backupDir, name), { recursive: true, force: true })
+  }
+}
+
+/**
+ * Import a verified archive with explicit conflict strategies. `merge` never
+ * overwrites: an existing file keeps its place and the imported copy becomes
+ * `<name>.imported-<ts>`. `overwrite` replaces after a pre-import snapshot.
+ * @param {{ archivePath: string, dataDir: string, dshHome?: string,
+ *   libraryRoots?: Record<string, string>, strategy?: 'merge'|'overwrite'|'skip' }} options - archive and destinations.
+ * @returns {Promise<object>} the import report.
+ */
+export async function importBackup(options) {
+  const { manifest, entries } = await readBackup(options.archivePath)
+  const dataDir = options.dataDir
+  const dshHome = typeof options.dshHome === 'string' && options.dshHome !== '' ? options.dshHome : dirname(dataDir)
+  const libraryRoots = options.libraryRoots !== null && typeof options.libraryRoots === 'object' ? options.libraryRoots : {}
+  const strategy = options.strategy === 'overwrite' || options.strategy === 'skip' ? options.strategy : 'merge'
+  const stamp = Date.now()
+  const backupDir = join(dataDir, 'backup')
+  const preImport = join(backupDir, `pre-import-${stamp}`)
+  const report = {
+    format: manifest.format,
+    createdAt: manifest.createdAt,
+    strategy,
+    imported: [],
+    renamed: [],
+    skipped: [],
+    warnings: [],
+    rewrittenLibraries: [],
+  }
+  await mkdir(backupDir, { recursive: true })
+  const snapshot = async target => {
+    const relative = target.replace(/[\\/]/g, '/').split('/').slice(-3).join('/')
+    const copy = join(preImport, String(report.imported.length + report.renamed.length), relative)
+    await mkdir(dirname(copy), { recursive: true })
+    await cp(target, copy, { recursive: true }).catch(() => {})
+  }
+  for (const [name, bytes] of entries) {
+    if (name === 'manifest.json') continue
+    const target = destinationOf(name, { dataDir, dshHome, libraryRoots })
+    if (target === null) {
+      report.warnings.push(`未映射：${name}`)
+      continue
+    }
+    const exists = await stat(target).catch(() => null)
+    if (exists !== null && strategy === 'skip') {
+      report.skipped.push(name)
+      continue
+    }
+    if (exists !== null && strategy === 'merge') {
+      const alternative = `${target}.imported-${stamp}`
+      await mkdir(dirname(alternative), { recursive: true })
+      await writeFile(alternative, bytes)
+      report.renamed.push(`${name} → ${alternative}`)
+      continue
+    }
+    if (exists !== null && strategy === 'overwrite') await snapshot(target)
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, bytes)
+    report.imported.push(name)
+  }
+  const rewritten = await rewriteLibraryRoots({ dataDir, manifest, libraryRoots })
+  report.rewrittenLibraries = rewritten.rewritten
+  report.libraryStateMissing = rewritten.missing
+  await writeFile(join(backupDir, 'last-import.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+  await prunePreImports(backupDir, 3)
+  return report
+}

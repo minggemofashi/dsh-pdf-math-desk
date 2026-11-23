@@ -40,7 +40,7 @@ import { clearSharedPrefixCache } from './chapter-sessions.js'
 import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, removeAttachment, safeAttachmentName } from './attachments.js'
 import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
 import { MAX_FONT_BYTES, downloadFont, fontStatus, installFont, readFont, removeFont } from './fonts.js'
-import { createBackup, readBackup } from './backup.js'
+import { createBackup, importBackup, readBackup } from './backup.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -387,6 +387,22 @@ async function activeLibrary() {
                 files: Array.isArray(verified.manifest.files) ? verified.manifest.files.length : 0,
               },
             })
+            return
+          }
+          if (action === 'import') {
+            const source = typeof record.path === 'string' ? record.path : ''
+            if (source === '') {
+              fail(response, 400, 'invalid-path', '请选择迁移包文件')
+              return
+            }
+            const roots = record.libraryRoots !== null && typeof record.libraryRoots === 'object' ? record.libraryRoots : {}
+            const report = await importBackup({
+              archivePath: source,
+              dataDir: config.dataDir,
+              libraryRoots: Object.fromEntries(Object.entries(roots).filter(([, value]) => typeof value === 'string' && value !== '')),
+              strategy: typeof record.strategy === 'string' ? record.strategy : 'merge',
+            })
+            sendJson(response, 200, { ok: true, report })
             return
           }
           fail(response, 400, 'unknown-action', `未知的迁移操作：${action}`)
