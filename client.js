@@ -14085,11 +14085,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Page-1 width at scale 1 and the stage's content width: the fit inputs.
       const [baseWidth, setBaseWidth] = useState(0)
       const [stageWidth, setStageWidth] = useState(0)
-      // What the tab was opened with, then what the reader switched to.
-      const [shownVariant, setShownVariant] = useState(variant)
+      // What the tab was opened with, then what the reader switched to. The
+      // chapter's shared view already knows, so the first load is the right
+      // file instead of loading the source and reloading a moment later.
+      const [shownVariant, setShownVariant] = useState(() => {
+        const shared = bookId === '' || code === '' ? {} : readView(bookId, code)
+        return shared.variant === 'translated' || variant === 'translated' ? 'translated' : ''
+      })
       const [phase, setPhase] = useState('loading')
       const [error, setError] = useState('')
-      const [docRev, setDocRev] = useState(0)
+      // A rebuild the reader already announced is part of the first load: the
+      // preview must not fetch the old file and reload a moment later.
+      const [docRev, setDocRev] = useState(() => {
+        const shared = bookId === '' || code === '' ? {} : readView(bookId, code)
+        return typeof shared.docRev === 'number' && shared.docRev > 0 ? shared.docRev : 0
+      })
       const [annotRev, setAnnotRev] = useState(0)
       // The overlay/translated page the boxes reveal; loaded only when a box exists.
       const [maskDoc, setMaskDoc] = useState(null)
@@ -16450,9 +16460,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           try {
             const lib = await loadPdfjs()
             if (cancelled) return
+            // The revision the other pane already adopted is part of the URL:
+            // a rebuild and the preview then agree on which file they mean.
+            const rev = Number(readView(reader.bookId, reader.code).docRev) || 0
             const url = chapterPdfUrl(reader.bookId, reader.code, {
               name: reader.name,
               variant: reader.variant === 'translated' ? 'translated' : '',
+              rev,
               // A retry is a new attempt: it must not pick up the document it
               // just failed with.
               retry: reader.attempt,
