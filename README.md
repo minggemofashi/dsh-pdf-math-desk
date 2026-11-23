@@ -61,6 +61,8 @@
 - **页外笔记**：页外只画笔记，不渲染相邻页 PDF；连续模式同样可以在页面外侧起笔。
 - **快捷键**：`←/→` 或 `PageUp/PageDown` 翻页，`Home/End` 首末页，`Ctrl +=/-` 缩放，`F` 适应宽度，`T` 切换单页/连续，`G` 跳页，`H` 或按住空格临时切手，`P/E/X` 笔/橡皮/文本，`Q` 疑问框，`Shift+Q` 疑问跳转，`Esc` 关闭阅读器。设置 → 快捷键可改。
 
+<p align="center"><img src="./assets/screenshot-canvas.jpg" alt="单页画布：页外手写与形状，工具条在右侧" width="920" /></p>
+
 ## 章节会话与共享前缀
 
 每章的三类会话是“提取 / 答疑 / 习题”。第一次打开某章时，Host 会把该章 `text.md` 读一次，生成一个**隐藏的基础会话**并归档；之后每种模式从这段前缀 fork 出自己的分支。效果是：
@@ -72,6 +74,8 @@
 会话标题形如 `[书 id c04] 答疑`；会话自带书名、章名、PDF、产物目录和阅读位置，不需要每次重新解释“我在读哪本书”。
 
 <p align="center"><img src="./assets/screenshot-qa.jpg" alt="答疑会话：左侧对话，右侧同章 PDF 预览" width="920" /></p>
+
+<p align="center"><img src="./assets/screenshot-questions.jpg" alt="疑问跳转：从章节疑问直接跳到对应页面" width="920" /></p>
 
 ## 双语与覆盖层
 
