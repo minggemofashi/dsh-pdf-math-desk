@@ -683,6 +683,9 @@ window.__ModuleLoader__.load({
       annotColor: '文字颜色',
       annotFontSize: '字号',
       annotFontFamily: '字体',
+      annotTextStyle: '字形',
+      annotBold: '粗体',
+      annotItalic: '斜体',
       'annotFont.hand': '手写',
       'annotFont.normal': '正常',
       'annotFont.mono': '等宽',
@@ -914,6 +917,13 @@ window.__ModuleLoader__.load({
       workflowMath: '数学',
       workflowMathDesc: '提取 / 答疑 / 习题三种会话、数学提示词与 LaTeX 模板。',
       workflowOnlyOne: '同一时间只能启用一个模式；以后会增加其它工作流，结构已经按单选写好。',
+      pressureTitle: '笔压测试',
+      pressureHint: '用触控笔或鼠标在这里写字：线宽随压力变化。不保存、不上传，也不进任何页面。',
+      pressurePadLabel: '笔压测试书写区',
+      pressureIdle: '还没有笔迹；写一笔看看线宽',
+      pressureNoPen: '当前设备没有压感，按默认线宽书写（{width}px）',
+      pressureReading: '压感 {pressure} · 线宽 {width}px',
+      pressureClear: '清除',
       workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
       workspaceTitle: '需要工作区',
       workspaceBody: '会话需要一个工作区来存放。工作区只保存对话，不会移动、复制或删除书库文件。',
@@ -1253,6 +1263,9 @@ window.__ModuleLoader__.load({
       annotColor: 'Text colour',
       annotFontSize: 'Font size',
       annotFontFamily: 'Font',
+      annotTextStyle: 'Style',
+      annotBold: 'Bold',
+      annotItalic: 'Italic',
       'annotFont.hand': 'Hand',
       'annotFont.normal': 'Normal',
       'annotFont.mono': 'Mono',
@@ -1485,6 +1498,13 @@ window.__ModuleLoader__.load({
       workflowMath: 'Math',
       workflowMathDesc: 'Extract / Q&A / exercise sessions, math prompts and LaTeX templates.',
       workflowOnlyOne: 'Only one mode can be active at a time; the single-select structure is ready for more workflows.',
+      pressureTitle: 'Pen pressure test',
+      pressureHint: 'Write here with a stylus or a mouse: the line width follows pressure. Nothing is saved, uploaded, or attached to a page.',
+      pressurePadLabel: 'Pen pressure drawing area',
+      pressureIdle: 'No strokes yet; draw one to see the width',
+      pressureNoPen: 'This device reports no pressure, so the default width is used ({width}px)',
+      pressureReading: 'Pressure {pressure} · width {width}px',
+      pressureClear: 'Clear',
       workflowActiveHint: 'Enabled; click this card again to return to General.',
       workspaceTitle: 'Workspace required',
       workspaceBody: 'A conversation needs a workspace. The workspace stores conversations only; it never moves, copies or deletes library files.',
@@ -3753,7 +3773,8 @@ window.__ModuleLoader__.load({
           h('p', { className: 'md-shelf-sub' }, format('settingsNotesHint'))
         )
       )
-      const workflow = h('div', { className: 'md-settings-section' },
+      const workflow = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('workflowTitle')),
         h('p', { className: 'md-shelf-sub' }, format('workflowHint')),
         h('div', {
@@ -3795,6 +3816,12 @@ window.__ModuleLoader__.load({
           )
         )),
         h('p', { className: 'md-shelf-sub' }, format('workflowOnlyOne'))
+      ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('pressureTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('pressureHint')),
+          h(PressurePad, null)
+        )
       )
       const keys = h('div', { className: 'md-settings-section' },
         h('h4', { className: 'md-settings-heading' }, format('shortcutsTitle')),
@@ -5060,6 +5087,52 @@ window.__ModuleLoader__.load({
     const NOTE_SIZES = [14, 18, 22, 28]
     /** The note colours offered in the in-place editor. */
     const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
+    /** Where the note font choice is remembered (global, like the reading mode). */
+    const NOTE_FONT_KEY = 'pdfdesk:note-font'
+
+    /**
+     * The note font the user chose last. It is one global preference: notes on
+     * every page and every book start with the same face.
+     * @returns {string} a key of {@link NOTE_FONTS}.
+     */
+    function readNoteFont() {
+      try {
+        const raw = window.localStorage.getItem(NOTE_FONT_KEY)
+        return typeof raw === 'string' && NOTE_FONTS[raw] !== undefined ? raw : 'normal'
+      } catch {
+        return 'normal'
+      }
+    }
+
+    /**
+     * Remember the note font for the next note.
+     * @param {string} family - a key of {@link NOTE_FONTS}.
+     * @returns {void}
+     */
+    function writeNoteFont(family) {
+      if (typeof family !== 'string' || NOTE_FONTS[family] === undefined) return
+      try {
+        window.localStorage.setItem(NOTE_FONT_KEY, family)
+      } catch {
+        // storage unavailable: the choice lasts for this page visit
+      }
+    }
+
+    /**
+     * The style a new note starts with. The font is the remembered one; the rest
+     * are the long-standing defaults.
+     * @returns {{ fontSize: number, fontFamily: string, color: string, textAlign: string, fontWeight: string, fontStyle: string }} the style.
+     */
+    function defaultNoteStyle() {
+      return {
+        fontSize: NOTE_SIZES[0],
+        fontFamily: readNoteFont(),
+        color: '#1f1f1f',
+        textAlign: 'left',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+      }
+    }
     /** The shape tools; each saves one `kind: 'shape'` entry per page. */
     const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse', 'diamond']
     /** Locale label for each rail tool, used by the hover settings panel. */
@@ -5212,6 +5285,10 @@ window.__ModuleLoader__.load({
       if (typeof draft.fontSize === 'number' && Number.isFinite(draft.fontSize)) style.fontSize = draft.fontSize
       if (typeof draft.fontFamily === 'string' && draft.fontFamily !== '') style.fontFamily = draft.fontFamily
       if (typeof draft.textAlign === 'string' && draft.textAlign !== '') style.textAlign = draft.textAlign
+      // Bold/italic are just two more style fields; an old note without them
+      // keeps whatever it had, because only an explicit choice is copied.
+      if (draft.fontWeight === 'bold' || draft.fontWeight === 'normal') style.fontWeight = draft.fontWeight
+      if (draft.fontStyle === 'italic' || draft.fontStyle === 'normal') style.fontStyle = draft.fontStyle
       if (Number.isFinite(draft.w) && draft.w > 0) style.w = draft.w
       if (Number.isFinite(draft.h) && draft.h > 0) style.h = draft.h
       if (draft.index >= 0 && draft.index < next.length) {
@@ -5408,6 +5485,9 @@ window.__ModuleLoader__.load({
       const size = Number.isFinite(style.fontSize) ? style.fontSize : NOTE_SIZES[0]
       const family = typeof style.fontFamily === 'string' && NOTE_FONTS[style.fontFamily] !== undefined ? style.fontFamily : 'normal'
       const color = typeof style.color === 'string' && style.color !== '' ? style.color : NOTE_COLORS[0]
+      const bold = style.fontWeight === 'bold'
+      const italic = style.fontStyle === 'italic'
+      const align = typeof style.textAlign === 'string' ? style.textAlign : 'left'
       return h(React.Fragment, null,
         h('div', { className: 'md-note-style-row' },
           h('span', { className: 'md-note-style-label' }, format('annotFontSize')),
@@ -5431,6 +5511,41 @@ window.__ModuleLoader__.load({
             onMouseDown: event => event.preventDefault(),
             onClick: () => props.onChange({ fontFamily: key }),
           }, format(`annotFont.${key}`)))
+        ),
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('annotTextStyle')),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-note-style-btn md-note-style-bold',
+            'data-on': bold ? 'true' : undefined,
+            'aria-pressed': bold ? 'true' : 'false',
+            title: format('annotBold'),
+            'aria-label': format('annotBold'),
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onChange({ fontWeight: bold ? 'normal' : 'bold' }),
+          }, 'B'),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-note-style-btn md-note-style-italic',
+            'data-on': italic ? 'true' : undefined,
+            'aria-pressed': italic ? 'true' : 'false',
+            title: format('annotItalic'),
+            'aria-label': format('annotItalic'),
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onChange({ fontStyle: italic ? 'normal' : 'italic' }),
+          }, 'I')
+        ),
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('alignTitle')),
+          [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']].map(item => h(KitButton, {
+            key: item[0],
+            type: 'button',
+            className: 'md-note-style-btn',
+            'data-on': align === item[0] ? 'true' : undefined,
+            'aria-pressed': align === item[0] ? 'true' : 'false',
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onChange({ textAlign: item[0] }),
+          }, format(item[1])))
         ),
         h('div', { className: 'md-note-style-row' },
           h('span', { className: 'md-note-style-label' }, format('annotColor')),
@@ -5537,6 +5652,8 @@ window.__ModuleLoader__.load({
             fontSize: `${size}px`,
             fontFamily: NOTE_FONTS[family],
             color,
+            fontStyle: draft.fontStyle === 'italic' ? 'italic' : 'normal',
+            fontWeight: draft.fontWeight === 'bold' ? 'bold' : 'normal',
             textAlign: typeof draft.textAlign === 'string' ? draft.textAlign : 'left',
             background: 'transparent',
             border: 'none',
@@ -5570,6 +5687,128 @@ window.__ModuleLoader__.load({
             finish(true)
           },
         })
+      )
+    }
+
+    /**
+     * A small writable pad that shows pen pressure as line width, so a user can
+     * see whether their stylus reports pressure before they rely on it. It is a
+     * diagnostic only: nothing is saved, uploaded, or attached to any page.
+     * @returns {import('react').ReactElement} the pad.
+     */
+    function PressurePad() {
+      const canvasRef = useRef(null)
+      const stroke = useRef(null)
+      const [reading, setReading] = useState(null)
+      const [drawing, setDrawing] = useState(false)
+      const widthOf = pressure => 2 + Math.round(pressure * 10 * 10) / 10
+
+      // Size the bitmap to the CSS box (and the device pixel ratio), then clear
+      // it: the pad is a scratch surface, not a saved drawing.
+      useEffect(() => {
+        const node = canvasRef.current
+        if (node === null) return undefined
+        const resize = () => {
+          const rect = node.getBoundingClientRect()
+          const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+          node.width = Math.max(1, Math.floor(rect.width * dpr))
+          node.height = Math.max(1, Math.floor(rect.height * dpr))
+          const context = node.getContext('2d')
+          if (context !== null) {
+            context.setTransform(dpr, 0, 0, dpr, 0, 0)
+            context.clearRect(0, 0, rect.width, rect.height)
+          }
+        }
+        resize()
+        window.addEventListener('resize', resize)
+        return () => window.removeEventListener('resize', resize)
+      }, [])
+
+      const pointOf = event => {
+        const node = canvasRef.current
+        if (node === null) return null
+        const rect = node.getBoundingClientRect()
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      }
+      // A mouse (or a pen that reports no pressure) keeps the default width; the
+      // pad shows that, so "why is my line always the same" has an answer.
+      const pressureOf = event => {
+        const value = Number(event.pressure)
+        if (event.pointerType === 'pen' && Number.isFinite(value) && value > 0) return Math.min(1, Math.max(0.05, value))
+        return null
+      }
+      const begin = event => {
+        if (event.button !== 0) return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        const pressure = pressureOf(event)
+        stroke.current = { point, pressure }
+        setDrawing(true)
+        setReading({ pressure, width: pressure === null ? widthOf(0.5) : widthOf(pressure) })
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const move = event => {
+        const current = stroke.current
+        if (current === null) return
+        const point = pointOf(event)
+        if (point === null) return
+        event.preventDefault()
+        const pressure = pressureOf(event)
+        const width = pressure === null ? widthOf(0.5) : widthOf(pressure)
+        const node = canvasRef.current
+        const context = node === null ? null : node.getContext('2d')
+        if (context !== null) {
+          context.strokeStyle = '#2f6df6'
+          context.lineCap = 'round'
+          context.lineJoin = 'round'
+          context.lineWidth = width
+          context.beginPath()
+          context.moveTo(current.point.x, current.point.y)
+          context.lineTo(point.x, point.y)
+          context.stroke()
+        }
+        stroke.current = { point, pressure }
+        setReading({ pressure, width })
+      }
+      const end = () => {
+        if (stroke.current === null) return
+        stroke.current = null
+        setDrawing(false)
+      }
+      const clear = () => {
+        const node = canvasRef.current
+        const context = node === null ? null : node.getContext('2d')
+        if (node !== null && context !== null) {
+          const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+          context.setTransform(1, 0, 0, 1, 0, 0)
+          context.clearRect(0, 0, node.width, node.height)
+          // Keep the DPR mapping the next stroke expects.
+          context.setTransform(dpr, 0, 0, dpr, 0, 0)
+        }
+        setReading(null)
+      }
+      return h('div', { className: 'md-pressure' },
+        h('canvas', {
+          className: 'md-pressure-pad',
+          ref: canvasRef,
+          role: 'img',
+          'aria-label': format('pressurePadLabel'),
+          'data-drawing': drawing ? 'true' : undefined,
+          onPointerDown: begin,
+          onPointerMove: move,
+          onPointerUp: end,
+          onPointerCancel: end,
+          onPointerLeave: end,
+        }),
+        h('div', { className: 'md-pressure-read', role: 'status' },
+          reading === null
+            ? format('pressureIdle')
+            : reading.pressure === null
+              ? format('pressureNoPen', { width: reading.width.toFixed(1) })
+              : format('pressureReading', { pressure: reading.pressure.toFixed(2), width: reading.width.toFixed(1) })
+        ),
+        h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: clear }, format('pressureClear'))
       )
     }
 
@@ -6423,6 +6662,9 @@ window.__ModuleLoader__.load({
               color: entry.color ?? '#e0554a',
               fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
               fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+              fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+              fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
+              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : undefined,
             },
             onPointerDown: props.tool === '' ? event => event.stopPropagation() : undefined,
             onDoubleClick: props.tool === ''
@@ -6442,6 +6684,8 @@ window.__ModuleLoader__.load({
                   color: entry.color ?? props.color,
                   fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
                   fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+                  fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+                  fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
                 })
               }
               : undefined,
@@ -7149,7 +7393,7 @@ window.__ModuleLoader__.load({
       const [noteEdit, setNoteEdit] = useState(null)
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f', textAlign: 'left' })
+      const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
       // Which existing mark the select tool has picked (index into `strokes`).
       const [selection, setSelection] = useState(null)
       // A shape being dragged out, and a selected mark being moved.
@@ -7192,9 +7436,10 @@ window.__ModuleLoader__.load({
       const leaveRail = () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
         railPanelTimer.current = null
-        // Keep the panel long enough to cross the small gap and use a slider.
+        // Keep the panel just long enough to cross the small gap and use a
+        // slider, then let it go: the pointer leaving is a finished interaction.
         if (railCloseTimer.current !== null) clearTimeout(railCloseTimer.current)
-        railCloseTimer.current = setTimeout(() => setRailPanel(false), 700)
+        railCloseTimer.current = setTimeout(() => setRailPanel(false), 220)
       }
       useEffect(() => () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
@@ -7781,6 +8026,8 @@ window.__ModuleLoader__.load({
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
             fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
             textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+            fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
           })
           return
         }
@@ -7806,12 +8053,16 @@ window.__ModuleLoader__.load({
           fontSize: noteStyle.fontSize,
           fontFamily: noteStyle.fontFamily,
           textAlign: noteStyle.textAlign ?? 'left',
+          fontWeight: noteStyle.fontWeight === 'bold' ? 'bold' : 'normal',
+          fontStyle: noteStyle.fontStyle === 'italic' ? 'italic' : 'normal',
         })
       }
       const changeNote = text => {
         noteText.current = text
       }
       const changeNoteStyle = patch => {
+        // The font is a global preference: the next note of any book starts with it.
+        if (typeof patch.fontFamily === 'string') writeNoteFont(patch.fontFamily)
         setNoteStyle(current => ({ ...current, ...patch }))
         setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
@@ -8597,6 +8848,8 @@ window.__ModuleLoader__.load({
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
             fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
             textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+            fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
           })
         },
       },
@@ -8736,6 +8989,8 @@ window.__ModuleLoader__.load({
                 fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
                 opacity: entry.opacity ?? 1,
                 textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+                fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+                fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
               },
               onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
               onDoubleClick: annotTool === ''
@@ -8746,6 +9001,7 @@ window.__ModuleLoader__.load({
                   noteText.current = String(entry.text ?? '')
                   setNoteEdit({
                     id: noteSeq.current,
+                    page: reader.page,
                     side,
                     index,
                     x: bounds.x,
@@ -8757,6 +9013,8 @@ window.__ModuleLoader__.load({
                     fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
                     fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
                     textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+                    fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+                    fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
                   })
                 }
                 : undefined,
@@ -9344,19 +9602,7 @@ window.__ModuleLoader__.load({
               }, '×')
             ),
             selectedEntry.kind === 'text'
-              ? h(React.Fragment, null,
-                h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection }),
-                h('div', { className: 'md-note-style-row' },
-                  h('span', { className: 'md-note-style-label' }, format('alignTitle')),
-                  [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']].map(item => h(KitButton, {
-                    key: item[0],
-                    type: 'button',
-                    className: 'md-note-style-btn',
-                    'data-on': (selectedEntry.textAlign ?? 'left') === item[0] ? 'true' : undefined,
-                    onClick: () => patchSelection({ textAlign: item[0] }),
-                  }, format(item[1])))
-                )
-              )
+              ? h(NoteStyleControls, { style: selectedEntry, onChange: patchSelection })
               : h(React.Fragment, null,
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('annotColor')),
@@ -10286,6 +10532,12 @@ window.__ModuleLoader__.load({
 .md-note-size-range { width: 74px; height: 16px; margin: 0; padding: 0; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
 .md-note-size-value { min-width: 30px; font-size: 10px; line-height: 1; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); }
 .md-note-style-sep { width: 1px; height: 14px; margin: 0 2px; background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
+.md-note-style-bold { font-weight: 700; }
+.md-note-style-italic { font-style: italic; }
+.md-pressure { display: flex; flex-direction: column; gap: 8px; }
+.md-pressure-pad { width: 100%; height: 160px; box-sizing: border-box; touch-action: none; cursor: crosshair; background: var(--dsw-alias-bg-base); border: 1px dashed var(--dsw-alias-border-l3); border-radius: 8px; }
+.md-pressure-pad[data-drawing="true"] { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent); }
+.md-pressure-read { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-note-color { width: 14px; height: 14px; padding: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 50%; cursor: pointer; }
 .md-note-color[data-on="true"] { box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3px var(--dsw-alias-brand-primary); }
 .md-note-input { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; max-height: none; overflow: auto; line-height: 1.35; padding: 2px; border-radius: 0; border: none; background: transparent; box-shadow: none; outline: none; caret-color: currentColor; resize: none; }
@@ -10574,7 +10826,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [noteEdit, setNoteEdit] = useState(null)
       // Defaults for the next note; the toolbar's text menu edits this, or the
       // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState({ fontSize: NOTE_SIZES[0], fontFamily: 'normal', color: '#1f1f1f', textAlign: 'left' })
+      const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
       // Tool defaults and the hover settings panel for the side rail.
       const [sideColor, setSideColor] = useState('#1f1f1f')
       const [sideWidth, setSideWidth] = useState(2)
@@ -10889,6 +11141,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
             fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
             textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+            fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
           })
           return
         }
@@ -10903,12 +11157,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           fontSize: noteStyle.fontSize,
           fontFamily: noteStyle.fontFamily,
           textAlign: noteStyle.textAlign ?? 'left',
+          fontWeight: noteStyle.fontWeight === 'bold' ? 'bold' : 'normal',
+          fontStyle: noteStyle.fontStyle === 'italic' ? 'italic' : 'normal',
         })
       }
       const changeNote = text => {
         noteText.current = text
       }
       const changeNoteStyle = patch => {
+        // The font is a global preference: the next note of any book starts with it.
+        if (typeof patch.fontFamily === 'string') writeNoteFont(patch.fontFamily)
         setNoteStyle(current => ({ ...current, ...patch }))
         setNoteEdit(current => (current === null ? current : { ...current, ...patch }))
       }
@@ -11344,6 +11602,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
             fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
             textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : undefined,
+            fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
             opacity: entry.opacity ?? 1,
           },
         }, entry.text)))
