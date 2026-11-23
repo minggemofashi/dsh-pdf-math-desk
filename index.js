@@ -30,8 +30,8 @@ import { purgeArchivedBlanks } from './src/host/purge.js'
 /** Cordis plugin name. */
 export const name = 'pdfdesk'
 
-/** The browser carrier is the only hard dependency. */
-export const inject = ['webServer']
+/** The browser carrier and the trust fence guarding its routes. */
+export const inject = ['webServer', 'connection']
 
 /**
  * Mount the `/pdfdesk/*` routes and name pending sessions on their first turn.
@@ -41,6 +41,7 @@ export const inject = ['webServer']
  */
 export function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig)
+  const connection = ctx.get('connection')
   const pending = new PendingStore(config.pendingPath)
   const links = new LinksStore(config.linksPath)
   const pressure = new PressureStore(config.pressurePath)
@@ -115,6 +116,13 @@ export function apply(ctx, rawConfig) {
   }
 
   const handler = createHandler(config, {
+    // Every route sits behind DSH's own Host/Origin and browser-login fence.
+    // A website open in the user's browser cannot call the workbench API, even
+    // on loopback; without this the routes rely on the socket address alone.
+    requestRejection: request => {
+      if (connection === undefined || connection === null || typeof connection.requestRejection !== 'function') return undefined
+      return connection.requestRejection(request)
+    },
     md2texScript: join(dirname(fileURLToPath(import.meta.url)), 'tools', 'md2tex.py'),
     pending,
     links,

@@ -268,6 +268,16 @@ async function activeLibrary() {
 
   return async function handle(request, response) {
     try {
+      // DSH's trust fence: Host/Origin validation and browser authentication.
+      // The loopback check below is defence-in-depth, not the authentication.
+      if (typeof options.requestRejection === 'function') {
+        const rejection = options.requestRejection(request)
+        if (rejection !== undefined) {
+          response.statusCode = rejection
+          response.end()
+          return
+        }
+      }
       if (!isLoopback(request)) {
         fail(response, 403, 'forbidden', '只接受本机请求')
         return
