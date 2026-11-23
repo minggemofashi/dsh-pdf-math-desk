@@ -8257,6 +8257,20 @@ window.__ModuleLoader__.load({
         stage.current = node
         if (props.stageRef !== null && props.stageRef !== undefined) props.stageRef.current = node
       }
+      // Coming back from the continuous column, the stage can be scrolled
+      // thousands of pixels down; the single view is much shorter, and a stale
+      // scroll offset leaves its one page outside the viewport (blank). Enter the
+      // single view at the top.
+      const lastMode = useRef(props.mode)
+      useEffect(() => {
+        const previous = lastMode.current
+        lastMode.current = props.mode
+        if (previous === props.mode || props.mode !== 'single') return
+        const node = stage.current
+        if (node === null) return
+        node.scrollTop = 0
+        node.scrollLeft = 0
+      }, [props.mode])
 
       useEffect(() => {
         cacheGen.current += 1
@@ -8602,7 +8616,10 @@ window.__ModuleLoader__.load({
       const [inkPan, setInkPan] = useState({ x: 0, y: 0 })
       useEffect(() => {
         setInkPan({ x: 0, y: 0 })
-      }, [reader.bookId, reader.code, reader.name, reader.variant])
+        // A mode change gets a fresh plane: a pan left over from the previous
+        // view could put the page off-screen behind a hidden-overflow stage,
+        // which looks exactly like a blank viewer.
+      }, [reader.bookId, reader.code, reader.name, reader.variant, reader.mode])
       // Holding the space bar switches to the hand tool for as long as it is
       // held; releasing it gives the previous tool back without a mode change.
       const [spaceHeld, setSpaceHeld] = useState(false)
@@ -12614,7 +12631,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // edge, same "+" handles, same writable area outside the page.
       const planeMargins = usePlaneMargins()
       const [sidePan, setSidePan] = useState({ x: 0, y: 0 })
-      useEffect(() => { setSidePan({ x: 0, y: 0 }) }, [bookId, code, shownVariant])
+      useEffect(() => { setSidePan({ x: 0, y: 0 }) }, [bookId, code, shownVariant, mode])
       // Question marks: the same chapter data the reader and the chapter list
       // show. Creating one here saves it and (optionally) appends the line to
       // the conversation this column belongs to.
