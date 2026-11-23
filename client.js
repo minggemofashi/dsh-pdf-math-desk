@@ -7274,6 +7274,109 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One pane's editing state for the page ink: the lists, the in-progress
+     * drafts, the selection, the note being typed and the history that goes with
+     * them. The write path is `createInkEditing`; this hook is the state and the
+     * small actions around it, so the reader and the preview stop declaring it
+     * twice.
+     * @param {{ inkStore: object, pageRef: object, editKey: string, pageNumber: number,
+     *   onPrefetchClear?: Function, onRev?: Function }} options - the store, the page and the listeners.
+     * @returns {object} the state, its setters and the commit/undo actions.
+     */
+    function useInkEditorState(options) {
+      const { inkStore, pageRef, editKey } = options
+      const [strokes, setStrokes] = useState([])
+      const [masks, setMasks] = useState([])
+      const [selection, setSelection] = useState(null)
+      const [draftStroke, setDraftStroke] = useState(null)
+      const [textDraft, setTextDraft] = useState(null)
+      const [noteEdit, setNoteEdit] = useState(null)
+      const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
+      const [shapeDraft, setShapeDraft] = useState(null)
+      const [drag, setDrag] = useState(null)
+      const [resize, setResize] = useState(null)
+      const [resizeEntry, setResizeEntry] = useState(null)
+      const [inkRev, setInkRev] = useState(0)
+      const [, bumpHistory] = useState(0)
+      const strokesRef = useRef([])
+      const masksRef = useRef([])
+      const erasing = useRef(false)
+      const snapshot = () => snapshotOf(strokesRef.current, masksRef.current)
+      const inkEditing = createInkEditing({
+        inkStore,
+        pageRef,
+        editKey,
+        onPrefetchClear: options.onPrefetchClear,
+        onCommit: (kind, next, rev) => {
+          bumpHistory(value => value + 1)
+          if (kind === 'annots') {
+            strokesRef.current = next
+            setStrokes(next)
+          } else {
+            masksRef.current = next
+            setMasks(next)
+          }
+          setInkRev(value => value + 1)
+          if (typeof options.onRev === 'function') options.onRev(rev)
+        },
+        onRestore: (restored, rev) => {
+          strokesRef.current = restored.annots
+          masksRef.current = restored.masks
+          setStrokes(restored.annots)
+          setMasks(restored.masks)
+          setInkRev(value => value + 1)
+          if (typeof options.onRev === 'function') options.onRev(rev)
+        },
+      })
+      return {
+        strokes,
+        setStrokes,
+        strokesRef,
+        masks,
+        setMasks,
+        masksRef,
+        selection,
+        setSelection,
+        draftStroke,
+        setDraftStroke,
+        textDraft,
+        setTextDraft,
+        noteEdit,
+        setNoteEdit,
+        noteStyle,
+        setNoteStyle,
+        shapeDraft,
+        setShapeDraft,
+        drag,
+        setDrag,
+        resize,
+        setResize,
+        resizeEntry,
+        setResizeEntry,
+        erasing,
+        inkRev,
+        setInkRev,
+        bumpHistory,
+        saveAnnots: next => inkEditing.save('annots', next, snapshot()),
+        saveMasks: next => inkEditing.save('masks', next, snapshot()),
+        restorePage: value => inkEditing.restore(value),
+        undoPage: () => {
+          const previous = inkEditing.undo(snapshot())
+          if (previous === null) return
+          inkEditing.restore(previous)
+          bumpHistory(value => value + 1)
+        },
+        redoPage: () => {
+          const next = inkEditing.redo(snapshot())
+          if (next === null) return
+          inkEditing.restore(next)
+          bumpHistory(value => value + 1)
+        },
+        historyCounts: inkStore.depth(options.pageNumber),
+      }
+    }
+
+    /**
      * Wrap the local persona in an explicit, user-owned instruction block. The
      * workspace's default answer format outranks a bare quoted personality, so
      * the block names the user's override and its scope.
@@ -8809,7 +8912,6 @@ window.__ModuleLoader__.load({
       const [spaceHeld, setSpaceHeld] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
       const [overlay, setOverlay] = useState(false)
-      const [masks, setMasks] = useState([])
       const [maskDraft, setMaskDraft] = useState(null)
       // The boxes "框住本页块" made on this page: a second press removes them, and
       // the button stays pressed while the page still holds exactly these boxes.
@@ -8864,16 +8966,11 @@ window.__ModuleLoader__.load({
       const [activeSide, setActiveSide] = useState('main')
       const [annotColor, setAnnotColor] = useState('#1f1f1f')
       const [annotWidth, setAnnotWidth] = useState(2)
-      const [strokes, setStrokes] = useState([])
       // Which page `strokes` belongs to. The interactive layer is only drawn
       // once the list matches the page on screen; until then the page shows its
       // committed marks through a read-only copy, so a page turn never paints
       // the previous page's ink on top of the new one for a frame.
       const [inkPage, setInkPage] = useState(reader.page)
-      // Bumped on every local ink edit so read-only copies (neighbours, the
-      // other pages of the continuous column) re-read storage instead of
-      // showing what they found when they mounted.
-      const [inkRev, setInkRev] = useState(0)
       // The page the pen writes on. It follows `reader.page` when the reader
       // moves, and in continuous mode a pointer on another page adopts that page
       // (reports are debounced, so the paper under the pen can be ahead).
@@ -8883,29 +8980,12 @@ window.__ModuleLoader__.load({
       const planeMargins = usePlaneMargins()
       const plane = createPlane(planeMargins)
       const expandPlane = side => { expandPlaneMargin(side) }
-      const [draftStroke, setDraftStroke] = useState(null)
-      // The note being typed in place: `index` is its slot in `strokes`, or -1
-      // for one that does not exist yet. `id` keeps a stale save (a blur that
-      // lands after the draft was replaced) from touching the next note.
-      const [noteEdit, setNoteEdit] = useState(null)
-      // Defaults for the next note; the toolbar's text menu edits this, or the
-      // open draft when there is one.
-      const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
-      // Which existing mark the select tool has picked (index into `strokes`).
-      const [selection, setSelection] = useState(null)
       // The text adjustment panel: opened by a right-click on a text box, never
       // by a plain selection. It floats, moves by its header, closes with its
       // button or with a press anywhere else.
       const [stylePanel, setStylePanel] = useState(null)
       const stylePanelRef = useRef(null)
       const stylePanelDrag = useRef(null)
-      // A shape being dragged out, and a selected mark being moved.
-      const [shapeDraft, setShapeDraft] = useState(null)
-      // A text box being dragged out before the editor opens.
-      const [textDraft, setTextDraft] = useState(null)
-      const [drag, setDrag] = useState(null)
-      const [resize, setResize] = useState(null)
-      const [resizeEntry, setResizeEntry] = useState(null)
       const [roughTick, setRoughTick] = useState(0)
       // Pointer-near-the-edge state for the rail. CSS :hover alone proved
       // unreliable once the rail sits over the scrolling stage, so the section
@@ -9023,8 +9103,6 @@ window.__ModuleLoader__.load({
       // other end re-reads that page. `remoteAnnotRev` is this end's reload signal.
       const [remoteAnnotRev, setRemoteAnnotRev] = useState(0)
       const seenAnnotRev = useRef(0)
-      const strokesRef = useRef([])
-      const masksRef = useRef([])
       // Neighbouring pages' marks, read before the reader arrives on them, so a
       // turn does not show a blank page while localStorage is read. Any edit
       // clears it: a stale copy would be worse than the tiny read it saves.
@@ -9034,6 +9112,39 @@ window.__ModuleLoader__.load({
       const pageDrafts = useMemo(() => createPageDraftStore(), [reader.bookId, reader.code, reader.name, reader.variant])
       // Page marks live in the shared store: the side preview writes the same keys.
       const inkStore = useMemo(() => createAnnotationStore(reader.bookId, reader.code, 'reader'), [reader.bookId, reader.code])
+      // One editing state for the page ink: the lists, the in-progress drafts,
+      // the selection, the note being typed and the history. The write path is
+      // inside the hook, so the reader and the preview cannot diverge.
+      const inkEditor = useInkEditorState({
+        inkStore,
+        pageRef: annotPage,
+        editKey: chapterKey(reader.bookId, reader.code),
+        pageNumber: inkPage,
+        onPrefetchClear: () => { annotPrefetch.current.clear() },
+        onRev: rev => { seenAnnotRev.current = rev },
+      })
+      const {
+        strokes, setStrokes, strokesRef,
+        masks, setMasks, masksRef,
+        selection, setSelection,
+        draftStroke, setDraftStroke,
+        textDraft, setTextDraft,
+        noteEdit, setNoteEdit,
+        noteStyle, setNoteStyle,
+        shapeDraft, setShapeDraft,
+        drag, setDrag,
+        resize, setResize,
+        resizeEntry, setResizeEntry,
+        erasing,
+        inkRev, setInkRev,
+        bumpHistory,
+        saveAnnots: savePageAnnots,
+        saveMasks: savePageMasks,
+        restorePage,
+        undoPage,
+        redoPage,
+        historyCounts,
+      } = inkEditor
       useEffect(() => {
         annotPrefetch.current.clear()
       }, [inkStore])
@@ -9054,53 +9165,6 @@ window.__ModuleLoader__.load({
       // mirror and the announcement stay in step, and a page's own load never
       // writes anything back. Each commit first files the page as it was, so the
       // toolbar's undo has something to go back to.
-      const historyKeyOf = inkStore.historyKeyOf
-      const [, bumpHistory] = useState(0)
-      const inkEditing = createInkEditing({
-        inkStore,
-        pageRef: annotPage,
-        editKey: chapterKey(reader.bookId, reader.code),
-        onPrefetchClear: () => { annotPrefetch.current.clear() },
-        onCommit: (kind, next, rev) => {
-          bumpHistory(value => value + 1)
-          if (kind === 'annots') {
-            strokesRef.current = next
-            setStrokes(next)
-          } else {
-            masksRef.current = next
-            setMasks(next)
-          }
-          seenAnnotRev.current = rev
-          setInkRev(value => value + 1)
-        },
-        onRestore: (snapshot, rev) => {
-          strokesRef.current = snapshot.annots
-          masksRef.current = snapshot.masks
-          setStrokes(snapshot.annots)
-          setMasks(snapshot.masks)
-          seenAnnotRev.current = rev
-          setInkRev(value => value + 1)
-        },
-      })
-      const savePageAnnots = next => { inkEditing.save('annots', next, currentSnapshot()) }
-      const savePageMasks = next => { inkEditing.save('masks', next, currentSnapshot()) }
-      // Undo/redo restore both lists at once: one step is one action, even when
-      // it touched ink and boxes together.
-      const restorePage = snapshot => { inkEditing.restore(snapshot) }
-      const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
-      const undoPage = () => {
-        const previous = inkEditing.undo(currentSnapshot())
-        if (previous === null) return
-        restorePage(previous)
-        bumpHistory(value => value + 1)
-      }
-      const redoPage = () => {
-        const next = inkEditing.redo(currentSnapshot())
-        if (next === null) return
-        restorePage(next)
-        bumpHistory(value => value + 1)
-      }
-      const historyCounts = inkStore.depth(inkPage)
       // Reconcile with the library mirror on open: a cleared browser gets its
       // pages back, a browser that predates the mirror hands them over.
       useEffect(() => {
@@ -9696,7 +9760,6 @@ window.__ModuleLoader__.load({
         onPointerEnter: event => beginRailPanel(event.currentTarget, id),
         onClick: () => setAnnotTool(value => (value === id ? '' : id)),
       }, annotIcon(path))
-      const erasing = useRef(false)
       const annotDown = (event, side) => {
         if (event.button !== 0) return
         if (annotTool === '') return
