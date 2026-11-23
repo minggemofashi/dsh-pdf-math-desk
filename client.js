@@ -135,6 +135,46 @@ window.__ModuleLoader__.load({
     /** The mode word written into a session title (data, not UI copy). */
     const TITLE_MODE = { general: '会话', extract: '提取', qa: '答疑', exercise: '习题' }
     const GITHUB_URL = 'https://github.com/minggemofashi/dsh-pdf-workbench'
+    /** The optional handwriting face is installed on demand, not shipped. */
+    const XIAOLAI_STYLE_ID = 'pdfdesk-xiaolai-face'
+    let xiaolaiInstalled = false
+
+    /**
+     * Reflect the Host's font state in the document: inject the @font-face only
+     * when the file exists, so the browser never requests a missing 22 MB asset.
+     * @param {boolean} installed - whether the Host has the font.
+     * @returns {void}
+     */
+    function applyXiaolaiFace(installed) {
+      xiaolaiInstalled = installed
+      if (typeof document === 'undefined') return
+      const style = document.getElementById(XIAOLAI_STYLE_ID)
+      if (!installed) {
+        if (style !== null) style.remove()
+        return
+      }
+      if (style !== null) return
+      const node = document.createElement('style')
+      node.id = XIAOLAI_STYLE_ID
+      node.textContent = "@font-face { font-family: 'Xiaolai'; src: url('/pdfdesk/font/file') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }"
+      document.head.appendChild(node)
+    }
+
+    /**
+     * Ask the Host whether the handwriting font is installed and apply it.
+     * @returns {Promise<boolean>} installed state.
+     */
+    async function refreshXiaolaiFont() {
+      try {
+        const payload = await request('GET', 'font')
+        const installed = payload !== null && payload !== undefined && payload.installed === true
+        applyXiaolaiFace(installed)
+        return installed
+      } catch {
+        applyXiaolaiFace(false)
+        return false
+      }
+    }
     const TEXLIVE_URL = 'https://tug.org/texlive/acquire.html'
     const PYTHON_URL = 'https://www.python.org/downloads/windows/'
 
@@ -1042,6 +1082,14 @@ window.__ModuleLoader__.load({
       sharedPrefixCleared: '已清除 {n} 个章节的共享前缀',
       sharedPrefixFailed: '清除共享前缀失败',
       attachLabel: '附件',
+      fontTitle: '手写字体（小赖）',
+      fontMissing: '未安装，手写体回退到系统楷体',
+      fontInstalled: '已安装（{mb} MB）',
+      fontDownload: '下载',
+      fontImport: '导入本地字体',
+      fontRemove: '删除',
+      fontHint: '22 MB 的 Xiaolai 字体不再随插件分发；下载或导入后只存放在本机插件数据目录，删除不影响笔记',
+      fontFailed: '字体操作失败',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
       attachHint: '支持 PDF、图片与 PPT（自动转 PDF），单个不超过 50 MB；会复制到本章的附件目录',
@@ -1664,6 +1712,14 @@ window.__ModuleLoader__.load({
       sharedPrefixCleared: 'Cleared the shared prefix of {n} chapters',
       sharedPrefixFailed: 'Could not clear the shared prefix',
       attachLabel: 'Attachments',
+      fontTitle: 'Handwriting font (Xiaolai)',
+      fontMissing: 'Not installed — hand text falls back to the system Kai face',
+      fontInstalled: 'Installed ({mb} MB)',
+      fontDownload: 'Download',
+      fontImport: 'Import local font',
+      fontRemove: 'Remove',
+      fontHint: 'The 22 MB Xiaolai face is no longer shipped; it is stored only in the local plugin data folder and removing it never touches notes',
+      fontFailed: 'Font action failed',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
       attachHint: 'PDFs, images and PPT (converted to PDF) up to 50 MB; copied into this chapter’s attachment folder',
@@ -4057,6 +4113,56 @@ window.__ModuleLoader__.load({
       const [bindings, setBindingsState] = useState(() => readShortcutBindings())
       // The action being recorded; a key press fills it, Escape cancels.
       const [listening, setListening] = useState('')
+      // Optional handwriting font: downloaded or imported on demand.
+      const [font, setFont] = useState(null)
+      const [fontBusy, setFontBusy] = useState(false)
+      const fontInput = useRef(null)
+      useEffect(() => {
+        request('GET', 'font')
+          .then(payload => {
+            setFont(payload !== null && typeof payload === 'object'
+              ? { installed: payload.installed === true, bytes: Number(payload.bytes) || 0 }
+              : { installed: false, bytes: 0 })
+          })
+          .catch(() => setFont({ installed: false, bytes: 0 }))
+      }, [])
+      const fontAction = async (action, data) => {
+        setFontBusy(true)
+        try {
+          const payload = await request('POST', 'font', { action, data })
+          setFont({
+            installed: payload !== null && payload.installed === true,
+            bytes: payload === null || payload === undefined ? 0 : Number(payload.bytes) || 0,
+          })
+          await refreshXiaolaiFont()
+        } catch (error) {
+          window.alert(`${format('fontFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
+        } finally {
+          setFontBusy(false)
+        }
+      }
+      const importFont = async event => {
+        const file = event.target.files !== undefined && event.target.files.length > 0 ? event.target.files[0] : null
+        event.target.value = ''
+        if (file === null || file === undefined) return
+        setFontBusy(true)
+        try {
+          const data = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = String(reader.result ?? '')
+              resolve(result.slice(result.indexOf(',') + 1))
+            }
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(file)
+          })
+          setFontBusy(false)
+          await fontAction('install', data)
+        } catch (error) {
+          setFontBusy(false)
+          window.alert(`${format('fontFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
+        }
+      }
       useEffect(() => {
         request('GET', 'deepseek-key')
           .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
@@ -4148,6 +4254,39 @@ window.__ModuleLoader__.load({
               onChange: event => props.onRoughness(Number(event.target.value)),
             }),
             h('span', { className: 'md-note-size-value' }, Number(props.roughness ?? 1).toFixed(1))
+          ),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('fontHint') }, format('fontTitle')),
+            h('span', { className: 'md-settings-note' },
+              font === null
+                ? ''
+                : font.installed
+                  ? format('fontInstalled', { mb: (font.bytes / 1048576).toFixed(1) })
+                  : format('fontMissing')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: fontBusy === true || font === null,
+              onClick: () => fontAction('download'),
+            }, format('fontDownload')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: fontBusy === true,
+              onClick: () => { if (fontInput.current !== null) fontInput.current.click() },
+            }, format('fontImport')),
+            font !== null && font.installed
+              ? h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: fontBusy === true,
+                onClick: () => fontAction('remove'),
+              }, format('fontRemove'))
+              : null,
+            h('input', {
+              ref: fontInput,
+              type: 'file',
+              accept: '.ttf,.otf',
+              style: { display: 'none' },
+              onChange: importFont,
+            })
           ),
         ),
         h('div', { className: 'md-settings-section' },
@@ -12129,7 +12268,6 @@ window.__ModuleLoader__.load({
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
-@font-face { font-family: 'Xiaolai'; src: url('/pdfdesk/vendor/fonts/zhhand/Xiaolai-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 .md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: pdfdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
 .md-inner { height: 100%; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 clamp(18px, 4cqw, 40px); box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; }
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
@@ -14559,6 +14697,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
      */
     function WorkbenchPage() {
       useT()
+      // The handwriting face is optional: ask once, then inject its @font-face
+      // only when the Host has the file.
+      useEffect(() => { void refreshXiaolaiFont() }, [])
       const [catalog, setCatalog] = useState(null)
       const [work, setWork] = useState(null)
       const [phase, setPhase] = useState('loading')

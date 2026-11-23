@@ -39,6 +39,7 @@ import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-sess
 import { clearSharedPrefixCache } from './chapter-sessions.js'
 import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, removeAttachment, safeAttachmentName } from './attachments.js'
 import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
+import { MAX_FONT_BYTES, downloadFont, fontStatus, installFont, readFont, removeFont } from './fonts.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -307,6 +308,8 @@ async function activeLibrary() {
         || path === `${PREFIX}/qa-persona`
         || path === `${PREFIX}/deepseek-key`
         || path.startsWith(`${PREFIX}/vendor/`)
+        || path === `${PREFIX}/font`
+        || path === `${PREFIX}/font/file`
         || path === `${PREFIX}/state`
         || path === `${PREFIX}/pending`
         || path === `${PREFIX}/pending/remove`
@@ -314,6 +317,65 @@ async function activeLibrary() {
         || path === `${PREFIX}/purge`
       if (!libraryFree && (libraries === undefined || (await libraries.active()) === null)) {
         fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
+        return
+      }
+
+      if (path === `${PREFIX}/font`) {
+        if (request.method === 'GET') {
+          sendJson(response, 200, { ok: true, ...(await fontStatus(config.dataDir)) })
+          return
+        }
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        let body
+        try {
+          body = await readJson(request, 90 * 1024 * 1024)
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const action = typeof record.action === 'string' ? record.action : ''
+        try {
+          if (action === 'remove') {
+            sendJson(response, 200, { ok: true, ...(await removeFont(config.dataDir)) })
+            return
+          }
+          if (action === 'download') {
+            sendJson(response, 200, { ok: true, ...(await downloadFont({ dataDir: config.dataDir })) })
+            return
+          }
+          if (action === 'install') {
+            const bytes = typeof record.data === 'string' ? Buffer.from(record.data, 'base64') : Buffer.alloc(0)
+            sendJson(response, 200, { ok: true, ...(await installFont({ dataDir: config.dataDir, bytes })) })
+            return
+          }
+          fail(response, 400, 'unknown-action', `未知的字体操作：${action}`)
+        } catch (error) {
+          const reason = error !== null && error !== undefined ? error.code : ''
+          fail(
+            response,
+            reason === 'too-large' ? 413 : reason === 'download-failed' || reason === 'no-fetch' ? 502 : 400,
+            reason === 'too-large' ? 'too-large' : reason === 'download-failed' ? 'download-failed' : 'font-failed',
+            String(error && error.message ? error.message : error)
+          )
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/font/file`) {
+        const bytes = await readFont(config.dataDir)
+        if (bytes === null) {
+          fail(response, 404, 'missing-font', '还没有安装手写字体')
+          return
+        }
+        sendBytes(response, 200, bytes, 'font/ttf', 'inline; filename="Xiaolai-Regular.ttf"')
         return
       }
 
