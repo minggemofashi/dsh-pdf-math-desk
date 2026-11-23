@@ -7907,6 +7907,11 @@ window.__ModuleLoader__.load({
       const from = Math.max(1, current - 12)
       const to = Math.min(total, current + 12)
       const pages = []
+      // The plane's margins at the ends of the column: blank paper where the
+      // reader may write above the first page and below the last one.
+      const topPad = Math.max(0, Math.round(Number(props.topPad) || 0))
+      const bottomPad = Math.max(0, Math.round(Number(props.bottomPad) || 0))
+      if (topPad > 0) pages.push(h('div', { key: 'pad-top', className: 'md-reader-plane-pad', style: { height: `${topPad}px` } }))
       for (let page = 1; page <= total; page += 1) {
         if (page < from || page > to) {
           pages.push(h('div', { key: page, className: 'md-reader-slot md-reader-ghost' },
@@ -7939,6 +7944,7 @@ window.__ModuleLoader__.load({
           overlayPage: page,
         }))
       }
+      if (bottomPad > 0) pages.push(h('div', { key: 'pad-bottom', className: 'md-reader-plane-pad', style: { height: `${bottomPad}px` } }))
       return h('div', { className: 'md-reader-continuous' }, pages)
     }
 
@@ -8147,6 +8153,10 @@ window.__ModuleLoader__.load({
       const pageCache = useRef(new Map())
       const cacheGen = useRef(0)
       const [paintedScale, setPaintedScale] = useState(null)
+      // One page's painted height, learned while continuous mode measures page
+      // one. It sizes the blank plane margins above the first page and below
+      // the last, where the reader may write.
+      const [pageHeight, setPageHeight] = useState(0)
       // The parent keeps the same ref for keyboard scrolling and fit width, so
       // the viewer hands its stage to that ref instead of hiding it.
       const attachStage = node => {
@@ -8296,10 +8306,27 @@ window.__ModuleLoader__.load({
         let cancelled = false
         void props.doc.getPage(1).then(page => {
           if (cancelled) return
-          props.onScale(props.fitScale(page.getViewport({ scale: 1 }).width))
+          const base = page.getViewport({ scale: 1 })
+          const used = props.fitScale(base.width)
+          props.onScale(used)
+          setPageHeight(Math.round(base.height * used))
         }).catch(() => {})
         return () => { cancelled = true }
       }, [props.doc, props.mode, props.scale, props.fitScale, props.onScale])
+
+      // Continuous mode pans nothing, so its plane margins are real blank space
+      // at the ends of the column: one page above the first page and one below
+      // the last. Measured pages update the height when the zoom changes.
+      useEffect(() => {
+        if (props.mode !== 'continuous' || props.doc === null || props.doc === undefined) return undefined
+        if (props.scale === null) return undefined
+        let cancelled = false
+        void props.doc.getPage(1).then(page => {
+          if (cancelled) return
+          setPageHeight(Math.round(page.getViewport({ scale: props.scale }).height))
+        }).catch(() => {})
+        return () => { cancelled = true }
+      }, [props.doc, props.mode, props.scale])
 
       // Panning the shared annotation plane. Any mode that has no room of its
       // own (continuous scrolls its own column) pans by dragging the stage; the
@@ -8394,6 +8421,9 @@ window.__ModuleLoader__.load({
           overlay: props.overlay,
           overlayFor: props.overlayFor,
           overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
+          // Blank plane at the two ends of the column, sized like a page.
+          topPad: Math.round(pageHeight * planeMargins.top),
+          bottomPad: Math.round(pageHeight * planeMargins.bottom),
         })
         : h('div', {
           className: 'md-reader-single',
@@ -12014,6 +12044,8 @@ window.__ModuleLoader__.load({
 .md-reader-neighbour { position: absolute; left: 50%; transform: translateX(-50%); }
 .md-reader-neighbour-before { bottom: calc(100% + 24px); }
 .md-reader-neighbour-after { top: calc(100% + 24px); }
+/* Blank paper at the plane's top and bottom edges in continuous mode. */
+.md-reader-plane-pad { flex: 0 0 auto; width: 100%; }
 /* The edge of the plane: where the hand and the pen stop. */
 .md-plane-bounds { position: absolute; z-index: 0; pointer-events: none; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); border-radius: 4px; }
 .md-plane-tools { display: inline-flex; gap: 2px; }
