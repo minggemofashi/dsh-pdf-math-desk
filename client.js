@@ -9777,7 +9777,7 @@ window.__ModuleLoader__.load({
 
       if (props.variant === 'column') return content
       const stageHostRef = useRef(null)
-      const planeOverlay = props.mode === 'continuous' || typeof props.onExpandPlane !== 'function'
+      const planeOverlay = props.stableHost !== true || props.mode === 'continuous' || typeof props.onExpandPlane !== 'function'
         ? null
         : h(PlaneBounds, {
           fixed: true,
@@ -9807,6 +9807,7 @@ window.__ModuleLoader__.load({
       // The host frame is not a scroller; the stage inside it still is.
       // Keep the same host wrapper in both modes: swapping the root between the
       // stage and a wrapper unmounts the scroller on every mode switch.
+      if (props.stableHost !== true && props.captureLayer === undefined && planeOverlay === null) return stageNode
       return h('div', { className: 'md-reader-stage-host', ref: stageHostRef }, stageNode, props.captureLayer, planeOverlay)
     }
     /**
@@ -12461,6 +12462,7 @@ window.__ModuleLoader__.load({
                 panEnabled: extended && handActive && noteEdit === null,
                 scrollGrab: reader.mode === 'continuous' && handActive && noteEdit === null,
                 captureLayer: canvasCapture,
+                stableHost: true,
                 onExpandPlane: expandPlane,
                 onPageNode: (page, node) => {
                   if (node === null || node === undefined) pageNodes.current.delete(page)
@@ -15110,35 +15112,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
-      const handDrag = useRef(null)
-      const handDown = event => {
-        if (tool !== 'hand' || event.button !== 0) return
-        event.preventDefault()
-        const scrollport = stage.current
-        handDrag.current = {
-          start: [event.clientX, event.clientY],
-          pan: { ...sidePan },
-          left: scrollport === null ? 0 : scrollport.scrollLeft,
-          top: scrollport === null ? 0 : scrollport.scrollTop,
-        }
-        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
-      }
-      const handMove = event => {
-        if (handDrag.current === null) return
-        event.preventDefault()
-        const dx = event.clientX - handDrag.current.start[0]
-        const dy = event.clientY - handDrag.current.start[1]
-        if (mode === 'continuous') {
-          const scrollport = stage.current
-          if (scrollport !== null) {
-            scrollport.scrollLeft = handDrag.current.left - dx
-            scrollport.scrollTop = handDrag.current.top - dy
-          }
-          return
-        }
-        setSidePan({ x: handDrag.current.pan.x + dx, y: handDrag.current.pan.y + dy })
-      }
-      const handUp = () => { handDrag.current = null }
       const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'mask' && tool !== 'question'
       const sideCapture = sideMarkTool
         ? h('div', {
@@ -15395,10 +15368,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               panNeeds: null,
               margins: planeMargins,
               onPan: setSidePan,
-              onExpandPlane: expandSidePlane,
               panEnabled: tool === 'hand',
               scrollGrab: mode === 'continuous' && tool === 'hand',
-              children: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
+              children: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
               // the page being read, so drawing and boxes work there too.
               overlay: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
@@ -15625,19 +15597,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         // The pointer layer lives beside the scroller, not inside it: it must
         // cover the visible preview at any scroll offset, and it must not be
         // pushed around by the stage's own positioning.
-        h('div', { className: 'md-side-body' }, body, sideCapture,
-          tool === 'hand'
-            ? h('div', {
-              className: 'md-canvas-capture md-hand-capture',
-              'data-tool': 'hand',
-              onPointerDown: handDown,
-              onWheel: event => { const node = stage.current; if (node !== null) node.scrollBy({ top: event.deltaY, left: event.deltaX }) },
-              onPointerMove: handMove,
-              onPointerUp: handUp,
-              onPointerCancel: handUp,
-              onPointerLeave: handUp,
-            })
-            : null),
+        h('div', { className: 'md-side-body' }, body, sideCapture),
         h('div', { className: 'md-rail-tab md-side-rail-tab', 'data-side': 'right', 'aria-hidden': true }, '‹'),
         h('div', {
           className: 'md-rail-wrap md-side-rail-wrap',
