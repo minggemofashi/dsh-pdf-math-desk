@@ -2228,6 +2228,126 @@ window.__ModuleLoader__.load({
 
     /** Rendered cover data URLs by book id; a null entry is "this book has none". */
     const coverCache = new Map()
+    /**
+     * The reader's route for one chapter PDF. Every viewer builds its URL here,
+     * so a document's URL is also the key of the shared document cache below.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {{ name?: string, variant?: string, rev?: number, retry?: number }} [options] - file variant and revisions.
+     * @returns {string} the absolute URL.
+     */
+    function chapterPdfUrl(bookId, code, options) {
+      const extra = options === undefined || options === null ? {} : options
+      const query = new URLSearchParams({ book: bookId, code })
+      if (typeof extra.name === 'string' && extra.name !== '') query.set('name', extra.name)
+      if (extra.variant === 'translated' || extra.variant === 'overlay') query.set('variant', extra.variant)
+      if (typeof extra.rev === 'number' && extra.rev > 0) query.set('rev', String(extra.rev))
+      if (typeof extra.retry === 'number' && extra.retry > 0) query.set('retry', String(extra.retry))
+      return new URL(`pdfdesk/pdf?${query.toString()}`, document.baseURI).href
+    }
+
+    /** How long a released document waits for the other pane before it is closed. */
+    const SHARED_DOC_LINGER_MS = 30000
+
+    /** Documents kept alive at most: each one holds a parsed PDF in memory. */
+    const SHARED_DOC_LIMIT = 2
+
+    /**
+     * Share one pdf.js document between the reader and the right-hand preview.
+     *
+     * Both panes used to open the same chapter on their own: two downloads, two
+     * worker parses and two copies of the parsed file, which is why the preview
+     * felt slower than the reader it duplicated. A document is keyed by its URL,
+     * handed out with a release function, and kept for a moment after the last
+     * viewer lets go — jumping to a session unmounts the reader right before the
+     * preview mounts, and that hand-over is the case worth keeping it for.
+     * @param {{ linger?: number, limit?: number }} options - how long, and how many documents.
+     * @returns {{ claim: Function, releaseAll: Function, size: Function }} the cache.
+     */
+    function createDocumentCache(options) {
+      const config = options === undefined || options === null ? {} : options
+      const linger = typeof config.linger === 'number' && config.linger >= 0 ? config.linger : SHARED_DOC_LINGER_MS
+      const limit = typeof config.limit === 'number' && config.limit > 0 ? config.limit : SHARED_DOC_LIMIT
+      /** One document per URL, with the number of viewers currently holding it. */
+      const entries = new Map()
+      const close = entry => {
+        if (entry.timer !== null) {
+          clearTimeout(entry.timer)
+          entry.timer = null
+        }
+        if (entry.closed) return
+        entry.closed = true
+        if (entry.task === null) return
+        try {
+          void Promise.resolve(entry.task.destroy()).catch(() => {})
+        } catch {
+          // a task that is already gone has nothing to close
+        }
+      }
+      /** Keep the cache under its size limit: idle documents go first. */
+      const trim = keep => {
+        if (entries.size <= limit) return
+        for (const [url, entry] of [...entries]) {
+          if (entries.size <= limit) return
+          if (url === keep || entry.refs > 0) continue
+          entries.delete(url)
+          close(entry)
+        }
+      }
+      const claim = (url, create) => {
+        let entry = entries.get(url)
+        if (entry === undefined) {
+          entry = { refs: 0, task: null, promise: null, timer: null, closed: false }
+          entries.set(url, entry)
+          trace('doc', 'open', url.replace(/^.*\/pdfdesk\//, ''))
+          const task = create()
+          entry.task = task
+          entry.promise = Promise.resolve(task.promise).then(document => {
+            // Everybody left while it was parsing: hand it straight back.
+            if (entry.closed) close(entry)
+            return document
+          }, error => {
+            if (entries.get(url) === entry) entries.delete(url)
+            throw error
+          })
+        } else if (entry.timer !== null) {
+          clearTimeout(entry.timer)
+          entry.timer = null
+          trace('doc', 'reuse', url.replace(/^.*\/pdfdesk\//, ''))
+        } else {
+          trace('doc', 'join', url.replace(/^.*\/pdfdesk\//, ''))
+        }
+        entry.refs += 1
+        trim(url)
+        return entry.promise.then(document => {
+          let released = false
+          return {
+            doc: document,
+            release: () => {
+              if (released) return
+              released = true
+              entry.refs = Math.max(0, entry.refs - 1)
+              if (entry.refs > 0 || entry.timer !== null) return
+              entry.timer = setTimeout(() => {
+                entry.timer = null
+                if (entry.refs > 0) return
+                if (entries.get(url) === entry) entries.delete(url)
+                close(entry)
+              }, linger)
+            },
+          }
+        })
+      }
+      const releaseAll = () => {
+        for (const entry of entries.values()) close(entry)
+        entries.clear()
+      }
+      return { claim, releaseAll, size: () => entries.size }
+    }
+
+    /** Documents the reader and the right column share. */
+    const sharedDocuments = createDocumentCache({})
+
 
     /** Recent workbench events for debugging (and `window.__pdfdeskTrace`). */
     const traceRing = []
