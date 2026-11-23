@@ -387,7 +387,8 @@ window.__ModuleLoader__.load({
     function readGlobalMode() {
       try {
         const raw = window.localStorage.getItem(MODE_KEY)
-        return raw === 'continuous' ? 'continuous' : raw === 'single' ? 'single' : null
+        if (raw === 'single' || raw === 'continuous' || raw === 'canvas') return raw
+        return null
       } catch {
         return null
       }
@@ -395,11 +396,11 @@ window.__ModuleLoader__.load({
 
     /**
      * Remember the reading mode for every book.
-     * @param {string} mode - `single` or `continuous`.
+     * @param {string} mode - `single`, `continuous` or `canvas`.
      * @returns {void}
      */
     function writeGlobalMode(mode) {
-      if (mode !== 'single' && mode !== 'continuous') return
+      if (mode !== 'single' && mode !== 'continuous' && mode !== 'canvas') return
       try {
         window.localStorage.setItem(MODE_KEY, mode)
       } catch {
@@ -744,6 +745,11 @@ window.__ModuleLoader__.load({
       readerMode: '阅读模式',
       readerModeSingle: '单页',
       readerModeContinuous: '连续',
+      readerModeCanvas: '画布',
+      readerModeCanvasHint: '无限画布：页外也能写；空白处拖动平移',
+      canvasCenter: '居中',
+      canvasCenterHint: '回到当前页居中',
+      canvasOffPageHint: '本章有 {n} 处页外笔记，切到画布模式查看',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: '在工作台打开',
       sideOpenInDeskHint: '回到阅读器，停在同一页',
@@ -1336,6 +1342,11 @@ window.__ModuleLoader__.load({
       readerMode: 'Reading mode',
       readerModeSingle: 'Single page',
       readerModeContinuous: 'Continuous',
+      readerModeCanvas: 'Canvas',
+      readerModeCanvasHint: 'Infinite canvas: write outside the page too; drag empty space to pan',
+      canvasCenter: 'Center',
+      canvasCenterHint: 'Center the current page again',
+      canvasOffPageHint: '{n} off-page marks in this chapter; open Canvas mode to see them',
       sideTabTitle: '{book} · {code}',
       sideOpenInDesk: 'Open in workbench',
       sideOpenInDeskHint: 'Return to the workbench reader at the same page',
@@ -5585,6 +5596,48 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Where a pointer lands in page coordinates **without** clamping: the canvas
+     * mode lets a mark live outside the page, so a point there has to keep its
+     * sign and distance.
+     * @param {{ clientX: number, clientY: number }} event - the pointer event.
+     * @param {Element | null} node - the page-sized element.
+     * @returns {[number, number] | null} the point, or null when the box has no area.
+     */
+    function inkPointOfFree(event, node) {
+      if (node === null || node === undefined || typeof node.getBoundingClientRect !== 'function') return null
+      const rect = node.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return null
+      return [
+        (event.clientX - rect.left) / rect.width,
+        (event.clientY - rect.top) / rect.height,
+      ]
+    }
+
+    /**
+     * Whether one mark lies inside its page. Off-page marks belong to the canvas
+     * plane; the page views hide them so they cannot bleed over the toolbar.
+     * @param {object} entry - a stored annotation.
+     * @returns {boolean} true when every anchor is on the page.
+     */
+    function entryInsidePage(entry) {
+      if (entry === null || typeof entry !== 'object') return false
+      const inside = (x, y) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1
+      if (entry.kind === 'text') return inside(Number(entry.x), Number(entry.y))
+      if (entry.kind === 'shape' && (entry.shape === 'line' || entry.shape === 'arrow')) {
+        return inside(Number(entry.x0), Number(entry.y0)) && inside(Number(entry.x1), Number(entry.y1))
+      }
+      if (entry.kind === 'shape') {
+        const x = Number(entry.x)
+        const y = Number(entry.y)
+        const w = Number(entry.w)
+        const h = Number(entry.h)
+        return inside(x, y) && inside(x + w, y + h)
+      }
+      if (Array.isArray(entry.points)) return entry.points.every(point => inside(Number(point[0]), Number(point[1])))
+      return true
+    }
+
+    /**
      * How far a hit test reaches at one box width: ~8px of slack plus half the
      * stroke's own width, in page units.
      * @param {number} widthPx - the stroke's width in pixels.
@@ -5891,14 +5944,18 @@ window.__ModuleLoader__.load({
       }
       // The editor is the note box itself: drag-created boxes open at their
       // exact size, and older point notes fall back to a small default box.
-      const left = Math.min(1, Math.max(0, draft.x))
-      const top = Math.min(1, Math.max(0, draft.y))
-      const width = Math.min(1 - left, Math.max(0.04, Number.isFinite(draft.w) ? draft.w : 0.38))
-      const height = Math.min(1 - top, Math.max(0.035, Number.isFinite(draft.h) ? draft.h : 0.09))
+      // The canvas mode passes `unbounded`: the box may sit outside the page.
+      const unbounded = props.unbounded === true
+      const left = unbounded ? Number(draft.x) || 0 : Math.min(1, Math.max(0, draft.x))
+      const top = unbounded ? Number(draft.y) || 0 : Math.min(1, Math.max(0, draft.y))
+      const width = Math.max(0.04, Number.isFinite(draft.w) ? draft.w : 0.38)
+      const height = Math.max(0.035, Number.isFinite(draft.h) ? draft.h : 0.09)
+      const pageWidth = unbounded ? width : Math.min(1 - left, width)
+      const pageHeight = unbounded ? height : Math.min(1 - top, height)
       return h('div', {
         className: 'md-note-editor',
         ref: editorRef,
-        style: { left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` },
+        style: { left: `${left * 100}%`, top: `${top * 100}%`, width: `${pageWidth * 100}%`, height: `${pageHeight * 100}%` },
         onPointerDown: event => event.stopPropagation(),
         onPointerMove: event => event.stopPropagation(),
         onDoubleClick: event => event.stopPropagation(),
@@ -7671,7 +7728,7 @@ window.__ModuleLoader__.load({
       // Paint the single page. A page or zoom change cancels the previous
       // render, so a fast zoom never leaves a stale bitmap on top.
       useEffect(() => {
-        if (props.mode !== 'single' || props.doc === null || props.doc === undefined) return undefined
+        if (props.mode === 'continuous' || props.doc === null || props.doc === undefined) return undefined
         const node = canvas.current
         if (node === null) return undefined
         const shot = cachedPaint(props.page)
@@ -7723,7 +7780,7 @@ window.__ModuleLoader__.load({
       // Warm the adjacent pages while the reader is idle. A page that fails to
       // warm is simply painted on demand, as before.
       useEffect(() => {
-        if (props.mode !== 'single' || props.doc === null || props.doc === undefined || paintedScale === null) return undefined
+        if (props.mode === 'continuous' || props.doc === null || props.doc === undefined || paintedScale === null) return undefined
         const generation = cacheGen.current
         const doc = props.doc
         const total = Number(props.count) || 0
@@ -7790,13 +7847,30 @@ window.__ModuleLoader__.load({
         return () => { cancelled = true }
       }, [props.doc, props.mode, props.scale, props.fitScale, props.onScale])
 
-      const content = props.mode === 'single'
-        ? h('div', { className: 'md-reader-single' },
-          h('div', { className: 'md-reader-single-page' },
-            h('canvas', { className: 'md-reader-canvas', ref: canvas }),
-            props.children
-          ))
-        : h(ContinuousView, {
+      // Canvas mode: the page is panned by dragging the empty stage. The
+      // capture layer (when a tool is picked) owns the pointers instead, so a
+      // stroke started outside the page keeps drawing rather than panning.
+      const canvasMode = props.mode === 'canvas'
+      const hasCapture = props.captureLayer !== null && props.captureLayer !== undefined
+      const pan = props.canvasPan !== null && props.canvasPan !== undefined ? props.canvasPan : null
+      const panDrag = useRef(null)
+      const beginPan = event => {
+        if (!canvasMode || hasCapture || event.button !== 0) return
+        panDrag.current = { start: [event.clientX, event.clientY], origin: pan ?? { x: 0, y: 0 } }
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const movePan = event => {
+        if (panDrag.current === null) return
+        const dx = event.clientX - panDrag.current.start[0]
+        const dy = event.clientY - panDrag.current.start[1]
+        if (typeof props.onCanvasPan === 'function') {
+          props.onCanvasPan({ x: panDrag.current.origin.x + dx, y: panDrag.current.origin.y + dy })
+        }
+      }
+      const endPan = () => { panDrag.current = null }
+
+      const content = props.mode === 'continuous'
+        ? h(ContinuousView, {
           doc: props.doc,
           page: props.page,
           count: props.count,
@@ -7813,13 +7887,32 @@ window.__ModuleLoader__.load({
           overlay: props.overlay,
           overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
         })
+        : h('div', {
+          className: canvasMode ? 'md-reader-single md-reader-canvas-plane' : 'md-reader-single',
+          'data-grab': canvasMode && !hasCapture ? 'true' : undefined,
+          style: canvasMode && pan !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : undefined,
+        },
+          h('div', {
+            className: 'md-reader-single-page',
+            ref: node => {
+              if (canvasMode && typeof props.onPageNode === 'function') props.onPageNode(node)
+            },
+          },
+            h('canvas', { className: 'md-reader-canvas', ref: canvas }),
+            props.children
+          ))
 
       if (props.variant === 'column') return content
       return h('div', {
         className: 'md-reader-stage',
         'data-mode': props.mode,
         ref: attachStage,
-      }, content)
+        onPointerDown: canvasMode ? beginPan : undefined,
+        onPointerMove: canvasMode ? movePan : undefined,
+        onPointerUp: canvasMode ? endPan : undefined,
+        onPointerCancel: canvasMode ? endPan : undefined,
+        onPointerLeave: canvasMode ? endPan : undefined,
+      }, content, canvasMode ? props.captureLayer : null)
     }
 
     /**
@@ -7838,6 +7931,12 @@ window.__ModuleLoader__.load({
       const railSide = props.railSide === 'left' ? 'left' : 'right'
       const [pageText, setPageText] = useState(String(reader.page))
       const [showBlocks, setShowBlocks] = useState(false)
+      // Canvas mode: the page sits on an unbounded, pannable plane. Pan is a
+      // per-visit value (not page position) and resets when the document changes.
+      const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
+      useEffect(() => {
+        setCanvasPan({ x: 0, y: 0 })
+      }, [reader.bookId, reader.code, reader.name, reader.variant])
       const [toolsOpen, setToolsOpen] = useState(true)
       const [overlay, setOverlay] = useState(false)
       const [masks, setMasks] = useState([])
@@ -8444,13 +8543,16 @@ window.__ModuleLoader__.load({
         setAutoBoxes(null)
       }, [annotKey, remoteAnnotRev, pageDrafts, reader.page])
       // Point in page coordinates (0..1). The SVG layer is exactly the page box,
-      // so the same numbers work at any zoom. The box width is remembered so the
-      // eraser can turn its pixel tolerance into page units.
+      // so the same numbers work at any zoom. The canvas mode measures against
+      // the page node (the capture layer is stage-sized) and does not clamp.
       const annotBox = useRef({ width: 400, height: 600 })
+      const canvasPage = useRef(null)
       const annotPoint = event => {
-        const point = inkPointOf(event, event.currentTarget)
+        const canvas = reader.mode === 'canvas'
+        const node = canvas && canvasPage.current !== null ? canvasPage.current : event.currentTarget
+        const point = canvas ? inkPointOfFree(event, node) : inkPointOf(event, node)
         if (point === null) return null
-        const rect = event.currentTarget.getBoundingClientRect()
+        const rect = node.getBoundingClientRect()
         annotBox.current = { width: rect.width, height: rect.height }
         return point
       }
@@ -8500,12 +8602,19 @@ window.__ModuleLoader__.load({
           return
         }
         const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
-        const x = box === undefined
-          ? Math.min(point[0], Math.max(0, 1 - fallbackWidth - 0.02))
-          : Math.max(0, Math.min(1 - 0.02, box.x))
-        const y = box === undefined ? Math.min(point[1], 1 - 0.04) : Math.max(0, Math.min(1 - 0.02, box.y))
-        const w = box === undefined ? fallbackWidth : Math.max(0.04, Math.min(1 - x, box.w))
-        const h = box === undefined ? 0.09 : Math.max(0.035, Math.min(1 - y, box.h))
+        // The canvas mode lets a note live outside the page; the page modes keep
+        // the box on the page, as they always have.
+        const canvas = reader.mode === 'canvas'
+        const x = canvas
+          ? (box === undefined ? point[0] : box.x)
+          : (box === undefined
+            ? Math.min(point[0], Math.max(0, 1 - fallbackWidth - 0.02))
+            : Math.max(0, Math.min(1 - 0.02, box.x)))
+        const y = canvas
+          ? (box === undefined ? point[1] : box.y)
+          : (box === undefined ? Math.min(point[1], 1 - 0.04) : Math.max(0, Math.min(1 - 0.02, box.y)))
+        const w = box === undefined ? fallbackWidth : Math.max(0.04, canvas ? box.w : Math.min(1 - x, box.w))
+        const h = box === undefined ? 0.09 : Math.max(0.035, canvas ? box.h : Math.min(1 - y, box.h))
         noteText.current = ''
         setNoteEdit({
           id: noteSeq.current,
@@ -9280,46 +9389,52 @@ window.__ModuleLoader__.load({
       // translated column has its own store (ColumnInk), so a note made beside
       // the translation does not travel back to the original. The draft
       // remembers which column opened it and only that column shows the editor.
+      // Notes are edited where they sit; the canvas captures pointers on a
+      // stage-sized layer, so both entry points share this one double-click.
+      const editNoteAt = (event, side) => {
+        if (annotTool !== '' && annotTool !== 'text' && annotTool !== 'select') return
+        const point = annotPoint(event)
+        if (point === null) return
+        const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+        if (found < 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        const entry = strokesRef.current[found]
+        const bounds = noteBox(entry)
+        noteSeq.current += 1
+        noteText.current = String(entry.text ?? '')
+        setSelection({ index: found, kind: 'text' })
+        setNoteEdit({
+          id: noteSeq.current,
+          page: reader.page,
+          side,
+          index: found,
+          x: bounds.x,
+          y: bounds.y,
+          w: bounds.w,
+          h: bounds.h,
+          text: noteText.current,
+          color: entry.color ?? annotColor,
+          fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+          fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
+          textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+          fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+          fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
+        })
+      }
+
       const annotLayer = side => h('div', {
         className: 'md-annot',
         'data-tool': annotTool,
-        onPointerDown: event => annotDown(event, side),
-        onPointerMove: annotMove,
-        onPointerUp: annotUp,
-        onPointerLeave: annotUp,
-        onDoubleClick: event => {
-          // Double-clicking a box edits it even while the text or select tool
-          // is active; the text div itself is pointer-transparent then.
-          if (annotTool !== '' && annotTool !== 'text' && annotTool !== 'select') return
-          const point = annotPoint(event)
-          if (point === null) return
-          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
-          if (found < 0) return
-          event.preventDefault()
-          event.stopPropagation()
-          const entry = strokesRef.current[found]
-          const bounds = noteBox(entry)
-          noteSeq.current += 1
-          noteText.current = String(entry.text ?? '')
-          setSelection({ index: found, kind: 'text' })
-          setNoteEdit({
-            id: noteSeq.current,
-            page: reader.page,
-            side,
-            index: found,
-            x: bounds.x,
-            y: bounds.y,
-            w: bounds.w,
-            h: bounds.h,
-            text: noteText.current,
-            color: entry.color ?? annotColor,
-            fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
-            fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
-            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-            fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
-          })
-        },
+        'data-canvas': reader.mode === 'canvas' ? 'true' : undefined,
+        // The canvas paints the same layer but captures input on a stage-sized
+        // overlay (below), because off-page marks need pointer coordinates
+        // outside the page box.
+        onPointerDown: reader.mode === 'canvas' ? undefined : event => annotDown(event, side),
+        onPointerMove: reader.mode === 'canvas' ? undefined : annotMove,
+        onPointerUp: reader.mode === 'canvas' ? undefined : annotUp,
+        onPointerLeave: reader.mode === 'canvas' ? undefined : annotUp,
+        onDoubleClick: event => editNoteAt(event, side),
       },
         h('svg', {
           className: 'md-annot-ink',
@@ -9368,6 +9483,7 @@ window.__ModuleLoader__.load({
             : null,
           strokes.map((stroke, index) => {
             if (stroke.kind === 'text' || stroke.kind === 'shape') return null
+            if (reader.mode !== 'canvas' && !entryInsidePage(stroke)) return null
             const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
             const points = shown.points ?? []
             if (points.some(point => point.length > 2)) {
@@ -9402,13 +9518,13 @@ window.__ModuleLoader__.load({
             })
           }),
           strokes.map((entry, index) => (entry.kind === 'shape'
-            ? h(ShapeMark, {
+            ? (reader.mode !== 'canvas' && !entryInsidePage(entry) ? null : h(ShapeMark, {
               key: `shape-${index}`,
               entry: resizeEntry !== null && resize !== null && resize.index === index
                 ? resizeEntry
                 : drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry,
               roughness: props.roughness,
-            })
+            }))
             : null)),
           shapeDraft === null
             ? null
@@ -9440,6 +9556,7 @@ window.__ModuleLoader__.load({
         // with the stored list, so a double-click edits the right entry.
         strokes.map((entry, index) => (entry.kind === 'text'
           ? (() => {
+            if (reader.mode !== 'canvas' && !entryInsidePage(entry)) return null
             const live = resizeEntry !== null && resize !== null && resize.index === index ? resizeEntry : entry
             const shown = drag !== null && drag.index === index ? translateEntry(live, drag.dx, drag.dy) : live
             const bounds = noteBox(shown)
@@ -9511,10 +9628,13 @@ window.__ModuleLoader__.load({
                   event.stopPropagation()
                   const annot = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
                   if (annot === undefined || annot === null) return
-                  const point = [
-                    Math.min(1, Math.max(0, (event.clientX - annot.left) / annot.width)),
-                    Math.min(1, Math.max(0, (event.clientY - annot.top) / annot.height)),
+                  const raw = [
+                    (event.clientX - annot.left) / annot.width,
+                    (event.clientY - annot.top) / annot.height,
                   ]
+                  const point = reader.mode === 'canvas'
+                    ? raw
+                    : [Math.min(1, Math.max(0, raw[0])), Math.min(1, Math.max(0, raw[1]))]
                   const original = selectedEntry.kind === 'text' ? { ...selectedEntry, ...box } : box
                   setResize({ index: selection.index, corner: item[0], start: point, original })
                   setResizeEntry(original)
@@ -9527,6 +9647,8 @@ window.__ModuleLoader__.load({
           : h(NoteEditor, {
             key: `note-${noteEdit.id}`,
             draft: noteEdit,
+            // The canvas lets a note box live off the page; page modes keep it on.
+            unbounded: reader.mode === 'canvas',
             onChange: changeNote,
             onSave: () => saveNote(noteEdit.id),
             onCancel: cancelNote,
@@ -9654,6 +9776,25 @@ window.__ModuleLoader__.load({
         onDelete: id => deleteQuestion(id),
         onRename: (id, name) => renameQuestion(id, name),
       })
+      // Page modes hide off-page marks; the canvas shows them. Tell the user
+      // there is something to see instead of silently dropping it.
+      const offPageMarks = reader.mode === 'canvas'
+        ? 0
+        : strokes.filter(entry => !entryInsidePage(entry)).length
+      // In canvas mode a stage-sized overlay captures the pointers, because ink
+      // may continue outside the page box. Questions stay page-area marks, so
+      // the question tool keeps its own page-sized layer instead.
+      const canvasCapture = reader.mode !== 'canvas' || annotTool === '' || annotTool === 'question'
+        ? null
+        : h('div', {
+          className: 'md-canvas-capture',
+          onPointerDown: event => annotDown(event, 'main'),
+          onPointerMove: annotMove,
+          onPointerUp: annotUp,
+          onPointerLeave: annotUp,
+          onPointerCancel: annotUp,
+          onDoubleClick: event => editNoteAt(event, 'main'),
+        })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -9772,6 +9913,22 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('canvas') ? 'true' : 'false',
+              title: format('readerModeCanvasHint'),
+              onClick: () => props.onMode('canvas'),
+            }, format('readerModeCanvas')),
+            modeOf('canvas')
+              ? h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+                title: format('canvasCenterHint'),
+                onClick: () => setCanvasPan({ x: 0, y: 0 }),
+              }, format('canvasCenter'))
+              : null,
+            offPageMarks > 0
+              ? h('span', { className: 'md-canvas-hint', title: format('canvasOffPageHint', { n: offPageMarks }) },
+                format('canvasOffPageHint', { n: offPageMarks }))
+              : null,
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': showBlocks ? 'true' : 'false',
               title: format('blocksHint'),
@@ -10065,6 +10222,10 @@ window.__ModuleLoader__.load({
                 onVisible: notifyVisible,
                 registerSlot,
                 onError: props.onError,
+                canvasPan: reader.mode === 'canvas' ? canvasPan : null,
+                onCanvasPan: setCanvasPan,
+                captureLayer: canvasCapture,
+                onPageNode: node => { canvasPage.current = node },
                 children: [
                   masksLayer,
                   annotLayer('main'),
@@ -11019,6 +11180,16 @@ window.__ModuleLoader__.load({
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
 .md-reader-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
+/* Canvas mode: the page rides on a pannable plane. Nothing scrolls: dragging
+   the empty stage moves the page, and the capture layer takes over when a tool
+   is picked so a stroke may continue outside the page. */
+.md-reader-stage[data-mode="canvas"] { position: relative; overflow: hidden; }
+.md-reader-canvas-plane[data-grab="true"] { cursor: grab; }
+.md-reader-canvas-plane[data-grab="true"]:active { cursor: grabbing; }
+.md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
+.md-annot[data-canvas="true"] { pointer-events: none; }
+.md-annot[data-canvas="true"] .md-annot-ink { overflow: visible; }
+.md-canvas-hint { font-size: 11.5px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
 .md-reader-single { display: flex; justify-content: safe center; flex: 0 0 auto; width: max-content; margin: 0 auto; }
 .md-reader-note { padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 /* The "已生成 …pdf（共 N tokens）" line is reference noise and used to steal a
@@ -11342,11 +11513,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [count, setCount] = useState(0)
       const [page, setPage] = useState(1)
       const [jump, setJump] = useState(0)
-      const [mode, setMode] = useState(() => readGlobalMode() ?? 'single')
+      const [mode, setMode] = useState(() => (readGlobalMode() === 'continuous' ? 'continuous' : 'single'))
+      // The shared mode this column last adopted. The reader's canvas mode is
+      // shown here as one page, and is not written back as `single`.
+      const modeAdopted = useRef(null)
       // One writer for the reading mode: the global preference follows every
       // change, so single/continuous is the same in the reader and this column.
       const changeMode = next => {
         if (next !== 'single' && next !== 'continuous') return
+        modeAdopted.current = next
         writeGlobalMode(next)
         setMode(next)
       }
@@ -12103,9 +12278,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [jump, mode, phase, scrollToPage])
 
       // Where this preview is, for the reader; its zoom never travels back. The
-      // page does not travel this way: it moves through setChapterPage.
+      // page does not travel this way: it moves through setChapterPage. The
+      // canvas mode is a reader-only view, so this column shows one page and
+      // does not publish the reader's canvas choice back as `single`.
       useEffect(() => {
         if (!started || bookId === '' || code === '') return
+        if (modeAdopted.current === 'canvas') return
         syncView(bookId, code, { mode }, 'side')
       }, [started, bookId, code, mode])
 
@@ -12122,7 +12300,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             if (jumpTo) setJump(value => value + 1)
           }
           if (state.scale === null || typeof state.scale === 'number') setFollowScale(state.scale)
-          if (state.mode === 'single' || state.mode === 'continuous') setMode(state.mode)
+          if (state.mode === 'single' || state.mode === 'continuous') {
+            modeAdopted.current = state.mode
+            setMode(state.mode)
+          } else if (state.mode === 'canvas') {
+            // The reader is on the plane; this column keeps a readable page and
+            // must not write `single` back over the reader's canvas mode.
+            modeAdopted.current = 'canvas'
+            setMode('single')
+          }
           if (state.variant === '' || state.variant === 'translated') setShownVariant(state.variant)
           if (typeof state.docRev === 'number') setDocRev(current => (state.docRev > current ? state.docRev : current))
           const annot = Number(state.annotRev) || 0
@@ -12183,9 +12369,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return 1
         }
       })()
-      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape')
-      const shapes = strokes.filter(entry => entry.kind === 'shape')
-      const notes = strokes.filter(entry => entry.kind === 'text')
+      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape' && entryInsidePage(entry))
+      const shapes = strokes.filter(entry => entry.kind === 'shape' && entryInsidePage(entry))
+      const notes = strokes.filter(entry => entry.kind === 'text' && entryInsidePage(entry))
       const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'aria-hidden': true },
         h('svg', {
           className: 'md-annot-ink',
@@ -13674,7 +13860,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [])
 
       const readerMode = useCallback(mode => {
-        if (mode === 'single' || mode === 'continuous') writeGlobalMode(mode)
+        if (mode === 'single' || mode === 'continuous' || mode === 'canvas') writeGlobalMode(mode)
         setReader(previous => previous === null
           ? null
           : { ...previous, mode, jump: (previous.jump ?? 0) + 1 })
@@ -13742,7 +13928,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               return { ...previous, page: next, jump: jumpTo ? (previous.jump ?? 0) + 1 : (previous.jump ?? 0) }
             })
           }
-          if (state.mode === 'single' || state.mode === 'continuous') {
+          if (state.mode === 'single' || state.mode === 'continuous' || state.mode === 'canvas') {
             setReader(previous => (previous === null || previous.mode === state.mode
               ? previous
               : { ...previous, mode: state.mode, jump: (previous.jump ?? 0) + 1 }))
@@ -14183,7 +14369,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 scale: rememberedWidth !== null
                   ? rememberedWidth.scale
                   : (typeof storedReader.scale === 'number' ? storedReader.scale : null),
-                mode: readGlobalMode() ?? (storedReader.mode === 'continuous' ? 'continuous' : 'single'),
+                mode: readGlobalMode() ?? (storedReader.mode === 'canvas' ? 'canvas' : storedReader.mode === 'continuous' ? 'continuous' : 'single'),
                 jump: 0,
                 phase: 'loading',
                 error: '',

@@ -24,7 +24,7 @@ const MAX_BOOKS = 400
 const SAFE_CODE = /^[\w-]{1,16}$/
 
 /** Reading modes the reader offers. */
-const MODES = new Set(['single', 'continuous'])
+const MODES = new Set(['single', 'continuous', 'canvas'])
 
 /**
  * Keep the reader's last position if it is usable.
