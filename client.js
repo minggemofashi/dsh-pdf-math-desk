@@ -1221,6 +1221,8 @@ window.__ModuleLoader__.load({
       printBlocked: '浏览器拒绝了打印对话框；可在打印预览里按 Ctrl+P',
       close: '关闭',
       officeArtifactHint: 'Office 文件不在插件内预览；请在 DSH 文件预览或 Office 中打开（文件就在本章产物目录）',
+      officeOpening: '正在通过 DSH 打开这个文件…',
+      officeOpenFailed: '无法在 DSH 中打开；可在本章产物目录用 Office 打开',
       workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
       workspaceTitle: '需要工作区',
       workspaceBody: '会话需要一个工作区来存放。工作区只保存对话，不会移动、复制或删除书库文件。',
@@ -1896,6 +1898,8 @@ window.__ModuleLoader__.load({
       printBlocked: 'The browser refused the print dialog; press Ctrl+P inside the preview',
       close: 'Close',
       officeArtifactHint: 'Office files are not previewed inside the plugin; open them in the DSH file preview or in Office (the file is in this chapter’s product folder)',
+      officeOpening: 'Opening this file through DSH…',
+      officeOpenFailed: 'DSH could not open it; open the file from this chapter’s product folder in Office',
       workflowActiveHint: 'Enabled; click this card again to return to General.',
       workspaceTitle: 'Workspace required',
       workspaceBody: 'A conversation needs a workspace. The workspace stores conversations only; it never moves, copies or deletes library files.',
@@ -13801,7 +13805,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 /* Add-library page: the old heavy focus boxes were louder than the form. */
 .md-library, .md-library:focus, .md-library:focus-visible { outline: none; }
 .md-library-active { border-color: transparent; box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary); }
-.md-add-row input:focus, .md-add-row input:focus-visible, .md-add-row .md-input:focus, .md-add-row .md-input:focus-visible { outline: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, var(--dsw-alias-border-l3)); }
+.md-add-row input:focus, .md-add-row input:focus-visible, .md-add-row .md-input:focus, .md-add-row .md-input:focus-visible { outline: none; box-shadow: none; border-color: transparent; }
 .md-add-row input, .md-add-row .md-input { border-color: var(--dsw-alias-border-l2); }
 `
 
@@ -16539,6 +16543,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [showNotice])
 
+      const chapterSessionId = (bookId, code) => {
+        const groups = sessionIndex.byChapter.get(`${bookId}|${code}`)
+        if (groups === undefined || groups === null) return ''
+        for (const list of [groups.qa, groups.extract, groups.exercise, groups.general]) {
+          if (Array.isArray(list) && list.length > 0 && typeof list[0].id === 'string') return list[0].id
+        }
+        return ''
+      }
+
       const openArtifact = useCallback((chapter, item) => {
         if (book === null) return
         if (item.kind === 'pdf') {
@@ -16552,10 +16565,31 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           })
           return
         }
-        // Word documents are shown by DSH/Office, not by this plugin: point at
-        // the file instead of pretending to render it.
+        // Word documents go to DSH's own document preview: the preview tab
+        // speaks dsh-resource session addresses, and the chapter's existing
+        // conversation gives us a session that can resolve the artifact path.
         if (item.kind === 'office') {
-          showNotice(format('officeArtifactHint'))
+          const sessionId = chapterSessionId(book.id, chapter.code)
+          if (sessionId === '') {
+            showNotice(format('officeArtifactHint'))
+            return
+          }
+          showNotice(format('officeOpening'))
+          const query = new URLSearchParams({ book: book.id, code: chapter.code, name: item.name })
+          void request('GET', `artifact-ref?${query.toString()}`).then(payload => {
+            const rel = payload !== null && payload !== undefined && typeof payload.rel === 'string' ? payload.rel : ''
+            const sidebar = clientContext === null ? null : clientContext.get('sidebarRight')
+            if (rel === '' || sidebar === null || sidebar === undefined || typeof sidebar.openResource !== 'function') {
+              showNotice(format('officeOpenFailed'))
+              return
+            }
+            const path = rel.split('/').map(segment => encodeURIComponent(segment)).join('/')
+            try {
+              sidebar.openResource(`dsh-resource://file/session/${encodeURIComponent(sessionId)}/${path}`, { destination: 'sidebar' })
+            } catch {
+              showNotice(format('officeOpenFailed'))
+            }
+          }).catch(() => showNotice(format('officeOpenFailed')))
           return
         }
         const token = previewToken.current + 1

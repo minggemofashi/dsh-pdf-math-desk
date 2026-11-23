@@ -2131,6 +2131,33 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/artifact-ref`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const name = url.searchParams.get('name') ?? ''
+        if (name === '' || name.includes('/') || name.includes('\\') || name.includes('..')) {
+          fail(response, 400, 'bad-name', '文件名不合法')
+          return
+        }
+        const library = await activeLibrary()
+        const file = join(chapterArtifactDir(library, match.book.id, match.chapter.code), name)
+        const info = await stat(file).catch(() => null)
+        if (info === null || info.isFile() !== true) {
+          fail(response, 404, 'not-found', '这个文件不存在')
+          return
+        }
+        const rel = relative(library.libraryDir, file)
+        sendJson(response, 200, { ok: true, rel: rel.replace(/\\/g, '/') })
+        return
+      }
+
       if (path === `${PREFIX}/pdf-ref`) {
         if (request.method !== 'GET') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')

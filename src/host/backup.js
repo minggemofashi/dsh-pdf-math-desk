@@ -5,7 +5,9 @@
  * @module dsh-pdf-workbench/backup
  */
 
+import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -180,6 +182,53 @@ export async function buildManifest(options) {
   return manifest
 }
 
+const PYTHON_ZIP = `import os, sys, zipfile
+root, out, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+compression = zipfile.ZIP_STORED if mode == 'store' else zipfile.ZIP_DEFLATED
+with zipfile.ZipFile(out, 'w', compression) as archive:
+    for base, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            relative = os.path.relpath(path, root).replace(os.sep, '/')
+            archive.write(path, relative)
+`
+
+/**
+ * Pack with Python's zipfile when an interpreter is available; Node's writer
+ * stays the fallback so a machine without Python (or a blocked spawn) still
+ * produces a valid archive.
+ * @param {{ root: string, outPath: string, compress?: boolean }} options - tree and destination.
+ * @returns {Promise<{ bytes: number } | null>} the packed size, or null when unavailable.
+ */
+async function packWithPython(options) {
+  const temporary = `${options.outPath}.${process.pid}.pyzip`
+  const script = `${temporary}.py`
+  await mkdir(dirname(options.outPath), { recursive: true })
+  await writeFile(script, PYTHON_ZIP, 'utf8')
+  const candidates = process.platform === 'win32'
+    ? [['py', ['-3', script, options.root, temporary, options.compress === false ? 'store' : 'deflate']], ['python', [script, options.root, temporary, options.compress === false ? 'store' : 'deflate']]]
+    : [['python3', [script, options.root, temporary, options.compress === false ? 'store' : 'deflate']], ['python', [script, options.root, temporary, options.compress === false ? 'store' : 'deflate']]]
+  try {
+    for (const [command, args] of candidates) {
+      try {
+        await promisify(execFile)(command, args, { windowsHide: true, timeout: 120000 })
+        const info = await stat(temporary)
+        if (info.isFile() === true && info.size > 0) {
+          await rename(temporary, options.outPath)
+          return { bytes: info.size }
+        }
+      } catch {
+        // Try the next interpreter name.
+      }
+    }
+    return null
+  } finally {
+    await rm(script, { force: true })
+    await rm(temporary, { force: true })
+  }
+}
+
 /**
  * Pack a staging tree into a ZIP, manifest first.
  * @param {{ root: string, outPath: string, compress?: boolean, meta?: object }} options - source tree and destination.
@@ -191,6 +240,8 @@ export async function packDirectory(options) {
   for (const file of manifest.files) {
     entries.push({ name: file.path, data: await readFile(join(options.root, file.path)) })
   }
+  const python = await packWithPython({ root: options.root, outPath: options.outPath, compress: options.compress })
+  if (python !== null) return { outPath: options.outPath, bytes: python.bytes, files: entries.length }
   const bytes = writeZip({ entries, compress: options.compress !== false })
   await mkdir(dirname(options.outPath), { recursive: true })
   const temporary = `${options.outPath}.${process.pid}.tmp`
