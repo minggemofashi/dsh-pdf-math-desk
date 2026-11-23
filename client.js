@@ -3743,6 +3743,20 @@ window.__ModuleLoader__.load({
     })
 
     /**
+     * Keep the wheel scrolling the page when a pointer layer sits above the
+     * scroller. The layer is a sibling of the stage (so it can cover the
+     * viewport), which means the wheel would not reach the scroller by itself.
+     * @param {WheelEvent} event - the wheel event.
+     * @returns {void}
+     */
+    function forwardWheel(event) {
+      const host = event.currentTarget === null || event.currentTarget === undefined ? null : event.currentTarget.parentElement
+      const scroller = host === null ? null : host.querySelector('.md-reader-stage')
+      if (scroller === null || typeof scroller.scrollBy !== 'function') return
+      scroller.scrollBy({ top: event.deltaY, left: event.deltaX })
+    }
+
+    /**
      * The shared plane's dashed edge with one "+" square per side. Used by the
      * reader and the right preview: the plane is chapter-wide, so both panes
      * show the same edge and the same handles.
@@ -8420,6 +8434,21 @@ window.__ModuleLoader__.load({
       // way by default). The clamp follows the zoom because it uses the painted
       // canvas size.
       const planeMargins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
+      // Continuous mode's blank margins at the two ends of the column, in pixels.
+      const padTop = Math.round(pageHeight * planeMargins.top)
+      const padBottom = Math.round(pageHeight * planeMargins.bottom)
+      // The top pad sits above every page, so growing it pushes the whole column
+      // down. Compensate the scroll so the page being read stays where it is
+      // (without this, opening a chapter scrolled to page N lands on blank paper
+      // the moment the pad is measured).
+      const lastPadTop = useRef(0)
+      useEffect(() => {
+        const node = stage.current
+        const delta = padTop - lastPadTop.current
+        lastPadTop.current = padTop
+        if (node === null || delta === 0) return
+        node.scrollTop += delta
+      }, [padTop])
       const panLimit = () => {
         const node = canvas.current
         const rect = node === null ? null : node.getBoundingClientRect()
@@ -8502,8 +8531,8 @@ window.__ModuleLoader__.load({
           overlayFor: props.overlayFor,
           overlayPage: props.overlayPage === undefined ? props.page : props.overlayPage,
           // Blank plane at the two ends of the column, sized like a page.
-          topPad: Math.round(pageHeight * planeMargins.top),
-          bottomPad: Math.round(pageHeight * planeMargins.bottom),
+          topPad: padTop,
+          bottomPad: padBottom,
         })
         : h('div', {
           className: 'md-reader-single',
@@ -10719,6 +10748,7 @@ window.__ModuleLoader__.load({
           className: 'md-canvas-capture',
           'data-tool': annotTool,
           onPointerDown: event => annotDown(event, 'main'),
+          onWheel: forwardWheel,
           onPointerMove: annotMove,
           onPointerUp: annotUp,
           onPointerLeave: annotUp,
@@ -12423,7 +12453,7 @@ window.__ModuleLoader__.load({
 .md-side:hover .md-side-handle, .md-side-handle:focus-visible { opacity: 1; }
 .md-side[data-toolbar='hidden'] .md-side-body .md-reader-stage { padding-top: 32px; }
 .md-side-gap { flex: 1 1 auto; }
-.md-side-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.md-side-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
 /* Horizontal padding must stay in step with the width minus twenty in
    SidePdfView's measurement; the stable gutter keeps that measurement from
    moving when the page grows a scrollbar. */
@@ -13466,6 +13496,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           'data-tool': tool,
           ref: boxRef,
           onPointerDown: editDown,
+          onWheel: forwardWheel,
           onPointerMove: editMove,
           onPointerUp: editUp,
           onPointerLeave: editUp,
@@ -13640,6 +13671,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           className: 'md-canvas-capture',
           'data-tool': tool,
           onPointerDown: editDown,
+          onWheel: forwardWheel,
           onPointerMove: editMove,
           onPointerUp: editUp,
           onPointerLeave: editUp,
@@ -13876,7 +13908,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onVisible,
               registerSlot,
               onError,
-              captureLayer: sideCapture,
               pan: mode === 'single' ? sidePan : null,
               margins: planeMargins,
               onPan: setSidePan,
@@ -13959,6 +13990,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               disabled: count === 0 || phase !== 'ready',
               onClick: () => setGotoOpen(true),
             }, count === 0 ? String(page) : `${page} / ${count}`),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-btn md-btn-small',
+            title: format('readerNext'),
+            'aria-label': format('readerNext'),
+            disabled: count === 0 || page >= count || phase !== 'ready',
+            onClick: () => goPage(page + 1),
+          }, '›'),
+          // The page number stays between its two arrows; the question jump
+          // comes after them instead of splitting the pair.
           h(KitSelect, {
             className: 'md-question-jump',
             value: '',
@@ -13974,14 +14015,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               flashQuestion(found.id)
             },
           }),
-          h(KitButton, {
-            type: 'button',
-            className: 'md-btn md-btn-small',
-            title: format('readerNext'),
-            'aria-label': format('readerNext'),
-            disabled: count === 0 || page >= count || phase !== 'ready',
-            onClick: () => goPage(page + 1),
-          }, '›'),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
@@ -14085,7 +14118,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: target === null,
             onClick: event => openSideMenu(event),
           }, '⋯')),
-        h('div', { className: 'md-side-body' }, body),
+        // The pointer layer lives beside the scroller, not inside it: it must
+        // cover the visible preview at any scroll offset, and it must not be
+        // pushed around by the stage's own positioning.
+        h('div', { className: 'md-side-body' }, body, sideCapture),
         h('div', { className: 'md-rail-tab md-side-rail-tab', 'data-side': 'right', 'aria-hidden': true }, '‹'),
         h('div', {
           className: 'md-rail-wrap md-side-rail-wrap',
