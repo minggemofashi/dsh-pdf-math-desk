@@ -1029,24 +1029,6 @@ window.__ModuleLoader__.load({
       settingsTabAbout: '关于',
       settingsNotesTitle: '笔记与备份',
       settingsNotesHint: '标注与框选会自动镜像到 <库根>\\.pdfdesk\\annotations\\；清浏览器数据或换机器后，打开该章自动恢复',
-      cacheLabel: '章节缓存',
-      cacheStatusReady: '已就绪',
-      cacheStatusPending: '待生成',
-      cacheStatusStale: '已过期',
-      cacheStatusMissing: '未生成',
-      cacheStatusFailed: '生成失败',
-      cacheChars: '{n} 字',
-      cacheView: '查看 brief',
-      cacheHide: '收起 brief',
-      cacheGenerate: '生成缓存',
-      cacheRebuild: '重建缓存',
-      cacheRebuilt: '已重建章节缓存：下一次会话会生成新 brief',
-      cacheFailed: '章节缓存操作失败',
-      cacheClearAll: '清除章节缓存',
-      cacheClearAllAction: '清除',
-      cacheClearAllHint: '删除书库里所有章节的 brief（.pdfdesk/cache）；PDF、产物和批注不受影响',
-      cacheClearAllConfirm: '清除所有章节缓存？PDF、产物和批注不受影响。',
-      cacheAllCleared: '已清除 {n} 个章节的缓存',
       lastPageLabel: '上次阅读',
       lastPageAt: '读到第 {n} 页',
       lastPageHint: '上次阅读停在这一页',
@@ -1647,24 +1629,6 @@ window.__ModuleLoader__.load({
       settingsTabAbout: 'About',
       settingsNotesTitle: 'Notes and backup',
       settingsNotesHint: 'Ink and boxes are mirrored into <library>\\.pdfdesk\\annotations\\ automatically and travel with the library; a cleared browser or a new machine gets them back on open.',
-      cacheLabel: 'Chapter cache',
-      cacheStatusReady: 'Ready',
-      cacheStatusPending: 'Pending',
-      cacheStatusStale: 'Stale',
-      cacheStatusMissing: 'Not built',
-      cacheStatusFailed: 'Failed',
-      cacheChars: '{n} chars',
-      cacheView: 'View brief',
-      cacheHide: 'Hide brief',
-      cacheGenerate: 'Build cache',
-      cacheRebuild: 'Rebuild cache',
-      cacheRebuilt: 'Chapter cache rebuilt: the next conversation writes a new brief',
-      cacheFailed: 'Chapter cache operation failed',
-      cacheClearAll: 'Clear chapter cache',
-      cacheClearAllAction: 'Clear',
-      cacheClearAllHint: 'Delete every chapter brief in this library (.pdfdesk/cache); PDFs, produced files and annotations stay.',
-      cacheClearAllConfirm: 'Clear every chapter cache? PDFs, produced files and annotations stay.',
-      cacheAllCleared: 'Cleared the cache of {n} chapters',
       lastPageLabel: 'Last read',
       lastPageAt: 'Page {n}',
       lastPageHint: 'The reader stopped on this page',
@@ -12271,12 +12235,6 @@ window.__ModuleLoader__.load({
 .md-detail-key { color: var(--dsw-alias-label-secondary); }
 .md-detail-value { color: var(--dsw-alias-label-primary); word-break: break-all; }
 .md-detail-actions { display: flex; gap: 8px; }
-.md-cache-line { row-gap: 4px; }
-.md-cache-state[data-status="ready"] { color: var(--dsw-alias-state-success-primary, var(--dsw-alias-label-primary)); }
-.md-cache-state[data-status="pending"],
-.md-cache-state[data-status="stale"],
-.md-cache-state[data-status="failed"] { color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-primary)); }
-.md-cache-brief { max-height: 260px; overflow: auto; margin: 0 0 6px; padding: 8px 10px; white-space: pre-wrap; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 8px; }
 .md-section-bar { display: flex; align-items: center; gap: 12px; }
 .md-detail-empty { color: var(--dsw-alias-label-secondary); }
 .md-sessions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l2); }
