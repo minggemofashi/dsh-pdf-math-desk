@@ -785,6 +785,10 @@ window.__ModuleLoader__.load({
       readerFit: '适应宽度',
       readerFitScreen: '适应屏幕',
       readerBack: '返回章节',
+      readerBackHint: '回到本章目录（阅读进度会保留）',
+      readerPageHint: '输入页码后回车跳转',
+      readerModeSingleHint: '单页：一页一屏，可在页外空白处平移画布',
+      readerModeContinuousHint: '连续：纵向滚动整章，上下留白可书写',
       readerShelf: '书架',
       readerShelfHint: '回到书架',
       readerOf: '/ {n}',
@@ -1089,6 +1093,7 @@ window.__ModuleLoader__.load({
       fontImported: '字体已导入并启用',
       fontRemovedNote: '字体已删除，手写体回退到系统楷体',
       fontRedownload: '重新下载',
+      fontDownloadConfirm: '下载小赖字体约 22 MB（来自上游 OFL 发布），继续？',
       fontDownload: '下载',
       fontImport: '导入本地字体',
       fontRemove: '删除',
@@ -1126,6 +1131,8 @@ window.__ModuleLoader__.load({
       dataBookSubdir: '子目录（可选）',
       dataBookSubdirPh: '例如：新书',
       dataBookImport: '导入书籍包',
+      dataOverwriteConfirm: '覆盖策略会替换同名文件（Host 会先做 pre-import 快照），继续？',
+      bookOverwriteConfirm: '覆盖策略会替换目标目录里的同名 PDF，继续？',
       dataBookReport: '书籍包：导入 {imported}，改名 {renamed}，跳过 {skipped}，提醒 {warnings}',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
@@ -1451,6 +1458,10 @@ window.__ModuleLoader__.load({
       readerFit: 'Fit width',
       readerFitScreen: 'Fit screen',
       readerBack: 'Back to the chapter',
+      readerBackHint: 'Return to this chapter’s pages; reading progress is kept',
+      readerPageHint: 'Type a page number and press Enter to jump',
+      readerModeSingleHint: 'Single page: one page per screen; the plane can be panned',
+      readerModeContinuousHint: 'Continuous: scroll the whole chapter; the top/bottom margins are writable',
       readerShelf: 'Shelf',
       readerShelfHint: 'Back to the shelf (the book list)',
       readerOf: '/ {n}',
@@ -1756,6 +1767,7 @@ window.__ModuleLoader__.load({
       fontImported: 'Font imported and enabled',
       fontRemovedNote: 'Font removed — handwriting falls back to the system Kai face',
       fontRedownload: 'Download again',
+      fontDownloadConfirm: 'Download the Xiaolai font (~22 MB, upstream OFL release)?',
       fontDownload: 'Download',
       fontImport: 'Import local font',
       fontRemove: 'Remove',
@@ -1793,6 +1805,8 @@ window.__ModuleLoader__.load({
       dataBookSubdir: 'Subfolder (optional)',
       dataBookSubdirPh: 'e.g. New book',
       dataBookImport: 'Import book archive',
+      dataOverwriteConfirm: 'Overwrite replaces files with the same name (a pre-import snapshot is taken first). Continue?',
+      bookOverwriteConfirm: 'Overwrite replaces same-named PDFs in the target folder. Continue?',
       dataBookReport: 'Book archive: imported {imported}, renamed {renamed}, skipped {skipped}, warnings {warnings}',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
@@ -3898,6 +3912,15 @@ window.__ModuleLoader__.load({
       // host control.
       const nativeOnly = /(?:^|\s)(md-card|md-collection|md-row|md-picker-row|md-file|md-note-style-btn|md-note-color|md-rail-btn|md-icon-btn|md-crumb|md-crumb-current|md-btn-ghost)(?:\s|$)/.test(className)
       const { variant: _variant, size: _size, hostClassName: _hostClassName, className: _className, children, ...rest } = props
+      // Every text button carries a hover hint even when the caller forgot one:
+      // the aria-label wins, otherwise the visible text is the tooltip. Symbol
+      // buttons keep theirs explicit (a lone "‹" is not a useful hint).
+      const childText = typeof children === 'string' || typeof children === 'number' ? String(children).trim() : ''
+      const hint = props.title !== undefined
+        ? props.title
+        : typeof props['aria-label'] === 'string' && props['aria-label'] !== ''
+          ? props['aria-label']
+          : childText.length > 1 ? childText : undefined
       const HostButton = ui !== null && ui !== undefined && ui.Button !== undefined
         && ui.Button !== null
         && (typeof ui.Button === 'function' || (typeof ui.Button === 'object' && ui.Button.$$typeof))
@@ -3911,7 +3934,7 @@ window.__ModuleLoader__.load({
           size,
           className: [hostClasses, props.hostClassName].filter(Boolean).join(' '),
           disabled: props.disabled === true,
-          title: props.title,
+          title: hint,
           type: props.type === undefined ? 'button' : props.type,
           onClick: props.onClick,
         }, children)
@@ -3922,7 +3945,7 @@ window.__ModuleLoader__.load({
         type: props.type === undefined ? 'button' : props.type,
         className: props.className,
         disabled: props.disabled === true,
-        title: props.title,
+        title: hint,
         onClick: props.onClick,
       }, children)
     })
@@ -4311,6 +4334,8 @@ window.__ModuleLoader__.load({
         }
       }
       const runDataImport = async () => {
+        if (dataStrategy === 'overwrite' && typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('dataOverwriteConfirm'))) return
         setDataBusy('import')
         try {
           const payload = await request('POST', 'backup', {
@@ -4331,6 +4356,8 @@ window.__ModuleLoader__.load({
       const [bookSubdir, setBookSubdir] = useState('')
       const [bookReport, setBookReport] = useState(null)
       const runBookImport = async () => {
+        if (dataStrategy === 'overwrite' && typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('bookOverwriteConfirm'))) return
         setDataBusy('book')
         setBookReport(null)
         try {
@@ -4488,7 +4515,11 @@ window.__ModuleLoader__.load({
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: fontBusy === true || font === null,
-              onClick: () => fontAction('download'),
+              onClick: () => {
+                if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+                  && !window.confirm(format('fontDownloadConfirm'))) return
+                void fontAction('download')
+              },
             }, font !== null && font.installed ? format('fontRedownload') : format('fontDownload')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
@@ -11596,43 +11627,46 @@ window.__ModuleLoader__.load({
             title: format('readerShelfHint'), 'aria-label': format('readerShelf'),
             onClick: props.onShelf,
           }, `⌂ ${format('readerShelf')}`),
-          h(KitButton, { type: 'button', className: 'md-btn md-btn-small md-btn-ghost', onClick: props.onBack }, `‹ ${format('readerBack')}`),
+          h(KitButton, { type: 'button', className: 'md-btn md-btn-small md-btn-ghost', title: format('readerBackHint'), 'aria-label': format('readerBack'), onClick: props.onBack }, `‹ ${format('readerBack')}`),
           h('div', { className: 'md-reader-titles' },
             h('span', { className: 'md-reader-name', title: label }, label),
-            sub === '' ? null : h('span', { className: 'md-reader-sub' }, sub)
+            sub === '' ? null : h('span', { className: 'md-reader-sub', title: sub }, sub)
           ),
           h('div', { className: 'md-reader-tools' },
-            h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small',
-              disabled: reader.page <= 1, title: format('readerFirstHint'), 'aria-label': format('readerFirst'),
-              onClick: () => props.onPage(1),
-            }, '⇤'),
-            h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small',
-              disabled: reader.page <= 1, title: format('readerPrev'), 'aria-label': format('readerPrev'),
-              onClick: props.onPrev,
-            }, '‹'),
-            h(KitInput, {
-              className: 'md-reader-page',
-              ref: pageInput,
-              type: 'number', min: 1, max: reader.count > 0 ? reader.count : undefined,
-              value: pageText,
-              'aria-label': format('readerPage'),
-              onChange: value => setPageText(value),
-              onKeyDown: event => {
-                if (event.key !== 'Enter') return
-                event.preventDefault()
-                commitPage()
-              },
-              onBlur: commitPage,
-            }),
-            h('span', { className: 'md-reader-of' }, format('readerOf', { n: reader.count > 0 ? reader.count : '?' })),
-            h(KitButton, {
-              type: 'button', className: 'md-btn md-btn-small',
-              disabled: reader.count === 0 || reader.page >= reader.count,
-              title: format('readerNext'), 'aria-label': format('readerNext'),
-              onClick: props.onNext,
-            }, '›'),
+            h('div', { className: 'md-reader-pager' },
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: reader.page <= 1, title: format('readerFirstHint'), 'aria-label': format('readerFirst'),
+                onClick: () => props.onPage(1),
+              }, '⇤'),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: reader.page <= 1, title: format('readerPrev'), 'aria-label': format('readerPrev'),
+                onClick: props.onPrev,
+              }, '‹'),
+              h(KitInput, {
+                className: 'md-reader-page',
+                ref: pageInput,
+                type: 'number', min: 1, max: reader.count > 0 ? reader.count : undefined,
+                value: pageText,
+                title: format('readerPageHint'),
+                'aria-label': format('readerPage'),
+                onChange: value => setPageText(value),
+                onKeyDown: event => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  commitPage()
+                },
+                onBlur: commitPage,
+              }),
+              h('span', { className: 'md-reader-of' }, format('readerOf', { n: reader.count > 0 ? reader.count : '?' })),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: reader.count === 0 || reader.page >= reader.count,
+                title: format('readerNext'), 'aria-label': format('readerNext'),
+                onClick: props.onNext,
+              }, '›')
+            ),
             h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
             h(KitButton, {
               type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
@@ -11690,10 +11724,12 @@ window.__ModuleLoader__.load({
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('single') ? 'true' : 'false',
+              title: format('readerModeSingleHint'),
               onClick: () => props.onMode('single'),
             }, format('readerModeSingle')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': modeOf('continuous') ? 'true' : 'false',
+              title: format('readerModeContinuousHint'),
               onClick: () => props.onMode('continuous'),
             }, format('readerModeContinuous')),
             h(KitButton, {
@@ -12726,6 +12762,10 @@ window.__ModuleLoader__.load({
 .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
 .md-btn:disabled { opacity: .55; cursor: default; }
 .md-btn-small { font-size: 12px; padding: 4px 10px; }
+.md-btn { border-radius: 9px; }
+.md-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.md-btn:focus-visible, .md-icon-btn:focus-visible, .md-rail-btn:focus-visible, .md-side-goto:focus-visible, .md-reader-page:focus-visible, .md-reader-lang:focus-visible { outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); outline-offset: 1px; }
+.md-btn[aria-pressed="true"]:not(.md-btn-ghost) { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 38%, var(--dsw-alias-border-l2)); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-layer-2)); }
 .md-btn-ghost { background: transparent; border-color: transparent; }
 .md-btn-ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; }
 .md-crumbs { flex: none; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
@@ -13025,6 +13065,12 @@ window.__ModuleLoader__.load({
 .md-reader-sub { font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-reader-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .md-reader-tools .md-btn { white-space: nowrap; flex: 0 0 auto; }
+.md-reader-pager { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.md-reader-pager .md-btn { border: 0; background: transparent; height: 26px; min-width: 26px; padding: 0 6px; border-radius: 7px; color: var(--dsw-alias-label-secondary); box-shadow: none; }
+.md-reader-pager .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.md-reader-pager .md-reader-page { width: 46px; height: 26px; border: 0; background: transparent; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
+.md-reader-pager .md-reader-page:hover, .md-reader-pager .md-reader-page:focus { background: var(--dsw-alias-bg-layer-2); }
+.md-reader-of { padding-right: 6px; font-size: 11px; }
 .md-reader-page { width: 64px; font: inherit; font-size: 12.5px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; padding: 3px 6px; }
 .md-reader-of { font-size: 12px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
@@ -13140,7 +13186,9 @@ window.__ModuleLoader__.load({
 .md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within, .md-rail[data-open="true"] { opacity: 1; transform: none; pointer-events: auto; }
 .md-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .md-rail-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); }
+.md-rail-btn { width: 34px; height: 34px; border-radius: 10px; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.md-rail-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); color: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent); }
+.md-rail-btn:hover { box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3); }
 .md-rail-btn:disabled { opacity: .35; cursor: default; }
 .md-rail-sep { height: 1px; margin: 3px 4px; background: var(--dsw-alias-border-l2); }
 .md-selection-panel { position: absolute; z-index: 30; width: min(280px, 86vw); display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; box-shadow: var(--dsw-elevation-prominent); }
@@ -13267,7 +13315,9 @@ window.__ModuleLoader__.load({
 .md-reader-ghost { justify-content: center; opacity: .55; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.md-reader-modes { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.md-reader-modes { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.md-reader-modes .md-btn { border: 0; background: transparent; height: 26px; padding: 0 9px; border-radius: 7px; color: var(--dsw-alias-label-secondary); }
+.md-reader-modes .md-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); box-shadow: none; }
 .md-reader-subbar .md-btn { white-space: nowrap; flex: 0 0 auto; }
 .md-reader-export { min-width: 92px; font-size: 12px; }
 .md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--dsw-alias-border-l4); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
@@ -13293,6 +13343,11 @@ window.__ModuleLoader__.load({
 .md-side { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; background: var(--dsw-alias-bg-base); }
 .md-side-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
 .md-side-bar .md-btn { white-space: nowrap; flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
+.md-side-pager { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.md-side-pager .md-btn { border: 0; background: transparent; height: 26px; min-width: 26px; padding: 0 6px; border-radius: 7px; font-size: 12px; }
+.md-side-pager .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.md-side-pager .md-side-count { min-width: 64px; font-size: 11.5px; }
+.md-side-pager .md-side-goto { width: 56px; height: 24px; }
 .md-side-count { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* The page number doubles as the "go to page" input: a button that turns into
    a box on click, so the jump never depends on window.prompt. */
@@ -14720,6 +14775,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           }, '⋯')
           : null,
         toolsHidden ? null : h('div', { className: 'md-side-bar' },
+          h('div', { className: 'md-side-pager' },
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
@@ -14769,6 +14825,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             disabled: count === 0 || page >= count || phase !== 'ready',
             onClick: () => goPage(page + 1),
           }, '›'),
+          ),
           // The page number stays between its two arrows; the question jump
           // comes after them instead of splitting the pair.
           h(KitSelect, {
