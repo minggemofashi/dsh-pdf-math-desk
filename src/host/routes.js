@@ -10,6 +10,8 @@
  *   GET  /pdfdesk/context          how full one session's context is
  *   GET  /pdfdesk/chapter-cache    one chapter's brief cache state and text
  *   POST /pdfdesk/chapter-cache    request a brief, forget one, or forget all
+ *   GET  /pdfdesk/questions        one chapter's page-mark questions
+ *   PUT  /pdfdesk/questions        replace one chapter's questions
  *   POST /pdfdesk/digest           summarize a chapter's conversations
  *   GET  /pdfdesk/vendor/<file>    the reader's pdf.js build
  *   POST /pdfdesk/links            attach an existing session to a chapter
@@ -31,6 +33,7 @@ import { basename, dirname, extname, isAbsolute, join, relative } from 'node:pat
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
 import { pathSegment, readAnnotations, seedAnnotations, writeAnnotations } from './annotations.js'
 import { clearAllChapterCache, clearChapterCache, prepareChapterCache, readChapterCache } from './chapter-cache.js'
+import { readQuestions, writeQuestions } from './questions.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
 import { loadCatalog } from './index-source.js'
@@ -663,6 +666,37 @@ async function activeLibrary() {
           typeof record.sessionId === 'string' ? record.sessionId : '',
         )
         sendJson(response, 200, { ok: true, cache })
+        return
+      }
+
+      if (path === `${PREFIX}/questions`) {
+        const library = await activeLibrary()
+        if (request.method === 'GET') {
+          const match = await chapterFromQuery(url)
+          if (match.ok !== true) {
+            fail(response, match.status, match.code, match.message)
+            return
+          }
+          sendJson(response, 200, { ok: true, ...(await readQuestions(library.libraryDir, match.book.id, match.chapter.code)) })
+          return
+        }
+        if (request.method !== 'PUT') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 PUT')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        try {
+          sendJson(response, 200, { ok: true, ...(await writeQuestions(library.libraryDir, match.book.id, match.chapter.code, record)) })
+        } catch (error) {
+          fail(response, 400, 'questions-failed', String(error && error.message ? error.message : error))
+        }
         return
       }
 

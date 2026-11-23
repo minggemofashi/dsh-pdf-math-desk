@@ -407,6 +407,161 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /* ------------------------------------------------------------ questions -- */
+
+    /** Whether creating a question appends its line to the open conversation. */
+    const QUESTION_INJECT_KEY = 'pdfdesk:question-inject'
+
+    /** Size below which a question drag is a click, not a mark (in page pixels). */
+    const QUESTION_MIN_W = 24
+    const QUESTION_MIN_H = 16
+
+    /**
+     * Whether a created question should be announced to the open conversation.
+     * Missing preference means on: the setting is the opt-out.
+     * @returns {boolean} the preference.
+     */
+    function questionInjectEnabled() {
+      try {
+        return window.localStorage.getItem(QUESTION_INJECT_KEY) !== '0'
+      } catch {
+        return true
+      }
+    }
+
+    /**
+     * Remember the injection preference.
+     * @param {boolean} on - the choice.
+     * @returns {void}
+     */
+    function writeQuestionInject(on) {
+      try {
+        window.localStorage.setItem(QUESTION_INJECT_KEY, on ? '1' : '0')
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /**
+     * A fresh question id. The Host only checks the shape; uniqueness keeps two
+     * marks made in the same millisecond apart.
+     * @returns {string} the id.
+     */
+    function createQuestionId() {
+      return `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    }
+
+    /**
+     * The rect between two page points, clamped into the page.
+     * @param {[number, number]} from - drag start, page fractions.
+     * @param {[number, number]} to - drag end, page fractions.
+     * @returns {{ x: number, y: number, w: number, h: number }} the rect.
+     */
+    function questionRect(from, to) {
+      const clamp = value => Math.min(1, Math.max(0, Number(value) || 0))
+      const x0 = clamp(from[0])
+      const y0 = clamp(from[1])
+      const x1 = clamp(to[0])
+      const y1 = clamp(to[1])
+      return {
+        x: Math.min(x0, x1),
+        y: Math.min(y0, y1),
+        w: Math.abs(x1 - x0),
+        h: Math.abs(y1 - y0),
+      }
+    }
+
+    /**
+     * Order question marks by their number (then by creation), so the list and
+     * the jump menu read like the chapter does.
+     * @param {object[]} list - the marks.
+     * @returns {object[]} a sorted copy.
+     */
+    function sortQuestions(list) {
+      const numberOf = question => {
+        const match = /疑问\s*(\d+)/.exec(String(question === null || question === undefined ? '' : question.name ?? ''))
+        return match === null ? Number.MAX_SAFE_INTEGER : Number(match[1])
+      }
+      return [...(Array.isArray(list) ? list : [])].sort((a, b) => {
+        const diff = numberOf(a) - numberOf(b)
+        return diff !== 0 ? diff : (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0)
+      })
+    }
+
+    /**
+     * Read one chapter's question marks.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Promise<{ next: number, questions: object[] }>} the marks and the next default number.
+     */
+    async function loadChapterQuestions(bookId, code) {
+      const payload = await request('GET', `questions?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}`)
+      const next = Number(payload !== null && payload !== undefined ? payload.next : NaN)
+      return {
+        next: Number.isFinite(next) && next > 0 ? Math.round(next) : 1,
+        questions: sortQuestions(payload !== null && payload !== undefined && Array.isArray(payload.questions) ? payload.questions : []),
+      }
+    }
+
+    /**
+     * Replace one chapter's question marks.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {{ next: number, questions: object[] }} payload - the list to keep.
+     * @returns {Promise<{ next: number, questions: object[] }>} what the Host stored.
+     */
+    async function saveChapterQuestions(bookId, code, payload) {
+      const result = await request('PUT', 'questions', { book: bookId, code, next: payload.next, questions: payload.questions })
+      const next = Number(result !== null && result !== undefined ? result.next : NaN)
+      return {
+        next: Number.isFinite(next) && next > 0 ? Math.round(next) : payload.next,
+        questions: sortQuestions(result !== null && result !== undefined && Array.isArray(result.questions) ? result.questions : payload.questions),
+      }
+    }
+
+    /**
+     * The session the main area currently shows, if any. The workspace keeps the
+     * main session retained while a global panel (this workbench) is in front,
+     * so this is the conversation a question line would be appended to.
+     * @returns {string} the session id, or '' when no conversation is open.
+     */
+    function currentMainSessionId() {
+      const sessions = sessionService()
+      if (sessions === null || sessions.list === undefined || typeof sessions.list.getSnapshot !== 'function') return ''
+      const list = sessions.list.getSnapshot()
+      if (list === null || list === undefined || list.phase !== 'ready' || list.byId === undefined) return ''
+      for (const [id, row] of Object.entries(list.byId)) {
+        const retained = row !== null && typeof row === 'object' ? row.retainedBy : null
+        if (retained !== null && typeof retained === 'object' && Number(retained.mainView) > 0) return String(id)
+      }
+      return ''
+    }
+
+    /** Questions already announced, so one mark is never injected twice. */
+    const injectedQuestions = new Set()
+
+    /**
+     * Append `看到疑问：<name>` to the conversation that is open, if any. This
+     * writes the composer only: no session is created, opened or sent.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {{ id: string, name: string }} question - the created mark.
+     * @returns {Promise<boolean>} whether the line was written.
+     */
+    async function injectQuestionLine(bookId, code, question) {
+      if (!questionInjectEnabled()) return false
+      const sessionId = currentMainSessionId()
+      if (sessionId === '') return false
+      const key = `${sessionId}|${bookId}|${code}|${question.id}`
+      if (injectedQuestions.has(key)) return false
+      injectedQuestions.add(key)
+      const prefill = await beginPrefill(sessionId, `看到疑问：${question.name}`, 'append')
+      if (prefill.reference !== null) {
+        try { prefill.reference.release() } catch { /* already released */ }
+      }
+      return prefill.applied
+    }
+
     /**
      * In-memory page drafts: unsaved note edits and unfinished strokes, one per
      * page. They never enter the annotation store, never reach the disk and are
@@ -924,6 +1079,18 @@ window.__ModuleLoader__.load({
       pressureNoPen: '当前设备没有压感，按默认线宽书写（{width}px）',
       pressureReading: '压感 {pressure} · 线宽 {width}px',
       pressureClear: '清除',
+      questionTool: '疑问框',
+      questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放、双击名称改名、右键删除',
+      questionJump: '疑问跳转',
+      questionNameHint: '双击改名；右键删除',
+      questionRename: '疑问名称',
+      questionsTitle: '疑问',
+      questionsEmpty: '本章还没有疑问标记',
+      questionOpen: '定位',
+      questionListHint: '点击跳到页面位置',
+      questionInjectToggle: '疑问：创建时注入当前会话',
+      questionInjectHint: '创建疑问时把「看到疑问：名称」追加到当前会话输入框，不自动发送；没有打开的会话时只创建标记',
+      questionSaveFailed: '疑问保存失败',
       workflowActiveHint: '已启用；再次点击这张卡片即可退出到通用。',
       workspaceTitle: '需要工作区',
       workspaceBody: '会话需要一个工作区来存放。工作区只保存对话，不会移动、复制或删除书库文件。',
@@ -1505,6 +1672,18 @@ window.__ModuleLoader__.load({
       pressureNoPen: 'This device reports no pressure, so the default width is used ({width}px)',
       pressureReading: 'Pressure {pressure} · width {width}px',
       pressureClear: 'Clear',
+      questionTool: 'Question mark',
+      questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize, double-click the name to rename, right-click to delete',
+      questionJump: 'Jump to a question',
+      questionNameHint: 'Double-click to rename; right-click to delete',
+      questionRename: 'Question name',
+      questionsTitle: 'Questions',
+      questionsEmpty: 'No questions marked in this chapter yet',
+      questionOpen: 'Go to',
+      questionListHint: 'Click to jump there',
+      questionInjectToggle: 'Questions: append to the open conversation',
+      questionInjectHint: 'When a question is created, append “看到疑问：<name>” to the open conversation’s input (never sent). Without an open conversation only the mark is created.',
+      questionSaveFailed: 'The question could not be saved',
       workflowActiveHint: 'Enabled; click this card again to return to General.',
       workspaceTitle: 'Workspace required',
       workspaceBody: 'A conversation needs a workspace. The workspace stores conversations only; it never moves, copies or deletes library files.',
@@ -2580,8 +2759,8 @@ window.__ModuleLoader__.load({
      * setChapterPage / reportChapterPage below, which is the only writer.
      */
     const VIEW_PUBLISHED = {
-      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev'],
-      side: ['mode', 'annotRev'],
+      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev', 'questionRev'],
+      side: ['mode', 'annotRev', 'questionRev'],
     }
 
     /** One chapter's shared view state, keyed `book:code`. */
@@ -2789,6 +2968,21 @@ window.__ModuleLoader__.load({
       const link = viewLink(bookId, code)
       const next = (Number(link.state.annotRev) || 0) + 1
       syncView(bookId, code, { annotRev: next }, origin)
+      return next
+    }
+
+    /**
+     * Announce a question edit: the other end (and the chapter list) re-reads
+     * the chapter's marks. Like the annotation counter, the link owns it.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {'reader'|'side'} origin - which end edited.
+     * @returns {number} the new counter value.
+     */
+    function bumpQuestionRev(bookId, code, origin) {
+      const link = viewLink(bookId, code)
+      const next = (Number(link.state.questionRev) || 0) + 1
+      syncView(bookId, code, { questionRev: next }, origin)
       return next
     }
 
@@ -3821,6 +4015,19 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('pressureTitle')),
           h('p', { className: 'md-shelf-sub' }, format('pressureHint')),
           h(PressurePad, null)
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('questionsTitle')),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('questionInjectHint') }, format('questionInjectToggle')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('questionInjectHint'),
+              'aria-pressed': props.questionInject ? 'true' : 'false',
+              onClick: props.onQuestionInject,
+            }, props.questionInject ? format('previewOn') : format('previewOff'))
+          ),
+          h('p', { className: 'md-shelf-sub' }, format('questionInjectHint'))
         )
       )
       const keys = h('div', { className: 'md-settings-section' },
@@ -4481,6 +4688,52 @@ window.__ModuleLoader__.load({
      * @param {{ chapter: object, groups: object | undefined, creatingMode: string, loaded: boolean, available: boolean, error: string, errorSession: string | null, renaming: object | null, onNewSession: Function, onOpenSession: Function, onRetryRename: Function, onImport: Function, onUnlink: Function, onStartRename: Function, onRenameInput: Function, onCommitRename: Function, onCancelRename: Function }} props - chapter and session state.
      * @returns {import('react').ReactElement} the block.
      */
+    /**
+     * One chapter's question marks, as a list beside the conversation groups.
+     * It reads the marks itself and follows edits made in either PDF pane; a
+     * row only jumps to the page, it never opens a conversation.
+     * @param {{ bookId: string, code: string, onOpen: Function }} props - the chapter and the jump handler.
+     * @returns {import('react').ReactElement} the group body.
+     */
+    function ChapterQuestions(props) {
+      const [items, setItems] = useState([])
+      const [loaded, setLoaded] = useState(false)
+      const [revision, setRevision] = useState(0)
+      const seenRev = useRef(0)
+      useEffect(() => {
+        let cancelled = false
+        void loadChapterQuestions(props.bookId, props.code).then(payload => {
+          if (cancelled) return
+          setItems(payload.questions)
+          setLoaded(true)
+        }).catch(() => {
+          if (!cancelled) setLoaded(true)
+        })
+        return () => { cancelled = true }
+      }, [props.bookId, props.code, revision])
+      useEffect(() => {
+        seenRev.current = Number(readView(props.bookId, props.code).questionRev) || 0
+        return subscribeView(props.bookId, props.code, state => {
+          const next = Number(state.questionRev) || 0
+          if (next <= seenRev.current) return
+          seenRev.current = next
+          setRevision(value => value + 1)
+        })
+      }, [props.bookId, props.code])
+      if (!loaded) return h('p', { className: 'md-session-state' }, format('loading'))
+      if (items.length === 0) return h('p', { className: 'md-session-state' }, format('questionsEmpty'))
+      return h('ul', { className: 'md-session-list md-question-list' },
+        items.map(question => h('li', { key: question.id, className: 'md-session-row' },
+          h(KitButton, {
+            type: 'button',
+            className: 'md-session',
+            title: format('questionListHint'),
+            'aria-label': `${format('questionOpen')}：${question.name}`,
+            onClick: () => props.onOpen(question),
+          }, h('span', { className: 'md-session-name' }, question.name))
+        )))
+    }
+
     function ChapterSessions(props) {
       const busy = props.creatingMode !== ''
       const modes = Array.isArray(props.modes) ? props.modes : MODES
@@ -4634,7 +4887,19 @@ window.__ModuleLoader__.load({
             ),
             items.length === 0 ? null : h('ul', { className: 'md-session-list' }, items.map(row))
           )
-        })
+        }),
+        // Question marks sit beside the conversations: same row shape, but a
+        // click only jumps the PDF there (no New, no Import, no session).
+        h('div', { key: 'questions', className: 'md-session-group' },
+          h('div', { className: 'md-session-group-head' },
+            h('span', { className: 'md-session-mode' }, format('questionsTitle'))
+          ),
+          h(ChapterQuestions, {
+            bookId: props.bookId,
+            code: props.chapter.code,
+            onOpen: question => props.onOpenQuestion(question),
+          })
+        )
       )
     }
 
@@ -5141,6 +5406,7 @@ window.__ModuleLoader__.load({
       pen: 'annotPen',
       erase: 'annotErase',
       text: 'annotText',
+      question: 'questionTool',
       mask: 'overlayToggle',
       line: 'shapeLine',
       arrow: 'shapeArrow',
@@ -5809,6 +6075,208 @@ window.__ModuleLoader__.load({
               : format('pressureReading', { pressure: reading.pressure.toFixed(2), width: reading.width.toFixed(1) })
         ),
         h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: clear }, format('pressureClear'))
+      )
+    }
+
+    /**
+     * Move or resize one question rect by a page-fraction delta. The result stays
+     * inside the page, and a corner drag never flips the rect.
+     * @param {{ x: number, y: number, w: number, h: number }} rect - the rect before the drag.
+     * @param {'move'|'nw'|'ne'|'sw'|'se'} mode - what is being dragged.
+     * @param {number} dx - horizontal delta in page fractions.
+     * @param {number} dy - vertical delta in page fractions.
+     * @returns {{ x: number, y: number, w: number, h: number }} the new rect.
+     */
+    function resizeQuestionRect(rect, mode, dx, dy) {
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+      const MIN = 0.01
+      let x = Number(rect.x) || 0
+      let y = Number(rect.y) || 0
+      let w = Number(rect.w) || MIN
+      let h = Number(rect.h) || MIN
+      if (mode === 'move') {
+        return { x: clamp(x + dx, 0, 1 - w), y: clamp(y + dy, 0, 1 - h), w, h }
+      }
+      const right = x + w
+      const bottom = y + h
+      if (mode.includes('w')) {
+        x = clamp(x + dx, 0, right - MIN)
+        w = right - x
+      }
+      if (mode.includes('e')) w = clamp(w + dx, MIN, 1 - x)
+      if (mode.includes('n')) {
+        y = clamp(y + dy, 0, bottom - MIN)
+        h = bottom - y
+      }
+      if (mode.includes('s')) h = clamp(h + dy, MIN, 1 - y)
+      return { x, y, w, h }
+    }
+
+    /**
+     * Question marks on one page: a thin border per mark, its name on hover, and
+     * the drag / resize / rename / right-click-delete gestures. The layer only
+     * takes pointer events while a mark tool is picked, so drawing behind it
+     * stays possible.
+     * @param {{ questions: object[], active: boolean, create: boolean, flash: string, onCreate: Function, onCommit: Function, onDelete: Function, onRename: Function }} props - marks and handlers.
+     * @returns {import('react').ReactElement} the layer.
+     */
+    function QuestionMarks(props) {
+      const layer = useRef(null)
+      const [draft, setDraft] = useState(null)
+      const [drag, setDrag] = useState(null)
+      const [editing, setEditing] = useState(null)
+      const active = props.active === true
+      const create = props.create === true
+      const pointOf = event => {
+        const node = layer.current
+        if (node === null) return null
+        const rect = node.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) return null
+        return {
+          point: [
+            Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+            Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+          ],
+          width: rect.width,
+          height: rect.height,
+        }
+      }
+      const beginCreate = event => {
+        if (!active || !create || event.button !== 0) return
+        if (event.target !== layer.current) return
+        const at = pointOf(event)
+        if (at === null) return
+        event.preventDefault()
+        setEditing(null)
+        setDraft({ from: at.point, to: at.point })
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const moveCreate = event => {
+        if (draft === null) return
+        const at = pointOf(event)
+        if (at === null) return
+        event.preventDefault()
+        setDraft(current => (current === null ? null : { ...current, to: at.point }))
+      }
+      const endCreate = event => {
+        if (draft === null) return
+        const at = pointOf(event)
+        const to = at === null ? draft.to : at.point
+        const rect = questionRect(draft.from, to)
+        const width = at === null ? 0 : at.width
+        const height = at === null ? 0 : at.height
+        setDraft(null)
+        // A click (or a tiny drag) is not a mark: the user must drag an area.
+        if (rect.w * width < QUESTION_MIN_W || rect.h * height < QUESTION_MIN_H) return
+        props.onCreate(rect)
+      }
+      const beginDrag = (event, question, mode) => {
+        if (!active || event.button !== 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        const at = pointOf(event)
+        if (at === null) return
+        setEditing(null)
+        setDrag({ id: question.id, mode, start: at.point, origin: { ...question.rect }, delta: [0, 0] })
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+      }
+      const moveDrag = event => {
+        if (drag === null) return
+        const at = pointOf(event)
+        if (at === null) return
+        event.preventDefault()
+        const delta = [at.point[0] - drag.start[0], at.point[1] - drag.start[1]]
+        setDrag(current => (current === null ? null : { ...current, delta }))
+      }
+      const endDrag = () => {
+        if (drag === null) return
+        const rect = resizeQuestionRect(drag.origin, drag.mode, drag.delta[0], drag.delta[1])
+        setDrag(null)
+        props.onCommit(drag.id, rect)
+      }
+      const commitRename = () => {
+        const current = editing
+        if (current === null) return
+        setEditing(null)
+        const name = String(current.value).trim()
+        if (name === '') return
+        props.onRename(current.id, name)
+      }
+      const styleOf = rect => ({
+        left: `${Math.min(1, Math.max(0, rect.x)) * 100}%`,
+        top: `${Math.min(1, Math.max(0, rect.y)) * 100}%`,
+        width: `${Math.min(1, Math.max(0, rect.w)) * 100}%`,
+        height: `${Math.min(1, Math.max(0, rect.h)) * 100}%`,
+      })
+      return h('div', {
+        className: 'md-questions',
+        'data-active': active ? 'true' : undefined,
+        ref: layer,
+        onPointerDown: beginCreate,
+        onPointerMove: moveCreate,
+        onPointerUp: endCreate,
+        onPointerCancel: () => setDraft(null),
+      },
+        props.questions.map(question => {
+          const live = drag !== null && drag.id === question.id
+            ? resizeQuestionRect(drag.origin, drag.mode, drag.delta[0], drag.delta[1])
+            : question.rect
+          return h('div', {
+            key: question.id,
+            className: 'md-question',
+            style: styleOf(live),
+            'data-flash': props.flash === question.id ? 'true' : undefined,
+            onPointerDown: event => beginDrag(event, question, 'move'),
+            onPointerMove: moveDrag,
+            onPointerUp: endDrag,
+            onContextMenu: event => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (active) props.onDelete(question.id)
+            },
+          },
+            editing !== null && editing.id === question.id
+              ? h(KitInput, {
+                className: 'md-question-input',
+                value: editing.value,
+                autoFocus: true,
+                'aria-label': format('questionRename'),
+                onChange: value => setEditing({ id: question.id, value }),
+                onKeyDown: event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    commitRename()
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setEditing(null)
+                  }
+                },
+                onBlur: commitRename,
+              })
+              : h('span', {
+                className: 'md-question-name',
+                title: format('questionNameHint'),
+                onDoubleClick: event => {
+                  if (!active) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setEditing({ id: question.id, value: question.name })
+                },
+              }, question.name),
+            ['nw', 'ne', 'sw', 'se'].map(corner => h('span', {
+              key: corner,
+              className: `md-question-handle md-question-${corner}`,
+              'aria-hidden': true,
+              onPointerDown: event => beginDrag(event, question, corner),
+              onPointerMove: moveDrag,
+              onPointerUp: endDrag,
+            }))
+          )
+        }),
+        draft === null
+          ? null
+          : h('div', { className: 'md-question md-question-draft', style: styleOf(questionRect(draft.from, draft.to)) })
       )
     }
 
@@ -9065,6 +9533,88 @@ window.__ModuleLoader__.load({
           })
       )
 
+      // Question marks: page positions shared with the right preview and the
+      // chapter's question list. `questionsNext` is the number the next default
+      // name takes; the Host keeps it ahead of hand-edited names.
+      const [questions, setQuestions] = useState([])
+      const questionsRef = useRef([])
+      const questionsNext = useRef(1)
+      const [questionFlash, setQuestionFlash] = useState('')
+      const [questionRev, setQuestionRev] = useState(0)
+      const seenQuestionRev = useRef(0)
+      questionsRef.current = questions
+      useEffect(() => {
+        let cancelled = false
+        void loadChapterQuestions(reader.bookId, reader.code).then(payload => {
+          if (cancelled) return
+          questionsRef.current = payload.questions
+          questionsNext.current = payload.next
+          setQuestions(payload.questions)
+        }).catch(() => {
+          // A chapter with no readable questions file simply has none.
+        })
+        return () => { cancelled = true }
+      }, [reader.bookId, reader.code, questionRev])
+      useEffect(() => {
+        seenQuestionRev.current = Number(readView(reader.bookId, reader.code).questionRev) || 0
+        return subscribeView(reader.bookId, reader.code, state => {
+          if (state.origin !== 'side') return
+          const rev = Number(state.questionRev) || 0
+          if (rev <= seenQuestionRev.current) return
+          seenQuestionRev.current = rev
+          setQuestionRev(value => value + 1)
+        })
+      }, [reader.bookId, reader.code])
+      // A chapter-list click asks the reader to show one mark: jump happens in
+      // the workbench, the highlight lives here for a moment.
+      useEffect(() => {
+        const focus = typeof reader.questionFocus === 'string' ? reader.questionFocus : ''
+        if (focus === '') return undefined
+        setQuestionFlash(focus)
+        const timer = window.setTimeout(() => setQuestionFlash(''), 1800)
+        return () => window.clearTimeout(timer)
+      }, [reader.questionFocus])
+      /**
+       * Replace the chapter's marks, on screen first and on disk right after.
+       * @param {object[]} list - the marks to keep.
+       * @param {number} next - the next default number.
+       * @returns {void}
+       */
+      const commitQuestions = (list, next) => {
+        questionsRef.current = list
+        questionsNext.current = next
+        setQuestions(list)
+        void saveChapterQuestions(reader.bookId, reader.code, { next, questions: list }).then(saved => {
+          questionsRef.current = saved.questions
+          questionsNext.current = saved.next
+          setQuestions(saved.questions)
+          seenQuestionRev.current = bumpQuestionRev(reader.bookId, reader.code, 'reader')
+        }).catch(() => {
+          // The marker is already on screen; a failed save leaves it unsaved.
+        })
+      }
+      const createQuestion = rect => {
+        const number = questionsNext.current
+        const question = {
+          id: createQuestionId(),
+          name: `疑问 ${number}`,
+          page: reader.page,
+          rect,
+          createdAt: Date.now(),
+        }
+        commitQuestions([...questionsRef.current, question], number + 1)
+        void injectQuestionLine(reader.bookId, reader.code, question)
+      }
+      const commitQuestionRect = (id, rect) => {
+        commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, rect } : item)), questionsNext.current)
+      }
+      const deleteQuestion = id => {
+        commitQuestions(questionsRef.current.filter(item => item.id !== id), questionsNext.current)
+      }
+      const renameQuestion = (id, name) => {
+        commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, name } : item)), questionsNext.current)
+      }
+
       const masksLayer = overlay
         ? h('div', {
           className: 'md-overlay-layer',
@@ -9093,6 +9643,17 @@ window.__ModuleLoader__.load({
             })
         )
         : null
+      const pageQuestions = questions.filter(item => Number(item.page) === reader.page)
+      const questionLayer = h(QuestionMarks, {
+        questions: pageQuestions,
+        active: annotTool === 'question',
+        create: annotTool === 'question',
+        flash: questionFlash,
+        onCreate: rect => createQuestion(rect),
+        onCommit: (id, rect) => commitQuestionRect(id, rect),
+        onDelete: id => deleteQuestion(id),
+        onRename: (id, name) => renameQuestion(id, name),
+      })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -9186,6 +9747,21 @@ window.__ModuleLoader__.load({
               if (typeof props.onGeneralSession === 'function') props.onGeneralSession()
             },
           }, format('generalSession')),
+          reader.name !== '' || questions.length === 0
+            ? null
+            : h(KitSelect, {
+              className: 'md-question-jump',
+              value: '',
+              label: format('questionJump'),
+              placeholder: format('questionJump'),
+              options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
+              onChange: id => {
+                const found = questionsRef.current.find(item => item.id === id)
+                if (found === undefined) return
+                props.onPage(found.page)
+                setQuestionFlash(found.id)
+              },
+            }),
           h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
             h(KitButton, {
@@ -9492,12 +10068,13 @@ window.__ModuleLoader__.load({
                 children: [
                   masksLayer,
                   annotLayer('main'),
+                  questionLayer,
                   h(BlockOverlay, { key: 'blocks', bookId: reader.bookId, code: reader.code, pageNumber: reader.page, show: showBlocks }),
                 ],
                 // Continuous mode paints the same layers on the page being read.
                 overlay: masksLayer === null
-                  ? annotLayer('main')
-                  : [masksLayer, annotLayer('main')],
+                  ? [annotLayer('main'), questionLayer]
+                  : [masksLayer, annotLayer('main'), questionLayer],
                 overlayPage: visiblePage,
               }),
         diag
@@ -9526,6 +10103,7 @@ window.__ModuleLoader__.load({
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             railTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            railTool('question', 'questionTool', 'M4 4h16v16H4zM8 8h8v8H8z'),
             railTool('line', 'shapeLine', 'M4 20 20 4'),
             railTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
             railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
@@ -9557,7 +10135,9 @@ window.__ModuleLoader__.load({
                 `${format('toolSettings')} · ${format(TOOL_LABELS[panelTool] ?? 'annotPen')}`),
               panelTool === 'text'
                 ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
-                : panelTool === 'select'
+                : panelTool === 'question'
+                  ? h('p', { className: 'md-rail-panel-hint' }, format('questionPanelHint'))
+                  : panelTool === 'select'
                   ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelSelectHint'))
                   : panelTool === 'mask'
                     ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
@@ -9864,6 +10444,8 @@ window.__ModuleLoader__.load({
             className: 'md-sessions-wrap',
             'data-collapsed': sessionsOpen ? 'false' : 'true',
           }, h(ChapterSessions, {
+            bookId: props.bookId,
+            onOpenQuestion: question => props.onOpenQuestion(chapter, question),
             open: sessionsOpen,
             onToggle: () => setSessionsOpen(value => !value),
             chapter,
@@ -9975,6 +10557,7 @@ window.__ModuleLoader__.load({
                 cache: props.caches === undefined ? undefined : props.caches[key],
                 onLoadCache: props.onLoadCache,
                 onRebuildCache: props.onRebuildCache,
+                onOpenQuestion: props.onOpenQuestion,
                 creatingMode: props.creatingKey === key ? props.creatingMode : '',
                 createError: error === null ? '' : error.message,
                 errorSession: error !== null && typeof error.sessionId === 'string' ? error.sessionId : null,
@@ -10471,6 +11054,25 @@ window.__ModuleLoader__.load({
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
 .md-annot[data-tool="select"] { pointer-events: auto; cursor: default; }
+/* Question marks: a thin border on the page, the name only while hovered. The
+   layer is inert unless the question (or select) tool is picked, so drawing
+   behind a mark stays possible. */
+.md-questions { position: absolute; inset: 0; z-index: 7; pointer-events: none; touch-action: none; }
+.md-question { position: absolute; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); border-radius: 2px; pointer-events: none; }
+.md-questions[data-active="true"] .md-question { pointer-events: auto; cursor: move; }
+.md-question[data-flash="true"] { border-width: 2px; animation: md-question-flash 1.8s ease-out; }
+@keyframes md-question-flash { 0% { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent); } 100% { background: transparent; } }
+.md-question-name { position: absolute; left: -1px; bottom: 100%; transform: translateY(-3px); max-width: 240px; padding: 1px 6px; font-size: 11px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 4px; box-shadow: var(--dsw-elevation-soft); opacity: 0; transition: opacity .12s ease; pointer-events: auto; }
+.md-question:hover .md-question-name, .md-question[data-flash="true"] .md-question-name, .md-question:focus-within .md-question-name { opacity: 1; }
+.md-question-handle { position: absolute; width: 9px; height: 9px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 2px; opacity: 0; pointer-events: auto; z-index: 2; }
+.md-question:hover .md-question-handle, .md-question[data-flash="true"] .md-question-handle { opacity: 1; }
+.md-question-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.md-question-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
+.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; }
+.md-question-jump { max-width: 190px; }
 .md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: 0; }
 .md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
@@ -10799,6 +11401,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Annotation and box editing: this end edits too, so both the tool and the
       // in-progress shapes live here and the shared counter tells the reader.
       const [tool, setTool] = useState('')
+      // Question marks: the same chapter data the reader and the chapter list
+      // show. Creating one here saves it and (optionally) appends the line to
+      // the conversation this column belongs to.
+      const [questions, setQuestions] = useState([])
+      const questionsRef = useRef([])
+      const questionsNext = useRef(1)
+      const [questionRev, setQuestionRev] = useState(0)
+      const [questionFlash, setQuestionFlash] = useState('')
+      const seenQuestionRev = useRef(0)
       // The page number turns into an input on click: `window.prompt` does not
       // exist in DSH Desktop, so the menu's "go to page" used to do nothing.
       const [gotoOpen, setGotoOpen] = useState(false)
@@ -11519,6 +12130,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             seenAnnotRev.current = annot
             setAnnotRev(annot)
           }
+          const marks = Number(state.questionRev) || 0
+          if (marks > seenQuestionRev.current) {
+            seenQuestionRev.current = marks
+            setQuestionRev(value => value + 1)
+          }
         })
       }, [bookId, code])
 
@@ -11719,6 +12335,60 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onSave: () => saveNote(noteEdit.id),
               onCancel: cancelNote,
             }))
+
+      // The chapter's question marks: loaded here, saved here, shared with the
+      // reader through the chapter's view link.
+      useEffect(() => {
+        let cancelled = false
+        void loadChapterQuestions(bookId, code).then(payload => {
+          if (cancelled) return
+          questionsRef.current = payload.questions
+          questionsNext.current = payload.next
+          setQuestions(payload.questions)
+        }).catch(() => {
+          // A chapter with no readable questions file simply has none.
+        })
+        return () => { cancelled = true }
+      }, [bookId, code, questionRev])
+      const commitQuestions = (list, next) => {
+        questionsRef.current = list
+        questionsNext.current = next
+        setQuestions(list)
+        void saveChapterQuestions(bookId, code, { next, questions: list }).then(saved => {
+          questionsRef.current = saved.questions
+          questionsNext.current = saved.next
+          setQuestions(saved.questions)
+          seenQuestionRev.current = bumpQuestionRev(bookId, code, 'side')
+        }).catch(() => {
+          notifySide(format('questionSaveFailed'))
+        })
+      }
+      const createQuestion = rect => {
+        const number = questionsNext.current
+        const question = {
+          id: createQuestionId(),
+          name: `疑问 ${number}`,
+          page: displayPage,
+          rect,
+          createdAt: Date.now(),
+        }
+        commitQuestions([...questionsRef.current, question], number + 1)
+        void injectQuestionLine(bookId, code, question)
+      }
+      const flashQuestion = id => {
+        setQuestionFlash(id)
+        window.setTimeout(() => setQuestionFlash(current => (current === id ? '' : current)), 1800)
+      }
+      const questionLayer = h(QuestionMarks, {
+        questions: questions.filter(item => Number(item.page) === displayPage),
+        active: tool === 'question',
+        create: tool === 'question',
+        flash: questionFlash,
+        onCreate: rect => createQuestion(rect),
+        onCommit: (id, rect) => commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, rect } : item)), questionsNext.current),
+        onDelete: id => commitQuestions(questionsRef.current.filter(item => item.id !== id), questionsNext.current),
+        onRename: (id, name) => commitQuestions(questionsRef.current.map(item => (item.id === id ? { ...item, name } : item)), questionsNext.current),
+      })
 
       // Feedback from a menu action that runs outside a component message line.
       const notifySide = text => {
@@ -11941,14 +12611,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onVisible,
               registerSlot,
               onError,
-              children: masksLayer === null
-                ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
-                : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
+              children: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
               // the page being read, so drawing and boxes work there too.
-              overlay: masksLayer === null
-                ? (editLayer === null ? annotLayer : [annotLayer, editLayer])
-                : (editLayer === null ? [masksLayer, annotLayer] : [masksLayer, annotLayer, editLayer]),
+              overlay: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               overlayPage: displayPage,
             })
 
@@ -12014,6 +12680,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               disabled: count === 0 || phase !== 'ready',
               onClick: () => setGotoOpen(true),
             }, count === 0 ? String(page) : `${page} / ${count}`),
+          questions.length === 0
+            ? null
+            : h(KitSelect, {
+              className: 'md-question-jump',
+              value: '',
+              label: format('questionJump'),
+              placeholder: format('questionJump'),
+              options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
+              onChange: id => {
+                const found = questionsRef.current.find(item => item.id === id)
+                if (found === undefined) return
+                goPage(found.page)
+                flashQuestion(found.id)
+              },
+            }),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
@@ -12128,6 +12809,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             sideRailTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             sideRailTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             sideRailTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            sideRailTool('question', 'questionTool', 'M4 4h16v16H4zM8 8h8v8H8z'),
             sideRailTool('line', 'shapeLine', 'M4 20 20 4'),
             sideRailTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
             sideRailTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
@@ -12158,7 +12840,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 `${format('toolSettings')} · ${format(TOOL_LABELS[sidePanelTool] ?? 'annotPen')}`),
               sidePanelTool === 'text'
                 ? h(NoteStyleControls, { style: noteEdit ?? noteStyle, onChange: changeNoteStyle })
-                : sidePanelTool === 'mask'
+                : sidePanelTool === 'question'
+                  ? h('p', { className: 'md-rail-panel-hint' }, format('questionPanelHint'))
+                  : sidePanelTool === 'mask'
                   ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
                   : sidePanelTool === 'erase'
                     ? h('p', { className: 'md-rail-panel-hint' }, format('annotEraseHint'))
@@ -12433,6 +13117,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       })
       const [socratic, setSocratic] = useState(() => socraticEnabled())
+      const [questionInject, setQuestionInject] = useState(() => questionInjectEnabled())
       const [envTools, setEnvTools] = useState({ python: false, tex: false, apiKey: false })
       useEffect(() => {
         if (!settingsOpen) return undefined
@@ -12838,15 +13523,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const same = previous !== null && previous.bookId === target.bookId
             && previous.code === target.code && previous.name === name
             && previous.variant === (target.variant ?? '')
+          const focus = typeof target.questionFocus === 'string' ? target.questionFocus : ''
           if (same && force !== true && previous.phase !== 'error') {
             const limit = previous.count > 0 ? previous.count : page
             const next = Math.max(1, Math.min(limit, page))
-            if (next === previous.page) return { ...previous, title: target.title, bookTitle: target.bookTitle ?? previous.bookTitle }
+            if (next === previous.page) {
+              return { ...previous, title: target.title, bookTitle: target.bookTitle ?? previous.bookTitle, questionFocus: focus }
+            }
             return {
               ...previous,
               title: target.title,
               bookTitle: target.bookTitle ?? previous.bookTitle,
               page: next,
+              questionFocus: focus,
               jump: (previous.jump ?? 0) + 1,
             }
           }
@@ -12863,6 +13552,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             scale: rememberedWidth === null ? null : rememberedWidth.scale,
             mode: rememberedMode ?? (target.mode === 'continuous' ? 'continuous' : 'single'),
             jump: 0,
+            questionFocus: focus,
             phase: 'loading',
             error: '',
             attempt: same ? previous.attempt + 1 : 0,
@@ -13582,6 +14272,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           bookTitle: book === null ? '' : book.title,
         })
       }, [book, commit, openReader, work])
+
+      /**
+       * Jump to one question mark: open the chapter's PDF at its page and flash
+       * the rectangle. This never opens, creates or switches a conversation.
+       * @param {object} chapter - catalog chapter row.
+       * @param {object} question - the mark to show.
+       * @returns {void}
+       */
+      const openQuestionRow = useCallback((chapter, question) => {
+        if (book === null || catalog === null || question === null || question === undefined) return
+        const entry = catalog.books.find(candidate => candidate.id === book.id)
+        openReader({
+          bookId: book.id,
+          code: chapter.code,
+          title: chapter.title ?? '',
+          fileName: chapter.file ?? '',
+          bookTitle: entry === undefined ? '' : entry.title,
+          page: Math.max(1, Math.round(Number(question.page) || 1)),
+          questionFocus: String(question.id ?? ''),
+        })
+      }, [book, catalog, openReader])
 
       /**
        * Open the chapter the right column asked for: switch the page to its book
@@ -15230,6 +15941,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           caches: chapterCaches,
           onLoadCache: loadChapterCache,
           onRebuildCache: rebuildChapterCache,
+          onOpenQuestion: openQuestionRow,
           creatingKey,
           creatingMode,
           createError,
@@ -15540,6 +16252,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               return next
             }),
             onClearCache: clearChapterCaches,
+            questionInject,
+            onQuestionInject: () => setQuestionInject(value => {
+              const next = !value
+              writeQuestionInject(next)
+              return next
+            }),
             onClose: () => setSettingsOpen(false),
           })
           : null,
