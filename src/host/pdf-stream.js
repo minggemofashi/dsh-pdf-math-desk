@@ -51,9 +51,10 @@ export function parseByteRange(header, size) {
     return { start: Math.max(0, size - length), end: size - 1 }
   }
   const start = Number(fromText)
-  const end = toText === '' ? size - 1 : Number(toText)
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
+  if (!Number.isFinite(start)) return null
   if (start >= size) return { unsatisfiable: true }
+  const end = toText === '' ? size - 1 : Number(toText)
+  if (!Number.isFinite(end) || end < start) return null
   return { start, end: Math.min(end, size - 1) }
 }
 

@@ -3334,16 +3334,42 @@ window.__ModuleLoader__.load({
       return pages
     }
 
+    /** Chapter annotation syncs already started, so both panes reuse one scan. */
+    const annotationSyncs = new Map()
+
+    /** How long one chapter's annotation sync answer is reused. */
+    const ANNOT_SYNC_WINDOW_MS = 10000
+
     /**
      * Bring this browser and the library mirror together for one chapter:
      * pages only the mirror knows are restored locally (a cleared browser or a
      * new machine), pages only this browser knows are handed to the mirror
      * (first run after the update). A page held locally always wins.
+     *
+     * The reader and the right preview both ask for the same chapter when a
+     * session opens; one scan of the whole chapter's storage is enough, so a
+     * repeat within {@link ANNOT_SYNC_WINDOW_MS} shares the first answer.
      * @param {string} bookId - book id.
      * @param {string} code - chapter code.
      * @returns {Promise<{ restored: number, seeded: number }>} what changed on each side.
      */
     async function syncChapterAnnotations(bookId, code) {
+      const key = `${bookId}:${code}`
+      const running = annotationSyncs.get(key)
+      if (running !== undefined && Date.now() - running.at < ANNOT_SYNC_WINDOW_MS) return running.promise
+      const promise = syncChapterAnnotationsOnce(bookId, code)
+      annotationSyncs.set(key, { at: Date.now(), promise })
+      promise.then(() => {}, () => { annotationSyncs.delete(key) })
+      return promise
+    }
+
+    /**
+     * The one scan behind {@link syncChapterAnnotations}.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Promise<{ restored: number, seeded: number }>} what changed on each side.
+     */
+    async function syncChapterAnnotationsOnce(bookId, code) {
       if (bookId === '' || code === '') return { restored: 0, seeded: 0 }
       let payload = null
       try {
@@ -10207,6 +10233,7 @@ window.__ModuleLoader__.load({
           return undefined
         }
         let cancelled = false
+        let held = null
         const load = async () => {
           try {
             // The chapter PDF is rendered from the cached page markdown. Re-render
@@ -10223,17 +10250,14 @@ window.__ModuleLoader__.load({
               // no cached pages yet, or XeLaTeX failed: read what exists
             }
             const lib = await loadPdfjs()
-            const make = variant => {
-              const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
-              if (reader.name !== '') params.set('name', reader.name)
-              if (variant !== '') params.set('variant', variant)
-              // A fresh translation or overlay rebuild must be fetched again; the
-              // revision defeats any document cache inside pdf.js or the browser.
-              if (docRev > 0) params.set('rev', String(docRev))
-              const url = new URL(`pdfdesk/pdf?${params.toString()}`, document.baseURI).href
-              return lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+            // The same URL is the same file: the right column's box reveal uses
+            // the very document this pane already parsed when it asks for the
+            // same variant.
+            const make = async variant => {
+              const url = chapterPdfUrl(reader.bookId, reader.code, { name: reader.name, variant, rev: docRev })
+              return sharedDocuments.claim(url, () => lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() }))
             }
-            let doc = null
+            let next = null
             let notice = ''
             if (overlay && reader.variant !== 'translated') {
               // Rebuild from the cached per-page blocks so an old overlay PDF
@@ -10248,26 +10272,30 @@ window.__ModuleLoader__.load({
                 // keep the existing overlay if the rebuild fails
               }
               try {
-                doc = await make('overlay').promise
+                next = await make('overlay')
               } catch {
-                doc = null
+                next = null
               }
-              if (doc === null) {
+              if (next === null) {
                 // No overlay layer to reveal: show the whole translation instead
                 // and say so, rather than silently leaving the original.
-                doc = await make('translated').promise
+                next = await make('translated')
                 notice = format('overlayFallback')
               }
             } else if (reader.variant !== 'translated') {
-              doc = await make('translated').promise
+              next = await make('translated')
             } else {
-              doc = await make('').promise
+              next = await make('')
             }
-            overlaySource.current = doc !== null && notice === '' && overlay ? 'overlay' : 'translated'
-            if (!cancelled) {
-              setOverlayNote(notice)
-              setDualDoc(doc)
+            const doc = next.doc
+            overlaySource.current = notice === '' && overlay ? 'overlay' : 'translated'
+            if (cancelled) {
+              next.release()
+              return
             }
+            held = next
+            setOverlayNote(notice)
+            setDualDoc(doc)
             if (doc !== null && overlay && notice === '' && !cancelled) {
               // Two-column pages position poorly: say so instead of pretending
               // the boxes line up. A later release can reflow by column.
@@ -10301,6 +10329,10 @@ window.__ModuleLoader__.load({
         void load()
         return () => {
           cancelled = true
+          if (held !== null) {
+            held.release()
+            held = null
+          }
         }
       }, [dual, overlay, reader.bookId, reader.code, docRev])
 
@@ -13941,7 +13973,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [annotRev, setAnnotRev] = useState(0)
       // The overlay/translated page the boxes reveal; loaded only when a box exists.
       const [maskDoc, setMaskDoc] = useState(null)
-      const maskTask = useRef(null)
+      const maskClaim = useRef(null)
       // Which `book|code|rev` the mask document belongs to, so a page change does
       // not reload it; `maskLoading` marks the same key while its load is running.
       const maskReady = useRef('')
@@ -14165,23 +14197,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return undefined
         }
         let cancelled = false
-        let task = null
+        let claim = null
         setPhase('loading')
         setError('')
         void (async () => {
           try {
             const lib = await loadPdfjs()
             if (cancelled) return
-            const query = new URLSearchParams({ book: bookId, code })
-            if (shownVariant !== '') query.set('variant', shownVariant)
-            if (docRev > 0) query.set('rev', String(docRev))
-            const url = new URL(`pdfdesk/pdf?${query.toString()}`, document.baseURI).href
-            task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
-            const loaded = await task.promise
+            // The chapter's URL is the reader's URL: when the reader still has
+            // this file open, the preview joins its document (no second
+            // download, no second worker, no second parse).
+            const url = chapterPdfUrl(bookId, code, { variant: shownVariant, rev: docRev })
+            claim = await sharedDocuments.claim(url, () => lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() }))
             if (cancelled) {
-              try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+              claim.release()
+              claim = null
               return
             }
+            const loaded = claim.doc
             setDoc(loaded)
             setCount(loaded.numPages || 0)
             // The page is the chapter's, not this file's: a translated file with
@@ -14202,8 +14235,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })()
         return () => {
           cancelled = true
-          if (task !== null) {
-            try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+          if (claim !== null) {
+            claim.release()
+            claim = null
           }
         }
       }, [bookId, code, shownVariant, docRev])
@@ -14230,11 +14264,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         maskLoading.current = ''
         setMaskDoc(null)
         return () => {
-          const task = maskTask.current
-          maskTask.current = null
-          if (task !== null) {
-            try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
-          }
+          const claim = maskClaim.current
+          maskClaim.current = null
+          if (claim !== null) claim.release()
         }
       }, [bookId, code, docRev])
 
@@ -14253,23 +14285,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             const lib = await loadPdfjs()
             for (const name of ['overlay', 'translated']) {
               if (cancelled) return
-              const query = new URLSearchParams({ book: bookId, code, variant: name })
-              if (docRev > 0) query.set('rev', String(docRev))
-              const url = new URL(`pdfdesk/pdf?${query.toString()}`, document.baseURI).href
-              const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
+              const url = chapterPdfUrl(bookId, code, { variant: name, rev: docRev })
               try {
-                const loaded = await task.promise
+                const claim = await sharedDocuments.claim(url, () => lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() }))
                 if (cancelled) {
-                  try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+                  claim.release()
                   return
                 }
-                maskTask.current = task
+                const previous = maskClaim.current
+                maskClaim.current = claim
+                if (previous !== null) previous.release()
                 maskReady.current = key
                 maskLoading.current = ''
-                setMaskDoc(loaded)
+                setMaskDoc(claim.doc)
                 return
               } catch {
-                try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+                // this variant is not produced yet: try the next one
               }
             }
           } catch {
@@ -15871,7 +15902,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [readerForceNew, setReaderForceNew] = useState(false)
       const readerRef = useRef(null)
       const readerDoc = useRef(null)
-      const readerTask = useRef(null)
       const [viewToken, setViewToken] = useState(0)
       useEffect(() => {
         viewerBus.listeners.add(setViewToken)
@@ -16288,26 +16318,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         })
       }, [])
 
-      // Loading one document: the pdf.js build first, then its bytes from the Host.
+      // Loading one document: the pdf.js build first, then its bytes from the
+      // Host. The document is shared with the right column, so opening the
+      // preview of the chapter being read reuses this parse instead of paying
+      // for it a second time.
       useEffect(() => {
         if (reader === null) return undefined
         let cancelled = false
+        let claim = null
         const load = async () => {
           try {
             const lib = await loadPdfjs()
             if (cancelled) return
-            const params = new URLSearchParams({ book: reader.bookId, code: reader.code })
-            if (reader.name !== '') params.set('name', reader.name)
-            if (reader.variant === 'translated') params.set('variant', 'translated')
-            const url = new URL(`pdfdesk/pdf?${params.toString()}`, document.baseURI).href
-            const task = lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() })
-            readerTask.current = task
-            const doc = await task.promise
+            const url = chapterPdfUrl(reader.bookId, reader.code, {
+              name: reader.name,
+              variant: reader.variant === 'translated' ? 'translated' : '',
+              // A retry is a new attempt: it must not pick up the document it
+              // just failed with.
+              retry: reader.attempt,
+            })
+            claim = await sharedDocuments.claim(url, () => lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() }))
             if (cancelled) {
-              // pdf.js 6 has no document.destroy(); the loading task owns teardown.
-              try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ }
+              claim.release()
+              claim = null
               return
             }
+            const doc = claim.doc
             readerDoc.current = doc
             // Only the source document owns the chapter's page count. A
             // translated file may have a different count; letting it publish one
@@ -16331,10 +16367,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         void load()
         return () => {
           cancelled = true
-          const task = readerTask.current
-          readerTask.current = null
           readerDoc.current = null
-          if (task !== null) { try { void Promise.resolve(task.destroy()).catch(() => {}) } catch { /* already gone */ } }
+          if (claim !== null) {
+            claim.release()
+            claim = null
+          }
         }
       }, [reader === null ? '' : `${reader.bookId}|${reader.code}|${reader.name}|${reader.attempt}`])
 

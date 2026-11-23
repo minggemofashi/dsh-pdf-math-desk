@@ -49,7 +49,8 @@ import { loadCatalog } from './index-source.js'
 import { readPageBlocks } from './blocks.js'
 import { translatePage } from './translate.js'
 import { startChapterJob } from './translate-job.js'
-import { artifactPdfPath, chapterPdfPath, readPdf } from './pdf-source.js'
+import { artifactPdfPath, chapterPdfPath } from './pdf-source.js'
+import { sendPdfFile, fileEtag, matchesEtag } from './pdf-stream.js'
 import { checkForUpdate } from './update.js'
 import { detectEnvironment } from './environment.js'
 import { renderMarkdown } from './render.js'
@@ -2067,7 +2068,7 @@ async function activeLibrary() {
       }
 
       if (path === `${PREFIX}/pdf`) {
-        if (request.method !== 'GET') {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
           return
         }
@@ -2077,42 +2078,35 @@ async function activeLibrary() {
           return
         }
         const name = url.searchParams.get('name') ?? ''
+        const library = await activeLibrary()
         const source = name === ''
-          ? chapterPdfPath(await activeLibrary(), match.book, match.chapter)
-          : artifactPdfPath(await activeLibrary(), match.book, match.chapter, name)
+          ? chapterPdfPath(library, match.book, match.chapter)
+          : artifactPdfPath(library, match.book, match.chapter, name)
         if (!source.ok) {
           fail(response, 400, source.reason, '这个文件不能作为 PDF 打开')
           return
         }
+        // A translation or overlay layer lives beside the chapter PDF; the
+        // reader serves it through the same ranged, cacheable route.
         const variant = url.searchParams.get('variant') ?? ''
+        let target = source.path
         if (variant === 'translated' || variant === 'overlay') {
           const suffix = variant === 'overlay' ? '_overlay' : '_translated'
-          const target = join(dirname(source.path), `${basename(source.path, '.pdf')}${suffix}.pdf`)
-          let bytes = null
-          try {
-            bytes = await readPdf(target)
-          } catch {
-            bytes = null
-          }
-          if (bytes === null || !bytes.ok) {
-            fail(response, 404, 'missing-file', '还没有这一页/章的译文')
-            return
-          }
-          sendBytes(response, 200, bytes.bytes, 'application/pdf')
+          target = join(dirname(source.path), `${basename(source.path, '.pdf')}${suffix}.pdf`)
+        }
+        const sent = await sendPdfFile(request, response, target)
+        if (sent.ok) return
+        if (variant !== '') {
+          fail(response, 404, 'missing-file', '还没有这一页/章的译文')
           return
         }
-        const file = await readPdf(source.path)
-        if (!file.ok) {
-          const status = file.reason === 'too-large' ? 413 : 404
-          fail(response, status, file.reason, file.reason === 'too-large' ? '这个 PDF 太大了' : '找不到这个 PDF')
-          return
-        }
-        sendBytes(response, 200, file.bytes, 'application/pdf')
+        const status = sent.reason === 'too-large' ? 413 : 404
+        fail(response, status, sent.reason, sent.reason === 'too-large' ? '这个 PDF 太大了' : '找不到这个 PDF')
         return
       }
 
       if (path.startsWith(`${PREFIX}/vendor/`)) {
-        if (request.method !== 'GET') {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
           return
         }
@@ -2122,12 +2116,39 @@ async function activeLibrary() {
           fail(response, 404, 'not-found', '没有这个阅读器文件')
           return
         }
+        const file = join(config.vendorDir, ...name.split('/'))
+        let info
         try {
-          const body = await readFile(join(config.vendorDir, ...name.split('/')))
-          sendBytes(response, 200, body, contentType)
+          info = await stat(file)
         } catch {
           fail(response, 404, 'missing-vendor', '阅读器文件缺失，请重新安装插件')
+          return
         }
+        // pdf.js fetches its worker for every document it opens. Without a
+        // validator that was a fresh 1.26 MB download per open; with one the
+        // browser revalidates or reuses it, and a plugin upgrade still lands
+        // because the file's size/mtime changed.
+        const etag = fileEtag(info)
+        if (matchesEtag(request.headers['if-none-match'], etag)) {
+          response.writeHead(304, { etag, 'cache-control': 'public, max-age=300' })
+          response.end()
+          return
+        }
+        let body
+        try {
+          body = await readFile(file)
+        } catch {
+          fail(response, 404, 'missing-vendor', '阅读器文件缺失，请重新安装插件')
+          return
+        }
+        response.writeHead(200, {
+          'content-type': contentType,
+          'cache-control': 'public, max-age=300',
+          etag,
+          'content-length': body.length,
+        })
+        if (request.method === 'HEAD') response.end()
+        else response.end(body)
         return
       }
 
