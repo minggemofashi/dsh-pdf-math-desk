@@ -22,6 +22,7 @@ window.__ModuleLoader__.load({
     const useCallback = React.useCallback
     const useMemo = React.useMemo
     const useRef = React.useRef
+    const useLayoutEffect = typeof React.useLayoutEffect === 'function' ? React.useLayoutEffect : React.useEffect
 
     // Official host primitives are build-time source in DSH. The build script
     // compiles the subset we use into one CJS file; load it with this instance's
@@ -3973,10 +3974,47 @@ window.__ModuleLoader__.load({
      */
     function PlaneBounds(props) {
       const margins = props.margins === undefined || props.margins === null ? PLANE_MARGINS : props.margins
-      // Compact mode (single page) keeps the four "+" handles on the page edge:
-      // the full three-page box would otherwise add two pages of scrollable
-      // blank space below the page.
       const compact = props.compact === true
+      // Fixed mode renders the plane in the stage host (outside the scroller):
+      // the dashed box stays visible around the page, but the two pages of
+      // blank above/below never become scrollable blank space.
+      const fixed = props.fixed === true
+      const anchorRef = props.anchorRef
+      const hostRef = props.hostRef
+      const [fixedBox, setFixedBox] = useState(null)
+      useLayoutEffect(() => {
+        if (!fixed) return undefined
+        const update = () => {
+          const anchor = anchorRef === null || anchorRef === undefined ? null : anchorRef.current
+          const host = hostRef === null || hostRef === undefined ? null : hostRef.current
+          if (anchor === null || host === null || typeof anchor.getBoundingClientRect !== 'function') return
+          const page = anchor.getBoundingClientRect()
+          const frame = host.getBoundingClientRect()
+          if (page.width <= 0 || page.height <= 0) return
+          const next = {
+            left: Math.round(page.left - frame.left - margins.left * page.width),
+            top: Math.round(page.top - frame.top - margins.top * page.height),
+            width: Math.round((1 + margins.left + margins.right) * page.width),
+            height: Math.round((1 + margins.top + margins.bottom) * page.height),
+          }
+          setFixedBox(current => (current !== null && current.left === next.left && current.top === next.top
+            && current.width === next.width && current.height === next.height ? current : next))
+        }
+        update()
+        window.addEventListener('scroll', update, true)
+        window.addEventListener('resize', update)
+        let observer = null
+        const anchor = anchorRef === null || anchorRef === undefined ? null : anchorRef.current
+        if (typeof ResizeObserver === 'function' && anchor !== null) {
+          observer = new ResizeObserver(update)
+          observer.observe(anchor)
+        }
+        return () => {
+          window.removeEventListener('scroll', update, true)
+          window.removeEventListener('resize', update)
+          if (observer !== null) observer.disconnect()
+        }
+      }, [fixed, anchorRef, hostRef, margins.left, margins.top, margins.right, margins.bottom, props.version])
       const expand = side => {
         if (typeof props.onExpand === 'function') props.onExpand(side)
         else expandPlaneMargin(side)
@@ -3989,20 +4027,28 @@ window.__ModuleLoader__.load({
         title: format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
         'aria-label': format(side === 'left' ? 'planeLeft' : side === 'right' ? 'planeRight' : side === 'top' ? 'planeUp' : 'planeDown'),
         onClick: () => expand(side),
-        // The handle sits above the paper's capture layer on purpose; its press
-        // must not also start a pan or a stroke.
         onPointerDown: event => event.stopPropagation(),
       }, '+')
-      return h('div', {
-        className: 'md-plane-bounds',
-        'data-compact': compact ? 'true' : undefined,
-        title: format('planeBoundsHint'),
-        style: compact ? { inset: 0 } : {
+      const style = fixed
+        ? (fixedBox === null ? { display: 'none' } : {
+          position: 'absolute',
+          left: `${fixedBox.left}px`,
+          top: `${fixedBox.top}px`,
+          width: `${fixedBox.width}px`,
+          height: `${fixedBox.height}px`,
+        })
+        : compact ? { inset: 0 } : {
           left: `${-margins.left * 100}%`,
           top: `${-margins.top * 100}%`,
           width: `${(1 + margins.left + margins.right) * 100}%`,
           height: `${(1 + margins.top + margins.bottom) * 100}%`,
-        },
+        }
+      return h('div', {
+        className: 'md-plane-bounds',
+        'data-fixed': fixed ? 'true' : undefined,
+        'data-compact': compact ? 'true' : undefined,
+        title: format('planeBoundsHint'),
+        style,
       },
         handle('top', { left: '50%', top: '0%', transform: 'translate(-50%, -50%)' }),
         handle('bottom', { left: '50%', top: '100%', transform: 'translate(-50%, -50%)' }),
@@ -9710,6 +9756,17 @@ window.__ModuleLoader__.load({
           ))
 
       if (props.variant === 'column') return content
+      const stageHostRef = useRef(null)
+      const planeOverlay = props.mode === 'continuous' || typeof props.onExpandPlane !== 'function'
+        ? null
+        : h(PlaneBounds, {
+          fixed: true,
+          anchorRef: canvas,
+          hostRef: stageHostRef,
+          margins: props.margins,
+          onExpand: props.onExpandPlane,
+          version: String(pan === null ? 0 : pan.x) + ":" + String(pan === null ? 0 : pan.y) + ":" + String(paintedScale) + ":" + String(props.page) + ":" + String(props.doc === null || props.doc === undefined ? 0 : props.doc.numPages),
+        })
       const stageNode = h('div', {
         className: 'md-reader-stage',
         'data-mode': props.mode,
@@ -9728,8 +9785,8 @@ window.__ModuleLoader__.load({
       // content, so after scrolling it no longer covers the visible page (which
       // is why continuous mode stopped accepting strokes once it was scrolled).
       // The host frame is not a scroller; the stage inside it still is.
-      if (props.captureLayer === undefined) return stageNode
-      return h('div', { className: 'md-reader-stage-host' }, stageNode, props.captureLayer)
+      if (props.captureLayer === undefined && planeOverlay === null) return stageNode
+      return h('div', { className: 'md-reader-stage-host', ref: stageHostRef }, stageNode, props.captureLayer, planeOverlay)
     }
 
     /**
@@ -11907,7 +11964,7 @@ window.__ModuleLoader__.load({
       // The plane's outline: the page box plus its margins, with one "+" square
       // per edge. The right preview renders the same component, so both panes
       // show the same plane and the same handles.
-      const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane, compact: reader.mode === 'single' })
+      const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane })
       return h('section', {
         className: 'md-reader',
         role: 'dialog',
@@ -12347,12 +12404,12 @@ window.__ModuleLoader__.load({
                 panEnabled: extended && handActive && noteEdit === null,
                 scrollGrab: reader.mode === 'continuous' && handActive && noteEdit === null,
                 captureLayer: canvasCapture,
+                onExpandPlane: expandPlane,
                 onPageNode: (page, node) => {
                   if (node === null || node === undefined) pageNodes.current.delete(page)
                   else pageNodes.current.set(page, node)
                 },
                 children: [
-                  planeBoundsLayer,
                   masksLayer,
                   annotLayer('main'),
                   questionLayer,
@@ -13390,7 +13447,7 @@ window.__ModuleLoader__.load({
 .md-reader-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 /* The stage scrolls; this frame does not. The pointer layer lives here so it
    always covers what is on screen, at any scroll offset. */
-.md-reader-stage-host { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.md-reader-stage-host { position: relative; flex: 1 1 auto; min-height: 0; display: flex; overflow: hidden; }
 .md-reader-stage-host > .md-reader-stage { flex: 1 1 auto; min-height: 0; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 /* The single page rides on the shared annotation plane: the hand tool (or a
@@ -14821,7 +14878,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       })
       // The same plane edge as the reader, with the same "+" squares: the plane
       // is shared, so widening it in one pane is immediately true in the other.
-      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: expandSidePlane, compact: mode === 'single' })
+      const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: expandSidePlane })
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
@@ -15072,9 +15129,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               panNeeds: sidePanNeeds,
               margins: planeMargins,
               onPan: setSidePan,
+              onExpandPlane: expandSidePlane,
               panEnabled: tool === 'hand',
               scrollGrab: mode === 'continuous' && tool === 'hand',
-              children: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
+              children: [masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
               // the page being read, so drawing and boxes work there too.
               overlay: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
