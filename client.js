@@ -1088,6 +1088,7 @@ window.__ModuleLoader__.load({
       questionTool: '疑问框',
       questionPanelHint: '拖出矩形标记位置；框可拖动、四角缩放、双击名称改名、右键删除',
       questionJump: '疑问跳转',
+      questionJumpEmpty: '本章没有疑问',
       questionNameHint: '双击改名；右键删除',
       questionRename: '疑问名称',
       questionsTitle: '疑问',
@@ -1694,6 +1695,7 @@ window.__ModuleLoader__.load({
       questionTool: 'Question mark',
       questionPanelHint: 'Drag out a rectangle to mark a place; drag it to move, pull a corner to resize, double-click the name to rename, right-click to delete',
       questionJump: 'Jump to a question',
+      questionJumpEmpty: 'No questions in this chapter',
       questionNameHint: 'Double-click to rename; right-click to delete',
       questionRename: 'Question name',
       questionsTitle: 'Questions',
@@ -9975,21 +9977,21 @@ window.__ModuleLoader__.load({
               if (typeof props.onGeneralSession === 'function') props.onGeneralSession()
             },
           }, format('generalSession')),
-          reader.name !== '' || questions.length === 0
-            ? null
-            : h(KitSelect, {
-              className: 'md-question-jump',
-              value: '',
-              label: format('questionJump'),
-              placeholder: format('questionJump'),
-              options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
-              onChange: id => {
-                const found = questionsRef.current.find(item => item.id === id)
-                if (found === undefined) return
-                props.onPage(found.page)
-                setQuestionFlash(found.id)
-              },
-            }),
+          h(KitSelect, {
+            className: 'md-question-jump',
+            value: '',
+            label: format('questionJump'),
+            placeholder: questions.length === 0 ? format('questionJumpEmpty') : format('questionJump'),
+            title: questions.length === 0 ? format('questionJumpEmpty') : questions.map(item => item.name).join(' / '),
+            disabled: questions.length === 0,
+            options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
+            onChange: id => {
+              const found = questionsRef.current.find(item => item.id === id)
+              if (found === undefined) return
+              props.onPage(found.page)
+              setQuestionFlash(found.id)
+            },
+          }),
           h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
           h('span', { className: 'md-reader-modes', role: 'group', 'aria-label': format('readerMode') },
             h(KitButton, {
@@ -10351,7 +10353,7 @@ window.__ModuleLoader__.load({
             railTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             railTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             railTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
-            railTool('question', 'questionTool', 'M4 4h16v16H4zM8 8h8v8H8z'),
+            railTool('question', 'questionTool', 'M4 4h16v16H4zM9.6 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .8-1 1.4v.4M12 16.6h.01'),
             railTool('line', 'shapeLine', 'M4 20 20 4'),
             railTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
             railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
@@ -11321,6 +11323,9 @@ window.__ModuleLoader__.load({
    layer is inert unless the question (or select) tool is picked, so drawing
    behind a mark stays possible. */
 .md-questions { position: absolute; inset: 0; z-index: 7; pointer-events: none; touch-action: none; }
+/* The mark tool owns the page while it is picked: the layer itself must take
+   the pointer, otherwise a drag-to-create can never start on empty paper. */
+.md-questions[data-active="true"] { pointer-events: auto; cursor: crosshair; }
 .md-question { position: absolute; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); border-radius: 2px; pointer-events: none; }
 .md-questions[data-active="true"] .md-question { pointer-events: auto; cursor: move; }
 .md-question[data-flash="true"] { border-width: 2px; animation: md-question-flash 1.8s ease-out; }
@@ -11335,7 +11340,8 @@ window.__ModuleLoader__.load({
 .md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
 .md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; }
-.md-question-jump { max-width: 190px; }
+.md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
+.md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .md-annot-text.md-annot-selected { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: 0; }
 .md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
@@ -12958,21 +12964,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               disabled: count === 0 || phase !== 'ready',
               onClick: () => setGotoOpen(true),
             }, count === 0 ? String(page) : `${page} / ${count}`),
-          questions.length === 0
-            ? null
-            : h(KitSelect, {
-              className: 'md-question-jump',
-              value: '',
-              label: format('questionJump'),
-              placeholder: format('questionJump'),
-              options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
-              onChange: id => {
-                const found = questionsRef.current.find(item => item.id === id)
-                if (found === undefined) return
-                goPage(found.page)
-                flashQuestion(found.id)
-              },
-            }),
+          h(KitSelect, {
+            className: 'md-question-jump',
+            value: '',
+            label: format('questionJump'),
+            placeholder: questions.length === 0 ? format('questionJumpEmpty') : format('questionJump'),
+            title: questions.length === 0 ? format('questionJumpEmpty') : questions.map(item => item.name).join(' / '),
+            disabled: questions.length === 0,
+            options: questions.map(item => ({ value: item.id, label: `${item.name} · 第 ${item.page} 页` })),
+            onChange: id => {
+              const found = questionsRef.current.find(item => item.id === id)
+              if (found === undefined) return
+              goPage(found.page)
+              flashQuestion(found.id)
+            },
+          }),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small',
@@ -13087,7 +13093,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             sideRailTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             sideRailTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
             sideRailTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
-            sideRailTool('question', 'questionTool', 'M4 4h16v16H4zM8 8h8v8H8z'),
+            sideRailTool('question', 'questionTool', 'M4 4h16v16H4zM9.6 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .8-1 1.4v.4M12 16.6h.01'),
             sideRailTool('line', 'shapeLine', 'M4 20 20 4'),
             sideRailTool('arrow', 'shapeArrow', 'M4 20 20 4M10 4h10v10'),
             sideRailTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
