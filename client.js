@@ -14139,8 +14139,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const planeMargins = usePlaneMargins()
       const plane = createPlane(planeMargins)
       const [sidePan, setSidePan] = useState({ x: 0, y: 0 })
-      useEffect(() => { setSidePan({ x: 0, y: 0 }); setSideExpanded(0) }, [bookId, code, shownVariant, mode])
       const [sideExpanded, setSideExpanded] = useState(0)
+      useEffect(() => { setSidePan({ x: 0, y: 0 }); setSideExpanded(0) }, [bookId, code, shownVariant, mode])
       const expandSidePlane = side => {
         expandPlaneMargin(side)
         setSideExpanded(value => value + 1)

@@ -252,6 +252,9 @@ ctx.contextMenus.register({
 - **同一章多个标签**：地址即内容 id，同一章在同一栏只有一张标签；重复打开是「指向同页」而不是新标签。
 - **跨书跳转**：`openFromSide` 会先切书页再开阅读器，避免「返回章节」落到旧书。
 - **桌面挂件遮挡**：`dsh-whale-widget-bowl` 的根节点是 `.dshwv-root`（`position:fixed; z-index:9999`，本身 `pointer-events:none`），跨插件无法把它压到页面下方，所以做成**悬停淡化**：指针进入预览时给 `body` 打 `data-pdfdesk-reading`，注入的样式把它淡到 28%；该插件不在时规则匹配不到元素。若以后挂件类名变了，淡化失效但不影响阅读功能。
+- **不再重复打开同一份 PDF（2026-11-24）**：右栏以前是第二个独立 `getDocument`——同一章要下载两次、起两个 worker、解析两遍（38 MB 扫描章节实测首屏 327 ms，其中 233 ms 是重复加载）。现在阅读器、右栏、双语、遮罩都走 `sharedDocuments.claim(url, …)`：以完整 URL 为键，引用计数，最后一个视图离开后保留 30 s（最多 2 份）再销毁——跳到会话时「阅读器卸载 → 右栏挂载」正好落在保留窗口内，右栏只剩一次页面渲染（同文件实测 ~94 ms）。阅读器「重试」带 `retry=`、译文/叠加带 `rev=`，不同版本不会误用旧文档。
+- **Host 侧按 Range 发送（2026-11-24）**：`/pdfdesk/pdf` 改由 `src/host/pdf-stream.js` 处理——`ETag`（大小+mtime）+ `If-None-Match → 304`、`Range → 206`、越界 `416`、`HEAD` 只回头，并用 `createReadStream` 流式发送而不是整份读进内存；`/pdfdesk/vendor/*` 加 `max-age=300` + `ETag`，pdf.js 的 1.26 MB worker 不再每开一个文档重下。响应头不再是 `cache-control: no-store` / `accept-ranges: none`。
+- **同章批注同步只跑一次**：打开会话时阅读器和右栏都会调 `syncChapterAnnotations`（扫全章 localStorage + 拉镜像），10 s 内同章复用第一次结果。
 
 ## 10. 关键代码位置（`client.js`）
 
@@ -267,5 +270,6 @@ ctx.contextMenus.register({
 | 注册 | `registerSidePreview(ctx)`（`apply` 末尾调用） |
 | 打开右侧 | `openPdfInSession`（`sideTabAvailable` 判定后走自建地址） |
 | 阅读器同步 | `WorkbenchPage` 的 `readerViewKey` / `readerLinkKey`；`ReaderView` 的 `docRev`、`remoteAnnotRev` 与写回判据 |
-| 取数路由 | `src/host/routes.js` 的 `/pdf`（`variant`、`rev`） |
+| 取数路由 | `src/host/routes.js` 的 `/pdf`（`variant`、`rev`），文件由 `src/host/pdf-stream.js` 发送 |
+| 共享文档 | `createDocumentCache` / `sharedDocuments` / `chapterPdfUrl`（阅读器、右栏、双语、遮罩共用） |
 | 样式 | `CSS` 里的 `.md-side*`、`.md-annot-readonly`、`.md-annot-edit` |
