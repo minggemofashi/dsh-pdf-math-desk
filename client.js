@@ -1083,7 +1083,7 @@ window.__ModuleLoader__.load({
       sharedPrefixFailed: '清除共享前缀失败',
       attachLabel: '附件',
       fontTitle: '手写字体（小赖）',
-      fontMissing: '未安装，手写体回退到系统楷体',
+      fontMissing: '未下载，手写体暂时使用系统楷体',
       fontInstalled: '已下载（{mb} MB）',
       fontDownloaded: '字体已下载并启用（{mb} MB）',
       fontImported: '字体已导入并启用',
@@ -1750,7 +1750,7 @@ window.__ModuleLoader__.load({
       sharedPrefixFailed: 'Could not clear the shared prefix',
       attachLabel: 'Attachments',
       fontTitle: 'Handwriting font (Xiaolai)',
-      fontMissing: 'Not installed — hand text falls back to the system Kai face',
+      fontMissing: 'Not downloaded — hand text uses the system Kai face for now',
       fontInstalled: 'Downloaded ({mb} MB)',
       fontDownloaded: 'Font downloaded and enabled ({mb} MB)',
       fontImported: 'Font imported and enabled',
@@ -4410,9 +4410,21 @@ window.__ModuleLoader__.load({
       }
       const openLink = url => {
         try {
-          window.open(url, '_blank', 'noopener')
+          const opened = window.open(url, '_blank', 'noopener')
+          if (opened !== null && opened !== undefined) return
         } catch {
-          // popup blocked
+          // popup blocked: fall through to an anchor click
+        }
+        try {
+          const anchor = document.createElement('a')
+          anchor.href = url
+          anchor.target = '_blank'
+          anchor.rel = 'noopener noreferrer'
+          document.body.appendChild(anchor)
+          anchor.click()
+          anchor.remove()
+        } catch {
+          // truly blocked (no window): nothing else to try
         }
       }
       const tabs = [
