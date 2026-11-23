@@ -47,11 +47,17 @@ const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'a
 const OFFICE_EXTENSIONS = new Set(['doc', 'docx'])
 
 /**
- * Products the workbench does not list. TeX sources are build intermediates;
- * spreadsheets and slides are not reading material for this plugin, and neither
- * is a CSV dump. The files stay on disk untouched.
+ * Products the workbench lists. This is a whitelist on purpose: a chapter
+ * directory also holds build intermediates (`tex`, `aox`/`aux`/`log`/`out`/
+ * `bbl`/`blg`/`synctex` …), spreadsheets, slides and scratch files. None of
+ * them are reading material here, and an extension nobody thought of must not
+ * leak into the list. The files stay on disk untouched; only the listing
+ * ignores them.
  */
-const HIDDEN_EXTENSIONS = new Set(['tex', 'xlsx', 'xls', 'xlsm', 'ods', 'csv', 'pptx', 'ppt', 'pptm', 'odp'])
+const VISIBLE_EXTENSIONS = new Set([
+  'pdf', 'md', 'markdown', 'doc', 'docx',
+  'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif',
+])
 
 /**
  * Whether one produced file belongs in the list.
@@ -60,7 +66,7 @@ const HIDDEN_EXTENSIONS = new Set(['tex', 'xlsx', 'xls', 'xlsm', 'ods', 'csv', '
  */
 function visibleName(name) {
   const extension = extname(name).replace(/^\./, '').toLowerCase()
-  return !HIDDEN_EXTENSIONS.has(extension)
+  return VISIBLE_EXTENSIONS.has(extension)
 }
 
 /** Decoders tried in order for a preview; UTF-8 first, then the common Chinese Windows code page. */
