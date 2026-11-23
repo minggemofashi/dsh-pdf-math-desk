@@ -38,6 +38,7 @@ import { prepareChapterText } from './chapter-text.js'
 import { boundarySeq, ensureBaseSession, ensureBranchSession } from './base-session.js'
 import { clearSharedPrefixCache } from './chapter-sessions.js'
 import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, removeAttachment, safeAttachmentName } from './attachments.js'
+import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -856,19 +857,35 @@ async function activeLibrary() {
             sourcePath = cleanup
           }
           try {
-            const item = await addAttachment({
-              libraryDir: library.libraryDir,
-              book: match.book.id,
-              code: match.chapter.code,
-              sourcePath,
-              name: typeof record.name === 'string' ? record.name : undefined,
-            })
-            sendJson(response, 200, { ok: true, item })
+            let storedPath = sourcePath
+            let pdfPath = null
+            const originalName = typeof record.name === 'string' && record.name !== '' ? record.name : sourcePath
+            if (isPptPath(originalName)) {
+              pdfPath = join(tmpdir(), `pdfdesk-ppt-${randomUUID()}.pdf`)
+              await convertPptToPdf({ source: sourcePath, outPath: pdfPath })
+              storedPath = pdfPath
+            }
+            try {
+              const item = await addAttachment({
+                libraryDir: library.libraryDir,
+                book: match.book.id,
+                code: match.chapter.code,
+                sourcePath: storedPath,
+                name: pdfPath === null ? (typeof record.name === 'string' ? record.name : undefined) : pdfNameForPpt(originalName),
+              })
+              sendJson(response, 200, { ok: true, item })
+            } finally {
+              if (pdfPath !== null) await unlink(pdfPath).catch(() => {})
+            }
           } finally {
             if (cleanup !== null) await unlink(cleanup).catch(() => {})
           }
         } catch (error) {
           const reason = error !== null && error !== undefined ? error.code : ''
+          if (reason === 'no-converter') {
+            fail(response, 503, 'no-converter', String(error.message ?? '没有可用的 PPT 转换器'))
+            return
+          }
           fail(
             response,
             reason === 'too-large' ? 413 : reason === 'bad-type' || reason === 'not-file' ? 400 : 500,

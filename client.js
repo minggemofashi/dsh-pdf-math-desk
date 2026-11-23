@@ -1036,7 +1036,7 @@ window.__ModuleLoader__.load({
       attachLabel: '附件',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
-      attachHint: '支持 PDF 与图片，单个不超过 50 MB；会复制到本章的附件目录',
+      attachHint: '支持 PDF、图片与 PPT（自动转 PDF），单个不超过 50 MB；会复制到本章的附件目录',
       attachDelete: '删除附件',
       attachDeleteConfirm: '删除这个附件？',
       attachUploaded: '已添加附件',
@@ -1650,7 +1650,7 @@ window.__ModuleLoader__.load({
       attachLabel: 'Attachments',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
-      attachHint: 'PDFs and images up to 50 MB; copied into this chapter’s attachment folder',
+      attachHint: 'PDFs, images and PPT (converted to PDF) up to 50 MB; copied into this chapter’s attachment folder',
       attachDelete: 'Delete attachment',
       attachDeleteConfirm: 'Delete this attachment?',
       attachUploaded: 'Attachment added',
@@ -2615,7 +2615,35 @@ window.__ModuleLoader__.load({
       const branch = payload !== null && payload !== undefined ? payload.branch : null
       const id = branch !== null && branch !== undefined ? branch.id : ''
       if (typeof id !== 'string' || id === '') throw new Error('no branch session')
+      markSharedBranch(id)
       return id
+    }
+
+    /**
+     * Remember that one session is a shared-prefix branch. Its history already
+     * starts with the chapter read turn, so the blank-session address seed must
+     * not be pasted on top when it is opened again.
+     * @param {string} sessionId - branch session id.
+     * @returns {void}
+     */
+    function markSharedBranch(sessionId) {
+      try {
+        window.localStorage.setItem(`pdfdesk:shared-branch:${sessionId}`, '1')
+      } catch {
+        // storage unavailable: the seed may be pasted again, which is harmless
+      }
+    }
+
+    /**
+     * @param {string} sessionId - session id.
+     * @returns {boolean} whether this session was opened as a shared-prefix branch.
+     */
+    function isSharedBranch(sessionId) {
+      try {
+        return window.localStorage.getItem(`pdfdesk:shared-branch:${sessionId}`) === '1'
+      } catch {
+        return false
+      }
     }
 
     /**
@@ -11837,7 +11865,7 @@ window.__ModuleLoader__.load({
           h('input', {
             ref: attachInput,
             type: 'file',
-            accept: '.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.avif',
+            accept: '.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.avif,.ppt,.pptx',
             style: { display: 'none' },
             onChange: uploadAttachment,
           }),
@@ -16600,7 +16628,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (ratio < limit) {
             // A blank session whose draft was deleted gets its address block back.
             // A non-empty draft is preserved because beginPrefill uses `keep`.
-            if (current.pending === true || current.blank === true) {
+            if ((current.pending === true || current.blank === true) && !isSharedBranch(current.id)) {
               await seedExistingSession(current.id, chapter, mode)
             }
             await flushSave()
