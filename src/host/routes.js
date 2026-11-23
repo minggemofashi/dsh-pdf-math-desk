@@ -40,6 +40,7 @@ import { clearSharedPrefixCache } from './chapter-sessions.js'
 import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, removeAttachment, safeAttachmentName } from './attachments.js'
 import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
 import { MAX_FONT_BYTES, downloadFont, fontStatus, installFont, readFont, removeFont } from './fonts.js'
+import { createBackup, readBackup } from './backup.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -317,6 +318,97 @@ async function activeLibrary() {
         || path === `${PREFIX}/purge`
       if (!libraryFree && (libraries === undefined || (await libraries.active()) === null)) {
         fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
+        return
+      }
+
+      if (path === `${PREFIX}/backup`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const action = typeof record.action === 'string' ? record.action : ''
+        try {
+          if (action === 'create') {
+            const source = record.include !== null && typeof record.include === 'object' ? record.include : {}
+            const include = {
+              sessions: source.sessions !== false,
+              workspace: source.workspace !== false,
+              pluginState: source.pluginState !== false,
+              libraryData: source.libraryData !== false,
+              settings: source.settings === true,
+              fonts: source.fonts === true,
+              projcache: source.projcache === true,
+            }
+            let list = []
+            if (libraries !== undefined && typeof libraries.list === 'function') {
+              const rows = await libraries.list().catch(() => [])
+              list = (Array.isArray(rows) ? rows : []).map(row => ({ id: row.id, name: row.name, libraryDir: row.libraryDir }))
+            } else {
+              const active = await activeLibrary()
+              list = [{ id: active.id, name: active.name, libraryDir: active.libraryDir }]
+            }
+            const backup = await createBackup({
+              dataDir: config.dataDir,
+              libraries: list,
+              include,
+              pluginVersion: PLUGIN_VERSION,
+              machine: { platform: process.platform, oldHome: process.env.USERPROFILE ?? process.env.HOME ?? '' },
+            })
+            sendJson(response, 200, {
+              ok: true,
+              name: backup.name,
+              bytes: backup.bytes,
+              files: backup.files,
+              included: backup.manifest.included,
+              download: `${PREFIX}/backup/file?name=${encodeURIComponent(backup.name)}`,
+            })
+            return
+          }
+          if (action === 'inspect') {
+            const source = typeof record.path === 'string' ? record.path : ''
+            if (source === '') {
+              fail(response, 400, 'invalid-path', '请选择迁移包文件')
+              return
+            }
+            const verified = await readBackup(source)
+            const included = verified.manifest.included ?? {}
+            sendJson(response, 200, {
+              ok: true,
+              manifest: {
+                format: verified.manifest.format,
+                createdAt: verified.manifest.createdAt,
+                plugin: verified.manifest.plugin ?? null,
+                machine: verified.manifest.machine ?? null,
+                included,
+                paths: verified.manifest.paths ?? null,
+                files: Array.isArray(verified.manifest.files) ? verified.manifest.files.length : 0,
+              },
+            })
+            return
+          }
+          fail(response, 400, 'unknown-action', `未知的迁移操作：${action}`)
+        } catch (error) {
+          const message = String(error && error.message ? error.message : error)
+          fail(response, 500, 'backup-failed', message)
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/backup/file`) {
+        const name = url.searchParams.get('name') ?? ''
+        if (!/^dsh-workbench-backup-[0-9-]+\.zip$/.test(name)) {
+          fail(response, 400, 'invalid-name', '迁移包名称不合法')
+          return
+        }
+        try {
+          const bytes = await readFile(join(config.dataDir, 'backup', name))
+          sendBytes(response, 200, bytes, 'application/zip', `attachment; filename="${name}"`)
+        } catch {
+          fail(response, 404, 'missing-file', '找不到这个迁移包')
+        }
         return
       }
 

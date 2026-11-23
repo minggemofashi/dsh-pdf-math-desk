@@ -5,14 +5,124 @@
  * @module dsh-pdf-workbench/backup
  */
 
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { readZip, safeZipName, writeZip } from './zip.js'
 
 /** Version of the manifest schema. */
 export const BACKUP_FORMAT = 1
+
+/** Plugin-state files that travel with a backup (never credentials). */
+export const PLUGIN_STATE_FILES = ['libraries.json', 'state.json', 'pending.json', 'links.json', 'pressure.json', 'shelves.json', 'qa-persona.md']
+
+/**
+ * Copy one path when it exists.
+ * @param {string} source - file or directory.
+ * @param {string} target - destination.
+ * @returns {Promise<boolean>} whether anything was copied.
+ */
+async function copyIfExists(source, target) {
+  const info = await stat(source).catch(() => null)
+  if (info === null) return false
+  await mkdir(dirname(target), { recursive: true })
+  await cp(source, target, { recursive: info.isDirectory() })
+  return true
+}
+
+/**
+ * Copy the selected sources into a staging tree.
+ * @param {{ dataDir: string, dshHome?: string, libraries?: object[], include?: object, root?: string }} options - source locations and selection.
+ * @returns {Promise<{ root: string, copied: string[], included: object }>} the staging tree.
+ */
+export async function collectBackup(options) {
+  const dataDir = options.dataDir
+  const home = typeof options.dshHome === 'string' && options.dshHome !== '' ? options.dshHome : dirname(dataDir)
+  const include = options.include !== null && typeof options.include === 'object' ? options.include : {}
+  const root = typeof options.root === 'string' && options.root !== '' ? options.root : join(dataDir, 'backup', `staging-${randomUUID()}`)
+  await rm(root, { recursive: true, force: true })
+  await mkdir(root, { recursive: true })
+  const copied = []
+  const included = {
+    sessions: false,
+    workspace: false,
+    pluginState: false,
+    libraryData: [],
+    settings: include.settings === true,
+    fonts: false,
+    projcache: false,
+  }
+  if (include.sessions !== false) {
+    included.sessions = await copyIfExists(join(home, 'sessions'), join(root, 'sessions'))
+    if (included.sessions) copied.push('sessions')
+  }
+  if (include.workspace !== false) {
+    included.workspace = await copyIfExists(join(home, 'storages', 'workspace.json'), join(root, 'storages', 'workspace.json'))
+    if (included.workspace) copied.push('storages/workspace.json')
+  }
+  if (include.pluginState !== false) {
+    let any = false
+    for (const name of PLUGIN_STATE_FILES) {
+      if (await copyIfExists(join(dataDir, name), join(root, 'plugin-state', name))) any = true
+    }
+    included.pluginState = any
+    if (any) copied.push('plugin-state')
+  }
+  if (include.libraryData !== false) {
+    const libraries = Array.isArray(options.libraries) ? options.libraries : []
+    for (const library of libraries) {
+      if (library === null || typeof library !== 'object' || typeof library.libraryDir !== 'string') continue
+      const id = safeZipName(String(library.id ?? 'library'))
+      const ok = await copyIfExists(join(library.libraryDir, '.pdfdesk'), join(root, 'libraries', id, '.pdfdesk'))
+      if (ok) {
+        included.libraryData.push(id)
+        copied.push(`libraries/${id}/.pdfdesk`)
+      }
+    }
+  }
+  if (include.fonts === true) {
+    included.fonts = await copyIfExists(join(dataDir, 'fonts'), join(root, 'fonts'))
+    if (included.fonts) copied.push('fonts')
+  }
+  if (include.projcache === true) {
+    included.projcache = await copyIfExists(join(home, 'storages', 'session_projcache'), join(root, 'projcache'))
+    if (included.projcache) copied.push('projcache')
+  }
+  return { root, copied, included }
+}
+
+/**
+ * Build, pack and clean up a full backup archive.
+ * @param {{ dataDir: string, dshHome?: string, libraries?: object[], include?: object,
+ *   outDir?: string, pluginVersion?: string, machine?: object }} options - sources, selection and metadata.
+ * @returns {Promise<{ outPath: string, name: string, bytes: number, files: number, manifest: object }>} the archive and its manifest.
+ */
+export async function createBackup(options) {
+  const dataDir = options.dataDir
+  const staging = await collectBackup(options)
+  try {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 16)
+    const name = `dsh-workbench-backup-${stamp}.zip`
+    const outDir = typeof options.outDir === 'string' && options.outDir !== '' ? options.outDir : join(dataDir, 'backup')
+    const outPath = join(outDir, name)
+    const meta = {
+      plugin: { name: 'dsh-pdf-workbench', version: typeof options.pluginVersion === 'string' ? options.pluginVersion : '' },
+      machine: options.machine !== null && typeof options.machine === 'object' ? options.machine : {},
+      included: staging.included,
+      paths: {
+        libraries: Object.fromEntries((Array.isArray(options.libraries) ? options.libraries : [])
+          .filter(library => library !== null && typeof library === 'object' && typeof library.libraryDir === 'string')
+          .map(library => [safeZipName(String(library.id ?? 'library')), { name: String(library.name ?? ''), old: library.libraryDir }])),
+      },
+    }
+    const packed = await packDirectory({ root: staging.root, outPath, meta })
+    const manifest = JSON.parse(await readFile(join(staging.root, 'manifest.json'), 'utf8'))
+    return { outPath, name, bytes: packed.bytes, files: packed.files, manifest }
+  } finally {
+    await rm(staging.root, { recursive: true, force: true })
+  }
+}
 
 /**
  * @param {Buffer} bytes - content.
