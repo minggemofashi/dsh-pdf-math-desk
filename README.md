@@ -90,6 +90,8 @@
 - **产物**：`产物/<书 id>/<章号>/` 下的文本类文件可在右侧预览；Markdown 可以一键生成打印页，用浏览器打印，不落临时 PDF。
 - **Office 文件**：DOCX/DOC 不强行在插件内渲染；点击时通过 DSH 官方文档预览打开（需要该章至少有一个会话提供文件地址），失败会提示用 Office 打开。
 
+<p align="center"><img src="./assets/screenshot-attachments.jpg" alt="章节详情：PDF、译文与附件行" width="920" /></p>
+
 ## 数据与迁移
 
 整机迁移包默认采集：
