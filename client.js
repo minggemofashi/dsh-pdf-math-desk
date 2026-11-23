@@ -14219,7 +14219,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const canRender = envTools.python && envTools.tex
       const canTranslate = canRender && envTools.apiKey === true
       const canExport = envTools.python
-
       let body
       if (blockingError !== '' && (catalog === null || work === null)) {
         body = h('div', { className: 'md-state md-state-error', role: 'alert' },
