@@ -15119,7 +15119,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
       // the scroller, so scrolling cannot uncover it.
-      const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'mask' && tool !== 'question'
+      const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'question'
       const sideCapture = sideMarkTool
         ? h('div', {
           className: 'md-canvas-capture',
