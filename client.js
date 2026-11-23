@@ -13794,42 +13794,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 @container pdfdesk (max-width: 520px) {
   .md-session-time { display: none; }
 }
-/* Library editorial pass: an index-page feel with ruled sections, a serif
-   display voice and book covers treated as plates. No behaviour changes. */
-.md-home { max-width: 1160px; padding: 0 36px 88px; }
-.md-hero { max-width: 780px; padding: 76px 0 4px; }
-.md-hero::before { content: ''; display: block; width: 44px; height: 2px; margin-bottom: 26px; background: var(--dsw-alias-brand-primary); }
-.md-hero-eyebrow { display: flex; align-items: center; gap: 12px; font-size: 10.5px; letter-spacing: .2em; }
-.md-hero-eyebrow::after { content: ''; flex: 1 1 auto; max-width: 120px; height: 1px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent); }
-.md-hero-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif; font-size: 46px; font-weight: 600; line-height: 1.18; letter-spacing: -.025em; margin: 20px 0 20px; }
-.md-hero-lead { font-size: 15px; line-height: 1.95; max-width: 610px; }
-.md-hero-actions { margin-top: 34px; gap: 12px; }
-.md-hero-actions .md-btn-primary { min-width: 132px; }
-.md-hero-meta { margin-top: 26px; font-size: 11.5px; letter-spacing: .04em; }
-.md-hero-whale { width: 380px; top: 34px; right: 0; opacity: .12; }
-.md-home > .md-shelf-head { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 24px; margin: 16px 0 22px; padding-top: 18px; border-top: 1px solid var(--dsw-alias-border-l2); }
-.md-home > .md-shelf-head .md-heading { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
-.md-home > .md-shelf-head .md-shelf-sub { max-width: 520px; text-align: right; }
-.md-library-list { gap: 10px; }
-.md-library { padding: 18px 20px; border-radius: 10px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent); }
-.md-library-active { box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary), 0 1px 0 color-mix(in srgb, var(--dsw-alias-border-l2) 60%, transparent); }
-.md-library-name { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 17px; font-weight: 600; }
-.md-library .md-path { font-size: 11.5px; opacity: .78; }
-.md-grid { grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 26px 22px; padding-top: 4px; }
-.md-card { padding: 0 0 4px; gap: 12px; border-radius: 4px; border-color: transparent; }
-.md-card:hover { background: transparent; border-color: transparent; transform: none; }
-.md-card .md-cover { border-radius: 3px; border-color: color-mix(in srgb, var(--dsw-alias-border-l3) 80%, transparent); box-shadow: 0 14px 28px -18px color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent); transition: transform .18s ease, box-shadow .18s ease; }
-.md-card:hover .md-cover { transform: translateY(-3px); box-shadow: 0 20px 34px -20px color-mix(in srgb, var(--dsw-alias-label-primary) 55%, transparent); }
-.md-card-body { gap: 6px; padding: 0 2px; }
-.md-card-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -.005em; }
-.md-card-sub { font-size: 10.5px; letter-spacing: .035em; text-transform: uppercase; }
-.md-collection { padding: 0 0 4px; gap: 12px; }
-.md-collection:hover { background: transparent; transform: none; }
-.md-collection .md-collection-stack { box-shadow: 0 14px 28px -18px color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent); }
-.md-collection-count { font-size: 10.5px; letter-spacing: .035em; text-transform: uppercase; }
-.md-collection-title { font-family: ui-serif, "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif; font-size: 16px; font-weight: 600; }
-.md-shelf-actions { border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); backdrop-filter: blur(12px); }
-
 .md-data-progress { height: 3px; margin: 12px 0 2px; border-radius: 999px; overflow: hidden; background: var(--dsw-alias-border-l2); }
 .md-data-progress-bar { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--dsw-alias-brand-primary); animation: md-data-progress 1.1s ease-in-out infinite alternate; }
 @keyframes md-data-progress { from { transform: translateX(-30%); } to { transform: translateX(230%); } }
@@ -14055,6 +14019,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const {
         strokes, setStrokes, strokesRef,
         masks, setMasks, masksRef,
+        selection, setSelection,
         draftStroke, setDraftStroke,
         shapeDraft, setShapeDraft,
         noteEdit, setNoteEdit,
@@ -14069,6 +14034,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         redoPage,
         historyCounts,
       } = inkEditor
+      // Preview selection: the same hand/pen tools as the reader, plus a
+      // marquee that picks a mark on this page so it can be moved or deleted.
+      const [sideDrag, setSideDrag] = useState(null)
+      const [sideMarquee, setSideMarquee] = useState(null)
       const sideBasePanNeeds = offPageExtent(strokes)
       const sidePanNeeds = sideExpanded === 0
         ? sideBasePanNeeds
@@ -14345,6 +14314,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (point === null) return
         event.preventDefault()
         event.stopPropagation()
+        if (tool === 'select') {
+          const list = strokesRef.current
+          const found = list.findIndex(entry => annotHit(entry, point))
+          if (found >= 0) {
+            const entry = list[found]
+            setSelection({ index: found, kind: entry.kind === 'text' ? 'text' : entry.kind === 'shape' ? 'shape' : 'stroke' })
+            setSideDrag({ index: found, start: point, dx: 0, dy: 0 })
+            return
+          }
+          setSelection(null)
+          setSideMarquee({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
+          return
+        }
         if (tool === 'erase') {
           sideGestures.down(event, point)
           return
@@ -14369,6 +14351,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (tool === 'pen') sideGestures.down(event, point)
       }
       const editMove = event => {
+        if (sideDrag !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          setSideDrag(current => (current === null ? null : { ...current, dx: point[0] - current.start[0], dy: point[1] - current.start[1] }))
+          return
+        }
+        if (sideMarquee !== null) {
+          const point = pointOf(event)
+          if (point === null) return
+          event.preventDefault()
+          setSideMarquee(current => (current === null ? null : { ...current, x1: point[0], y1: point[1] }))
+          return
+        }
         if (tool === 'erase' && erasingRef.current) {
           const point = pointOf(event)
           if (point === null) return
@@ -14401,6 +14397,33 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         sideGestures.move(event, point)
       }
       const editUp = () => {
+        if (sideDrag !== null) {
+          const moved = sideDrag
+          setSideDrag(null)
+          if (Math.hypot(moved.dx, moved.dy) > 0.003) {
+            commitStrokes(strokesRef.current.map((entry, index) => (
+              index === moved.index ? translateEntry(entry, moved.dx, moved.dy) : entry
+            )))
+          }
+          return
+        }
+        if (sideMarquee !== null) {
+          const box = {
+            x: Math.min(sideMarquee.x0, sideMarquee.x1),
+            y: Math.min(sideMarquee.y0, sideMarquee.y1),
+            w: Math.abs(sideMarquee.x1 - sideMarquee.x0),
+            h: Math.abs(sideMarquee.y1 - sideMarquee.y0),
+          }
+          setSideMarquee(null)
+          if (box.w > 0.005 || box.h > 0.005) {
+            const found = strokesRef.current.findIndex(entry => boxesIntersect(box, entryBounds(entry)))
+            if (found >= 0) {
+              const entry = strokesRef.current[found]
+              setSelection({ index: found, kind: entry.kind === 'text' ? 'text' : entry.kind === 'shape' ? 'shape' : 'stroke' })
+            }
+          }
+          return
+        }
         sideGestures.up()
         if (tool === 'mask') {
           const start = maskStartRef.current
@@ -14416,6 +14439,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }
       const toggleTool = name => setTool(current => (current === name ? '' : name))
+      useEffect(() => {
+        if (selection === null) return undefined
+        const onKeyDown = event => {
+          if (event.key !== 'Backspace' && event.key !== 'Delete') return
+          const target = event.target
+          if (target !== null && target !== undefined && typeof target.tagName === 'string'
+            && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)) return
+          commitStrokes(strokesRef.current.filter((entry, index) => index !== selection.index))
+          setSelection(null)
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => window.removeEventListener('keydown', onKeyDown, true)
+      }, [selection])
 
       // A chapter's conversation for one mode, newest first, from the session list.
       const findSession = mode => {
@@ -14721,7 +14759,43 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // out of sync with the reader). The marks themselves are drawn by the same
       // renderer as the reader's.
       const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'data-extended': 'true', 'aria-hidden': true },
-        h(InkMarks, { entries: strokes, roughness: shapeRoughness, hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index }))
+        h(InkMarks, {
+          entries: strokes,
+          roughness: shapeRoughness,
+          hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index,
+          drag: sideDrag,
+        }),
+        selection === null
+          ? null
+          : (() => {
+            const box = entryBounds(strokes[selection.index])
+            const dx = sideDrag === null ? 0 : sideDrag.dx
+            const dy = sideDrag === null ? 0 : sideDrag.dy
+            if (box.w <= 0 && box.h <= 0) return null
+            return h('div', {
+              className: 'md-selection-outline',
+              style: {
+                left: `${(box.x + dx) * 100}%`,
+                top: `${(box.y + dy) * 100}%`,
+                width: `${Math.max(box.w, 0.008) * 100}%`,
+                height: `${Math.max(box.h, 0.008) * 100}%`,
+              },
+            })
+          })(),
+        sideMarquee === null
+          ? null
+          : (() => {
+            const box = {
+              x: Math.min(sideMarquee.x0, sideMarquee.x1),
+              y: Math.min(sideMarquee.y0, sideMarquee.y1),
+              w: Math.abs(sideMarquee.x1 - sideMarquee.x0),
+              h: Math.abs(sideMarquee.y1 - sideMarquee.y0),
+            }
+            return h('div', {
+              className: 'md-marquee',
+              style: { left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` },
+            })
+          })())
 
       // The boxes: each one clips the translated page to its own region, exactly
       // as the reader's overlay layer does. The frame shows as soon as a box
@@ -15318,6 +15392,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'select' ? 'true' : 'false',
+            title: format('annotSelect'),
+            'aria-label': format('annotSelect'),
+            onClick: () => toggleTool('select'),
+          }, annotIcon('M5 3l7 17 2-7 7-2z')),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
             'aria-pressed': tool === 'hand' ? 'true' : 'false',
             title: format('annotHand'),
             'aria-label': format('annotHand'),
@@ -15395,6 +15477,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onPointerLeave: leaveSidePanel,
         },
           h('div', { className: 'md-rail md-side-rail' },
+            sideRailTool('select', 'annotSelect', 'M5 3l7 17 2-7 7-2z'),
             sideRailTool('hand', 'annotHand', 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'),
             sideRailTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
             sideRailTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),

@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "PDF 阅读 · 随时问答",
-    "description": "面向 PDF 阅读的工作台：书库与书架、按章阅读、随时问答（提取 / 答疑 / 习题）、笔迹与框选标注、双语对照、内置 pdf.js 阅读器，并支持书架分组、回收站与整本 PDF。",
+    "description": "面向整页 PDF 精读的工作台，从左侧栏「PDF 阅读」进入。书库与书架按「书 → 章」组织；阅读器支持单页/连续、手写与框选批注、页外画布、双语对照和覆盖层；每章可直接提取、答疑、习题，并带附件、打印与整机数据迁移。所有书库与笔记保存在本机，PDF 不会自动进入模型上下文；翻译需要 Python + DeepSeek API Key，PPT 转 PDF 可选本机 Office/LibreOffice。",
     "detail": "docs/DETAIL.md"
   }
 }

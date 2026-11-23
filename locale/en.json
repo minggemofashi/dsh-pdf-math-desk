@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "PDF reading · ask as you read",
-    "description": "A PDF reading workbench: libraries and shelves, chapter-by-chapter reading, ask-as-you-read conversations (extract / Q&A / exercises), ink and box annotations, bilingual view, and a built-in pdf.js reader, plus shelf groups, a recycle bin, and whole-book PDFs.",
+    "description": "A workbench for close reading of full-page PDFs, opened from the “PDF reading” sidebar entry. Libraries and shelves are organised as book → chapter; the reader supports single/continuous pages, ink and marquee annotations, an off-page canvas, bilingual view and translation overlays. Each chapter can start extract, Q&A and exercise conversations, and also carries attachments, printing and machine-to-machine migration. Libraries and notes stay on this machine; PDFs are never pushed into model context automatically. Translation needs Python + a DeepSeek API key; PPT-to-PDF optionally uses local Office or LibreOffice.",
     "detail": "docs/DETAIL.md"
   }
 }
