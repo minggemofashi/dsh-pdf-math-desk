@@ -6161,6 +6161,147 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The one renderer for a page's committed marks: ink (pressure aware),
+     * shapes and text boxes. The reader, the right preview and the read-only
+     * per-page copies all use it, so a stroke can never look different in one
+     * pane than in the other.
+     * @param {{ entries: object[], roughness?: number, drag?: object, resize?: object,
+     *   resizeEntry?: object, selection?: object, noteTitle?: string,
+     *   onNotePointerDown?: Function, onNoteDoubleClick?: Function, drafts?: object[] }} props - the marks and the view's interaction state.
+     * @returns {import('react').ReactElement} the marks.
+     */
+    function InkMarks(props) {
+      const entries = Array.isArray(props.entries) ? props.entries : []
+      const drag = props.drag === undefined ? null : props.drag
+      const resize = props.resize === undefined ? null : props.resize
+      const resizeEntry = props.resizeEntry === undefined ? null : props.resizeEntry
+      const selection = props.selection === undefined ? null : props.selection
+      const interactive = typeof props.onNoteDoubleClick === 'function' || typeof props.onNotePointerDown === 'function'
+      const adjusted = (entry, index) => {
+        if (resize !== null && resize.index === index && resizeEntry !== null) return resizeEntry
+        if (drag !== null && drag.index === index) return translateEntry(entry, drag.dx, drag.dy)
+        return entry
+      }
+      const selectedEntry = selection === null || entries[selection.index] === undefined ? null : entries[selection.index]
+      const strokeNodes = []
+      const shapeNodes = []
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index]
+        if (entry.kind === 'text') continue
+        const shown = adjusted(entry, index)
+        if (entry.kind === 'shape') {
+          shapeNodes.push(h(ShapeMark, { key: `shape-${index}`, entry: shown, roughness: props.roughness }))
+          continue
+        }
+        const points = shown.points ?? []
+        if (points.length < 2) continue
+        if (points.some(point => point.length > 2)) {
+          const base = shown.width ?? 2
+          strokeNodes.push(h('g', { key: index, opacity: shown.opacity ?? 1 },
+            points.slice(1).map((point, segment) => {
+              const previous = points[segment]
+              const pressure = point[2] ?? previous[2] ?? 0.5
+              return h('line', {
+                key: segment,
+                x1: previous[0],
+                y1: previous[1],
+                x2: point[0],
+                y2: point[1],
+                stroke: shown.color ?? '#e0554a',
+                strokeWidth: base * (0.35 + pressure * 1.2),
+                vectorEffect: 'non-scaling-stroke',
+                strokeLinecap: 'round',
+              })
+            })))
+          continue
+        }
+        strokeNodes.push(h('polyline', {
+          key: index,
+          points: points.map(point => `${point[0]},${point[1]}`).join(' '),
+          fill: 'none',
+          stroke: shown.color ?? '#e0554a',
+          strokeWidth: shown.width ?? 2,
+          opacity: shown.opacity ?? 1,
+          vectorEffect: 'non-scaling-stroke',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        }))
+      }
+      // Iterating `entries` (not a filtered list) keeps the note index aligned
+      // with the stored list, so editing and selection address the right entry.
+      const noteNodes = entries.map((entry, index) => {
+        if (entry.kind !== 'text') return null
+        const shown = adjusted(entry, index)
+        const bounds = noteBox(shown)
+        const hasBox = Number.isFinite(shown.w) && shown.w > 0 && Number.isFinite(shown.h) && shown.h > 0
+        return h('div', {
+          key: `text-${index}`,
+          className: selection !== null && selection.index === index ? 'md-annot-text md-annot-selected' : 'md-annot-text',
+          title: props.noteTitle,
+          style: {
+            left: `${bounds.x * 100}%`,
+            top: `${bounds.y * 100}%`,
+            ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
+            color: entry.color ?? '#e0554a',
+            fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
+            fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
+            opacity: entry.opacity ?? 1,
+            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
+            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
+            fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
+          },
+          onPointerDown: interactive && typeof props.onNotePointerDown === 'function'
+            ? event => props.onNotePointerDown(index, event)
+            : undefined,
+          onContextMenu: typeof props.onNoteContextMenu === 'function'
+            ? event => props.onNoteContextMenu(index, event)
+            : undefined,
+          onDoubleClick: interactive && typeof props.onNoteDoubleClick === 'function'
+            ? event => props.onNoteDoubleClick(index, event, entry)
+            : undefined,
+        }, entry.text)
+      })
+      return h(React.Fragment, null,
+        h('svg', {
+          className: 'md-annot-ink',
+          viewBox: '0 0 1 1',
+          preserveAspectRatio: 'none',
+          'aria-hidden': true,
+        },
+          selectedEntry !== null && selectedEntry.kind !== 'text' && selectedEntry.kind !== 'shape'
+            ? h('polyline', {
+              key: 'selection',
+              points: (selectedEntry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: (selectedEntry.width ?? 2) + 8,
+              opacity: 0.35,
+              vectorEffect: 'non-scaling-stroke',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            })
+            : null,
+          selectedEntry !== null && selectedEntry.kind === 'shape'
+            ? h('rect', {
+              key: 'selection-shape',
+              x: selectedEntry.x,
+              y: selectedEntry.y,
+              width: selectedEntry.w,
+              height: selectedEntry.h,
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: 1.5,
+              strokeDasharray: '5 4',
+              vectorEffect: 'non-scaling-stroke',
+            })
+            : null,
+          strokeNodes,
+          shapeNodes,
+          props.drafts === undefined ? null : props.drafts),
+        noteNodes)
+    }
+
+    /**
      * The text style controls (size slider, font family, colour). They live in
      * the top toolbar's nested menu, not in the in-place editor.
      * @param {{ style: object, onChange: (patch: object) => void }} props - current style and the setter.
@@ -7233,66 +7374,7 @@ window.__ModuleLoader__.load({
       )
       if (entries.length === 0) return null
       return h('div', { className: 'md-annot md-annot-static', 'data-extended': 'true', 'aria-hidden': true },
-        h('svg', { className: 'md-annot-ink', viewBox: '0 0 1 1', preserveAspectRatio: 'none' },
-          entries.map((entry, index) => {
-            if (entry.kind === 'text') return null
-            if (entry.kind === 'shape') return h(ShapeMark, { key: `shape-${index}`, entry })
-            const points = Array.isArray(entry.points) ? entry.points : []
-            if (points.length < 2) return null
-            if (points.some(point => point.length > 2)) {
-              const base = entry.width ?? 2
-              return h('g', { key: index, opacity: entry.opacity ?? 1 },
-                points.slice(1).map((point, segment) => {
-                  const previous = points[segment]
-                  const pressure = point[2] ?? previous[2] ?? 0.5
-                  return h('line', {
-                    key: segment,
-                    x1: previous[0],
-                    y1: previous[1],
-                    x2: point[0],
-                    y2: point[1],
-                    stroke: entry.color ?? '#e0554a',
-                    strokeWidth: base * (0.35 + pressure * 1.2),
-                    vectorEffect: 'non-scaling-stroke',
-                    strokeLinecap: 'round',
-                  })
-                }))
-            }
-            return h('polyline', {
-              key: index,
-              points: points.map(point => `${point[0]},${point[1]}`).join(' '),
-              fill: 'none',
-              stroke: entry.color ?? '#e0554a',
-              strokeWidth: entry.width ?? 2,
-              opacity: entry.opacity ?? 1,
-              vectorEffect: 'non-scaling-stroke',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            })
-          })
-        ),
-        entries.map((entry, index) => {
-          if (entry.kind !== 'text') return null
-          const box = noteBox(entry)
-          const hasBox = Number.isFinite(entry.w) && entry.w > 0 && Number.isFinite(entry.h) && entry.h > 0
-          return h('div', {
-            key: `text-${index}`,
-            className: 'md-annot-text',
-            style: {
-              left: `${box.x * 100}%`,
-              top: `${box.y * 100}%`,
-              ...(hasBox ? { width: `${box.w * 100}%`, height: `${box.h * 100}%` } : { maxWidth: '70%' }),
-              color: entry.color ?? '#e0554a',
-              fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-              fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-              opacity: entry.opacity ?? 1,
-              textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-              fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-              fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
-            },
-          }, entry.text)
-        })
-      )
+        h(InkMarks, { entries }))
     }
 
     /**
@@ -10414,175 +10496,85 @@ window.__ModuleLoader__.load({
         onDoubleClick: event => editNoteAt(event, side),
         onContextMenu: openStylePanelOnLayer,
       },
-        h('svg', {
-          className: 'md-annot-ink',
-          viewBox: '0 0 1 1',
-          preserveAspectRatio: 'none',
-          'aria-hidden': true,
-        },
-          selection !== null && selectedEntry !== undefined && selectedEntry.kind !== 'text' && selectedEntry.kind !== 'shape'
-            ? h('polyline', {
-              key: 'selection',
-              points: (selectedEntry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
-              fill: 'none',
-              stroke: '#2f6df6',
-              strokeWidth: (selectedEntry.width ?? 2) + 8,
-              opacity: 0.35,
-              vectorEffect: 'non-scaling-stroke',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            })
-            : null,
-          selection !== null && selectedEntry !== undefined && selectedEntry.kind === 'shape'
-            ? h('rect', {
-              x: selectedEntry.x,
-              y: selectedEntry.y,
-              width: selectedEntry.w,
-              height: selectedEntry.h,
-              fill: 'none',
-              stroke: '#2f6df6',
-              strokeWidth: 1.5,
-              strokeDasharray: '5 4',
-              vectorEffect: 'non-scaling-stroke',
-            })
-            : null,
-          textDraft !== null
-            ? h('rect', {
-              x: Math.min(textDraft.x0, textDraft.x1),
-              y: Math.min(textDraft.y0, textDraft.y1),
-              width: Math.abs(textDraft.x1 - textDraft.x0),
-              height: Math.abs(textDraft.y1 - textDraft.y0),
-              fill: 'none',
-              stroke: '#2f6df6',
-              strokeWidth: 1.5,
-              strokeDasharray: '5 4',
-              vectorEffect: 'non-scaling-stroke',
-            })
-            : null,
-          strokes.map((stroke, index) => {
-            if (stroke.kind === 'text' || stroke.kind === 'shape') return null
-            const shown = drag !== null && drag.index === index ? translateEntry(stroke, drag.dx, drag.dy) : stroke
-            const points = shown.points ?? []
-            if (points.some(point => point.length > 2)) {
-              const base = shown.width ?? 2
-              return h('g', { key: index, opacity: shown.opacity ?? 1 },
-                points.slice(1).map((point, segment) => {
-                  const previous = points[segment]
-                  const pressure = point[2] ?? previous[2] ?? 0.5
-                  return h('line', {
-                    key: segment,
-                    x1: previous[0],
-                    y1: previous[1],
-                    x2: point[0],
-                    y2: point[1],
-                    stroke: shown.color ?? '#e0554a',
-                    strokeWidth: base * (0.35 + pressure * 1.2),
-                    vectorEffect: 'non-scaling-stroke',
-                    strokeLinecap: 'round',
-                  })
-                }))
-            }
-            return h('polyline', {
-              key: index,
-              points: points.map(point => `${point[0]},${point[1]}`).join(' '),
-              fill: 'none',
-              stroke: shown.color ?? '#e0554a',
-              strokeWidth: shown.width ?? 2,
-              opacity: shown.opacity ?? 1,
-              vectorEffect: 'non-scaling-stroke',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            })
-          }),
-          strokes.map((entry, index) => (entry.kind === 'shape'
-            ? h(ShapeMark, {
-              key: `shape-${index}`,
-              entry: resizeEntry !== null && resize !== null && resize.index === index
-                ? resizeEntry
-                : drag !== null && drag.index === index ? translateEntry(entry, drag.dx, drag.dy) : entry,
-              roughness: props.roughness,
-            })
-            : null)),
-          shapeDraft === null
-            ? null
-            : h('g', { opacity: 0.8 },
-              h(ShapeMark, {
-                entry: {
-                  kind: 'shape',
-                  ...shapeDraft,
-                  x: Math.min(shapeDraft.x0, shapeDraft.x1),
-                  y: Math.min(shapeDraft.y0, shapeDraft.y1),
-                  w: Math.abs(shapeDraft.x1 - shapeDraft.x0),
-                  h: Math.abs(shapeDraft.y1 - shapeDraft.y0),
-                },
-                roughness: props.roughness,
-              })),
-          draftStroke === null
-            ? null
-            : h('polyline', {
-              points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
-              fill: 'none',
-              stroke: draftStroke.color ?? '#e0554a',
-              strokeWidth: draftStroke.width ?? 2,
-              vectorEffect: 'non-scaling-stroke',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            })
-        ),
-        // Iterating `strokes` (not the filtered notes) keeps the index aligned
-        // with the stored list, so a double-click edits the right entry.
-        strokes.map((entry, index) => (entry.kind === 'text'
-          ? (() => {
-            const live = resizeEntry !== null && resize !== null && resize.index === index ? resizeEntry : entry
-            const shown = drag !== null && drag.index === index ? translateEntry(live, drag.dx, drag.dy) : live
-            const bounds = noteBox(shown)
-            const hasBox = Number.isFinite(shown.w) && shown.w > 0 && Number.isFinite(shown.h) && shown.h > 0
-            return h('div', {
-              key: `text-${index}`,
-              className: selection !== null && selection.index === index ? 'md-annot-text md-annot-selected' : 'md-annot-text',
-              title: annotTool === '' ? format('annotTextEditHint') : undefined,
-              style: {
-                left: `${bounds.x * 100}%`,
-                top: `${bounds.y * 100}%`,
-                ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
-                color: entry.color ?? '#e0554a',
-                fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-                fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-                opacity: entry.opacity ?? 1,
+        h(InkMarks, {
+          entries: strokes,
+          roughness: props.roughness,
+          drag,
+          resize,
+          resizeEntry,
+          selection,
+          noteTitle: annotTool === '' ? format('annotTextEditHint') : undefined,
+          onNotePointerDown: annotTool === '' ? (index, event) => event.stopPropagation() : undefined,
+          onNoteContextMenu: (index, event) => openStylePanelAt(event, index),
+          onNoteDoubleClick: annotTool === ''
+            ? (index, event, entry) => {
+              event.preventDefault()
+              event.stopPropagation()
+              const bounds = noteBox(entry)
+              noteSeq.current += 1
+              noteText.current = String(entry.text ?? '')
+              setNoteEdit({
+                id: noteSeq.current,
+                page: annotPage.current,
+                side,
+                index,
+                x: bounds.x,
+                y: bounds.y,
+                w: bounds.w,
+                h: bounds.h,
+                text: noteText.current,
+                color: entry.color ?? annotColor,
+                fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
+                fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
                 textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
                 fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-                fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
-              },
-              onPointerDown: annotTool === '' ? event => event.stopPropagation() : undefined,
-              onContextMenu: event => openStylePanelAt(event, index),
-              onDoubleClick: annotTool === ''
-                ? event => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  noteSeq.current += 1
-                  noteText.current = String(entry.text ?? '')
-                  setNoteEdit({
-                    id: noteSeq.current,
-                    page: annotPage.current,
-                    side,
-                    index,
-                    x: bounds.x,
-                    y: bounds.y,
-                    w: bounds.w,
-                    h: bounds.h,
-                    text: noteText.current,
-                    color: entry.color ?? annotColor,
-                    fontSize: Number.isFinite(entry.fontSize) ? entry.fontSize : NOTE_SIZES[0],
-                    fontFamily: typeof entry.fontFamily === 'string' ? entry.fontFamily : 'normal',
-                    textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-                    fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-                    fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
-                  })
-                }
-                : undefined,
-            }, entry.text)
-          })()
-          : null)),
+                fontStyle: entry.fontStyle === 'italic' ? 'italic' : 'normal',
+              })
+            }
+            : undefined,
+          drafts: [
+            textDraft === null
+              ? null
+              : h('rect', {
+                key: 'text-draft',
+                x: Math.min(textDraft.x0, textDraft.x1),
+                y: Math.min(textDraft.y0, textDraft.y1),
+                width: Math.abs(textDraft.x1 - textDraft.x0),
+                height: Math.abs(textDraft.y1 - textDraft.y0),
+                fill: 'none',
+                stroke: '#2f6df6',
+                strokeWidth: 1.5,
+                strokeDasharray: '5 4',
+                vectorEffect: 'non-scaling-stroke',
+              }),
+            shapeDraft === null
+              ? null
+              : h('g', { key: 'shape-draft', opacity: 0.8 },
+                h(ShapeMark, {
+                  entry: {
+                    kind: 'shape',
+                    ...shapeDraft,
+                    x: Math.min(shapeDraft.x0, shapeDraft.x1),
+                    y: Math.min(shapeDraft.y0, shapeDraft.y1),
+                    w: Math.abs(shapeDraft.x1 - shapeDraft.x0),
+                    h: Math.abs(shapeDraft.y1 - shapeDraft.y0),
+                  },
+                  roughness: props.roughness,
+                })),
+            draftStroke === null
+              ? null
+              : h('polyline', {
+                key: 'draft-stroke',
+                points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
+                fill: 'none',
+                stroke: draftStroke.color ?? '#e0554a',
+                strokeWidth: draftStroke.width ?? 2,
+                vectorEffect: 'non-scaling-stroke',
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+              }),
+          ],
+        }),
         selection !== null && selectedEntry !== undefined && (selectedEntry.kind === 'shape' || selectedEntry.kind === 'text')
           && (annotTool === 'select' || (annotTool === 'text' && selectedEntry.kind === 'text'))
           ? (() => {
@@ -13498,47 +13490,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       })()
       // Both panes share one annotation plane, so off-page marks are shown here
       // too instead of being filtered out (that is what made the preview look
-      // out of sync with the reader).
-      const ink = strokes.filter(entry => entry.kind !== 'text' && entry.kind !== 'shape')
-      const shapes = strokes.filter(entry => entry.kind === 'shape')
-      const notes = strokes.filter(entry => entry.kind === 'text')
+      // out of sync with the reader). The marks themselves are drawn by the same
+      // renderer as the reader's.
       const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'data-extended': 'true', 'aria-hidden': true },
-        h('svg', {
-          className: 'md-annot-ink',
-          viewBox: '0 0 1 1',
-          preserveAspectRatio: 'none',
-        },
-          ink.map((stroke, index) => h('polyline', {
-            key: index,
-            points: (stroke.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
-            fill: 'none',
-            stroke: stroke.color ?? '#e0554a',
-            strokeWidth: stroke.width ?? 2,
-            opacity: stroke.opacity ?? 1,
-            vectorEffect: 'non-scaling-stroke',
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          })),
-          shapes.map((entry, index) => h(ShapeMark, {
-            key: `shape-${index}`,
-            entry,
-            roughness: shapeRoughness,
-          }))),
-        notes.map((entry, index) => h('div', {
-          key: `text-${index}`,
-          className: 'md-annot-text',
-          style: {
-            left: `${entry.x * 100}%`,
-            top: `${entry.y * 100}%`,
-            color: entry.color ?? '#e0554a',
-            fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
-            fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
-            textAlign: typeof entry.textAlign === 'string' ? entry.textAlign : 'left',
-            fontWeight: entry.fontWeight === 'bold' ? 'bold' : 'normal',
-            fontStyle: entry.fontStyle === 'italic' ? 'italic' : undefined,
-            opacity: entry.opacity ?? 1,
-          },
-        }, entry.text)))
+        h(InkMarks, { entries: strokes, roughness: shapeRoughness }))
 
       // The boxes: each one clips the translated page to its own region, exactly
       // as the reader's overlay layer does. The frame shows as soon as a box
