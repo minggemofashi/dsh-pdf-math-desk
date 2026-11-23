@@ -1096,6 +1096,8 @@ window.__ModuleLoader__.load({
       dataBackup: '打包数据',
       dataBackupCreated: '已生成 {name}（{files} 个文件，{mb} MB）',
       dataDownload: '下载迁移包',
+      dataFonts: '包含手写字体（约 22 MB）',
+      dataProjcache: '包含会话投影缓存（可重建，体积大）',
       dataImportTitle: '导入迁移包',
       dataImportHint: '填写本机 ZIP 路径；合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
       dataPath: 'ZIP 路径',
@@ -1753,6 +1755,8 @@ window.__ModuleLoader__.load({
       dataBackup: 'Create backup',
       dataBackupCreated: 'Created {name} ({files} files, {mb} MB)',
       dataDownload: 'Download backup',
+      dataFonts: 'Include the handwriting font (~22 MB)',
+      dataProjcache: 'Include the session projection cache (rebuildable, large)',
       dataImportTitle: 'Import a backup',
       dataImportHint: 'Enter the ZIP path on this machine. Merge never overwrites: conflicts become *.imported-<time>.',
       dataPath: 'ZIP path',
@@ -4225,6 +4229,8 @@ window.__ModuleLoader__.load({
       const [dataRoots, setDataRoots] = useState({})
       const [dataStrategy, setDataStrategy] = useState('merge')
       const [dataReport, setDataReport] = useState(null)
+      const [backupFonts, setBackupFonts] = useState(false)
+      const [backupProjcache, setBackupProjcache] = useState(false)
       const dataFail = error => {
         window.alert(`${format('dataFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
       }
@@ -4232,7 +4238,10 @@ window.__ModuleLoader__.load({
         setDataBusy('create')
         setDataReport(null)
         try {
-          const payload = await request('POST', 'backup', { action: 'create', include: { fonts: false, projcache: false } })
+          const payload = await request('POST', 'backup', {
+            action: 'create',
+            include: { fonts: backupFonts, projcache: backupProjcache },
+          })
           setDataBackup(payload)
         } catch (error) {
           dataFail(error)
@@ -4636,6 +4645,22 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataHint')),
+          h('div', { className: 'md-settings-row' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: backupFonts,
+                onChange: event => setBackupFonts(event.target.checked),
+              }),
+              ` ${format('dataFonts')}`),
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: backupProjcache,
+                onChange: event => setBackupProjcache(event.target.checked),
+              }),
+              ` ${format('dataProjcache')}`)
+          ),
           h('div', { className: 'md-settings-row' },
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
