@@ -1084,7 +1084,11 @@ window.__ModuleLoader__.load({
       attachLabel: '附件',
       fontTitle: '手写字体（小赖）',
       fontMissing: '未安装，手写体回退到系统楷体',
-      fontInstalled: '已安装（{mb} MB）',
+      fontInstalled: '已下载（{mb} MB）',
+      fontDownloaded: '字体已下载并启用（{mb} MB）',
+      fontImported: '字体已导入并启用',
+      fontRemovedNote: '字体已删除，手写体回退到系统楷体',
+      fontRedownload: '重新下载',
       fontDownload: '下载',
       fontImport: '导入本地字体',
       fontRemove: '删除',
@@ -1747,7 +1751,11 @@ window.__ModuleLoader__.load({
       attachLabel: 'Attachments',
       fontTitle: 'Handwriting font (Xiaolai)',
       fontMissing: 'Not installed — hand text falls back to the system Kai face',
-      fontInstalled: 'Installed ({mb} MB)',
+      fontInstalled: 'Downloaded ({mb} MB)',
+      fontDownloaded: 'Font downloaded and enabled ({mb} MB)',
+      fontImported: 'Font imported and enabled',
+      fontRemovedNote: 'Font removed — handwriting falls back to the system Kai face',
+      fontRedownload: 'Download again',
       fontDownload: 'Download',
       fontImport: 'Import local font',
       fontRemove: 'Remove',
@@ -4182,6 +4190,7 @@ window.__ModuleLoader__.load({
       // Optional handwriting font: downloaded or imported on demand.
       const [font, setFont] = useState(null)
       const [fontBusy, setFontBusy] = useState(false)
+      const [fontNote, setFontNote] = useState('')
       const fontInput = useRef(null)
       useEffect(() => {
         request('GET', 'font')
@@ -4194,13 +4203,22 @@ window.__ModuleLoader__.load({
       }, [])
       const fontAction = async (action, data) => {
         setFontBusy(true)
+        setFontNote('')
         try {
           const payload = await request('POST', 'font', { action, data })
-          setFont({
+          const state = {
             installed: payload !== null && payload.installed === true,
             bytes: payload === null || payload === undefined ? 0 : Number(payload.bytes) || 0,
-          })
+          }
+          setFont(state)
           await refreshXiaolaiFont()
+          if (action === 'download' && state.installed) {
+            setFontNote(format('fontDownloaded', { mb: (state.bytes / 1048576).toFixed(1) }))
+          } else if (action === 'install' && state.installed) {
+            setFontNote(format('fontImported'))
+          } else if (action === 'remove') {
+            setFontNote(format('fontRemovedNote'))
+          }
         } catch (error) {
           window.alert(`${format('fontFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
         } finally {
@@ -4459,7 +4477,7 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               disabled: fontBusy === true || font === null,
               onClick: () => fontAction('download'),
-            }, format('fontDownload')),
+            }, font !== null && font.installed ? format('fontRedownload') : format('fontDownload')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: fontBusy === true,
@@ -4480,6 +4498,9 @@ window.__ModuleLoader__.load({
               onChange: importFont,
             })
           ),
+          fontNote === ''
+            ? null
+            : h('p', { className: 'md-settings-note', role: 'status' }, fontNote)
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('settingsNotesTitle')),
@@ -6783,6 +6804,7 @@ window.__ModuleLoader__.load({
       // with the stored list, so editing and selection address the right entry.
       const noteNodes = entries.map((entry, index) => {
         if (entry.kind !== 'text') return null
+        if (typeof props.hiddenNoteIndex === 'number' && props.hiddenNoteIndex === index) return null
         const shown = adjusted(entry, index)
         const bounds = noteBox(shown)
         const hasBox = Number.isFinite(shown.w) && shown.w > 0 && Number.isFinite(shown.h) && shown.h > 0
@@ -8639,6 +8661,7 @@ window.__ModuleLoader__.load({
         h(InkMarks, {
           entries: strokes,
           noteTitle: props.tool === '' ? format('annotTextEditHint') : undefined,
+          hiddenNoteIndex: note === null ? -1 : note.index,
           onNotePointerDown: props.tool === ''
             ? (index, event) => event.stopPropagation()
             : undefined,
@@ -11228,6 +11251,7 @@ window.__ModuleLoader__.load({
         h(InkMarks, {
           entries: strokes,
           roughness: props.roughness,
+          hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index,
           drag,
           resize,
           resizeEntry,
@@ -14194,7 +14218,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // out of sync with the reader). The marks themselves are drawn by the same
       // renderer as the reader's.
       const annotLayer = h('div', { className: 'md-annot md-annot-readonly', 'data-extended': 'true', 'aria-hidden': true },
-        h(InkMarks, { entries: strokes, roughness: shapeRoughness }))
+        h(InkMarks, { entries: strokes, roughness: shapeRoughness, hiddenNoteIndex: noteEdit === null ? -1 : noteEdit.index }))
 
       // The boxes: each one clips the translated page to its own region, exactly
       // as the reader's overlay layer does. The frame shows as soon as a box

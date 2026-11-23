@@ -7,6 +7,7 @@
  */
 
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { get } from 'node:https'
 import { join } from 'node:path'
 
 /** Stable file name so the browser font URL never has to change. */
@@ -17,7 +18,7 @@ export const MIN_FONT_BYTES = 1024 * 1024
 export const MAX_FONT_BYTES = 60 * 1024 * 1024
 
 /** Where the font is downloaded from (release asset, optional). */
-export const FONT_DOWNLOAD_URL = 'https://github.com/minggemofashi/dsh-pdf-workbench/releases/latest/download/Xiaolai-Regular.ttf'
+export const FONT_DOWNLOAD_URL = 'https://github.com/lxgw/kose-font/releases/download/v3.126/Xiaolai-Regular.ttf'
 
 /**
  * @param {string} dataDir - the plugin data directory (`~/.dsh/pdfdesk`).
@@ -106,14 +107,84 @@ export async function removeFont(dataDir) {
  * @param {{ dataDir: string, url?: string, fetchImpl?: Function }} options - destination, source and injectable fetch.
  * @returns {Promise<{ installed: boolean, bytes: number }>} the new state.
  */
+/**
+ * Plain HTTPS download used when the runtime's fetch fails (proxy/TLS quirks in
+ * some Electron builds). Follows redirects and enforces the font size ceiling.
+ * @param {string} url - https URL.
+ * @param {number} [redirects] - remaining redirect hops.
+ * @returns {Promise<Buffer>} the bytes.
+ */
+function httpsDownload(url, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    if (redirects < 0) {
+      reject(new Error('重定向次数过多'))
+      return
+    }
+    get(url, response => {
+      const status = response.statusCode ?? 0
+      if (status >= 300 && status < 400 && typeof response.headers.location === 'string') {
+        response.resume()
+        const next = new URL(response.headers.location, url).toString()
+        resolve(httpsDownload(next, redirects - 1))
+        return
+      }
+      if (status !== 200) {
+        response.resume()
+        reject(new Error(`HTTP ${status}`))
+        return
+      }
+      const chunks = []
+      let total = 0
+      response.on('data', chunk => {
+        total += chunk.length
+        if (total > MAX_FONT_BYTES) {
+          reject(new Error('字体文件超过 60 MB'))
+          response.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      response.on('end', () => resolve(Buffer.concat(chunks)))
+      response.on('error', reject)
+    }).on('error', reject)
+  })
+}
+
+/**
+ * Download the release asset and install it.
+ * @param {{ dataDir: string, url?: string, fetchImpl?: Function }} options - destination, source and injectable fetch.
+ * @returns {Promise<{ installed: boolean, bytes: number }>} the new state.
+ */
 export async function downloadFont(options) {
-  const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch
-  if (typeof fetchImpl !== 'function') throw Object.assign(new Error('当前运行时不支持下载'), { code: 'no-fetch' })
   const url = typeof options.url === 'string' && options.url !== '' ? options.url : FONT_DOWNLOAD_URL
-  const response = await fetchImpl(url)
-  if (response === null || response === undefined || response.ok !== true) {
-    throw Object.assign(new Error(`下载字体失败（HTTP ${response === undefined ? '?' : response.status}）`), { code: 'download-failed' })
+  let bytes = null
+  const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch
+  if (typeof fetchImpl === 'function') {
+    try {
+      const response = await fetchImpl(url)
+      if (response !== null && response !== undefined && response.ok === true) {
+        bytes = Buffer.from(await response.arrayBuffer())
+      } else {
+        throw new Error(`HTTP ${response === undefined ? '?' : response.status}`)
+      }
+    } catch (error) {
+      // The runtime's fetch can fail where plain https works (proxy/cert setup);
+      // fall back once, and only for https URLs.
+      if (!url.startsWith('https://')) {
+        throw Object.assign(new Error(`下载字体失败（${String(error && error.message ? error.message : error)}）`), { code: 'download-failed' })
+      }
+      try {
+        bytes = await httpsDownload(url)
+      } catch (fallbackError) {
+        throw Object.assign(new Error(`下载字体失败（${String(fallbackError && fallbackError.message ? fallbackError.message : fallbackError)}）。可在 GitHub Release 附带字体，或用“导入本地字体”。`), { code: 'download-failed' })
+      }
+    }
+  } else {
+    try {
+      bytes = await httpsDownload(url)
+    } catch (error) {
+      throw Object.assign(new Error(`下载字体失败（${String(error && error.message ? error.message : error)}）。可在 GitHub Release 附带字体，或用“导入本地字体”。`), { code: 'download-failed' })
+    }
   }
-  const bytes = Buffer.from(await response.arrayBuffer())
   return installFont({ dataDir: options.dataDir, bytes })
 }
