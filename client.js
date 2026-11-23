@@ -4017,17 +4017,23 @@ window.__ModuleLoader__.load({
             && current.width === next.width && current.height === next.height ? current : next))
         }
         update()
-        window.addEventListener('scroll', update, true)
-        window.addEventListener('resize', update)
+        let frame = 0
+        const schedule = () => {
+          if (frame !== 0) return
+          frame = window.requestAnimationFrame(() => { frame = 0; update() })
+        }
+        window.addEventListener('scroll', schedule, true)
+        window.addEventListener('resize', schedule)
         let observer = null
         const anchor = anchorRef === null || anchorRef === undefined ? null : anchorRef.current
         if (typeof ResizeObserver === 'function' && anchor !== null) {
-          observer = new ResizeObserver(update)
+          observer = new ResizeObserver(schedule)
           observer.observe(anchor)
         }
         return () => {
-          window.removeEventListener('scroll', update, true)
-          window.removeEventListener('resize', update)
+          window.removeEventListener('scroll', schedule, true)
+          window.removeEventListener('resize', schedule)
+          if (frame !== 0) window.cancelAnimationFrame(frame)
           if (observer !== null) observer.disconnect()
         }
       }, [fixed, anchorRef, hostRef, margins.left, margins.top, margins.right, margins.bottom, props.version])
