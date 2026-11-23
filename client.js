@@ -13156,11 +13156,12 @@ window.__ModuleLoader__.load({
 .md-alert { flex: none; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, var(--dsw-alias-bg-base)); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent); color: var(--dsw-alias-label-primary); font-size: 13px; }
 .md-alert-text { flex: 1; min-width: 0; }
 .md-hint { flex: none; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--dsw-alias-bg-base)); border-left: 3px solid var(--dsw-alias-state-warn-primary); color: var(--dsw-alias-label-secondary); font-size: 12.5px; }
-.md-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 0 40px; scrollbar-width: thin; scrollbar-color: transparent transparent; }
-.md-body:hover { scrollbar-color: var(--dsw-alias-border-l4) transparent; }
-.md-body::-webkit-scrollbar { width: 8px; }
+.md-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 0 40px; scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable; }
+.md-body.md-scrolling { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
+.md-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.md-body::-webkit-scrollbar-track { background: transparent; }
 .md-body::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
-.md-body:hover::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3); }
+.md-body.md-scrolling::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
 .md-content { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
 .md-preview { flex: 0 0 clamp(300px, 42%, 560px); min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 12px 0 0; padding: 12px 0 24px 18px; border-left: 1px solid var(--dsw-alias-border-l2); }
 .md-preview-backdrop { display: none; }
@@ -13319,10 +13320,12 @@ window.__ModuleLoader__.load({
 .md-add-submit { margin-left: auto; }
 .md-home-tools-head { display: flex; flex-direction: column; gap: 4px; }
 .md-home .md-library-toolcell { position: static; height: auto; }
-.md-home .md-library-toolscroll { position: static; display: flex; flex-direction: row; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 16px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: var(--dsw-alias-border-l4) transparent; }
-.md-home .md-library-toolscroll::-webkit-scrollbar { height: 8px; }
-.md-home .md-library-toolscroll::-webkit-scrollbar-track { background: var(--dsw-alias-bg-layer-2); border-radius: 4px; }
-.md-home .md-library-toolscroll::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l4); border-radius: 4px; }
+.md-home .md-library-toolscroll { position: static; display: flex; flex-direction: row; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 16px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.md-home .md-library-toolscroll::-webkit-scrollbar { height: 8px; background: transparent; }
+.md-home .md-library-toolscroll::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+.md-home .md-library-toolscroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+.md-home .md-library-toolscroll.md-scrolling { scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
+.md-home .md-library-toolscroll.md-scrolling::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
 .md-home .md-library-toolscroll > .md-subheading { display: none; }
 .md-home .md-tool-card { flex: 0 0 300px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-layer-2); }
 .md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
@@ -18832,7 +18835,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             format('partialHint', { files: partialFiles })
           ),
           h('div', { className: 'md-content' },
-            h('div', { className: 'md-body', ref: bodyRef, inert: covered ? '' : undefined },
+            h('div', {
+              className: 'md-body',
+              ref: bodyRef,
+              inert: covered ? '' : undefined,
+              onScroll: event => {
+                const node = event.currentTarget
+                node.classList.add('md-scrolling')
+                window.clearTimeout(node.__mdScrollbarTimer)
+                node.__mdScrollbarTimer = window.setTimeout(() => node.classList.remove('md-scrolling'), 420)
+              },
+            },
               body,
               work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('details', { className: 'md-details md-tips' },
                 h('summary', { className: 'md-details-summary' }, format('tipsTitle')),
