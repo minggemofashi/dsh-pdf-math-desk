@@ -8451,7 +8451,7 @@ window.__ModuleLoader__.load({
           neighbour(props.page + 1, 'after'))
 
       if (props.variant === 'column') return content
-      return h('div', {
+      const stageNode = h('div', {
         className: 'md-reader-stage',
         'data-mode': props.mode,
         'data-grab': panEnabled && panDrag.current === null ? 'true' : undefined,
@@ -8463,7 +8463,14 @@ window.__ModuleLoader__.load({
         onPointerUp: panEnabled ? endPan : undefined,
         onPointerCancel: panEnabled ? endPan : undefined,
         onPointerLeave: panEnabled ? endPan : undefined,
-      }, content, props.captureLayer === undefined ? null : props.captureLayer)
+      }, content)
+      // The pointer layer must cover the *viewport*, not the scrolled content: an
+      // absolutely positioned child of the scroller is laid out at the top of the
+      // content, so after scrolling it no longer covers the visible page (which
+      // is why continuous mode stopped accepting strokes once it was scrolled).
+      // The host frame is not a scroller; the stage inside it still is.
+      if (props.captureLayer === undefined) return stageNode
+      return h('div', { className: 'md-reader-stage-host' }, stageNode, props.captureLayer)
     }
 
     /**
@@ -8556,6 +8563,10 @@ window.__ModuleLoader__.load({
       // committed marks through a read-only copy, so a page turn never paints
       // the previous page's ink on top of the new one for a frame.
       const [inkPage, setInkPage] = useState(reader.page)
+      // Bumped on every local ink edit so read-only copies (neighbours, the
+      // other pages of the continuous column) re-read storage instead of
+      // showing what they found when they mounted.
+      const [inkRev, setInkRev] = useState(0)
       // The page the pen writes on. It follows `reader.page` when the reader
       // moves, and in continuous mode a pointer on another page adopts that page
       // (reports are debounced, so the paper under the pen can be ahead).
@@ -8752,6 +8763,7 @@ window.__ModuleLoader__.load({
         setStrokes(next)
         seenAnnotRev.current = rev
         markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
+        setInkRev(value => value + 1)
       }
       const savePageMasks = next => {
         const rev = inkStore.save(annotPage.current, 'masks', next, currentSnapshot())
@@ -8762,6 +8774,7 @@ window.__ModuleLoader__.load({
         setMasks(next)
         seenAnnotRev.current = rev
         markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
+        setInkRev(value => value + 1)
       }
       // Undo/redo restore both lists at once: one step is one action, even when
       // it touched ink and boxes together.
@@ -8772,6 +8785,7 @@ window.__ModuleLoader__.load({
         setMasks(snapshot.masks)
         seenAnnotRev.current = inkStore.restore(annotPage.current, snapshot)
         markEditKind(chapterKey(reader.bookId, reader.code), 'ink')
+        setInkRev(value => value + 1)
       }
       const currentSnapshot = () => snapshotOf(strokesRef.current, masksRef.current)
       const undoPage = () => {
@@ -9116,6 +9130,13 @@ window.__ModuleLoader__.load({
         setStrokes(list)
         setInkPage(reader.page)
       }, [inkStore, annotKey, remoteAnnotRev])
+      // The viewer only ever shows `reader.page`; a stale editing page (an
+      // adopted continuous page whose report was rejected, or the page before a
+      // mode switch) must not survive a page move or leaving continuous.
+      useEffect(() => {
+        annotPage.current = reader.page
+        setInkPage(reader.page)
+      }, [reader.page, reader.mode])
       // Load one page's ink into the editor. Used when a pointer lands on a page
       // the reader has not reported yet: continuous scrolling is debounced, so
       // the paper under the pen can be a page ahead of `reader.page`.
@@ -9411,6 +9432,9 @@ window.__ModuleLoader__.load({
             loadPageAnnots(target)
             if (typeof props.onVisible === 'function') props.onVisible(target)
           }
+        } else if (annotPage.current !== reader.page) {
+          // The single page always writes on the page it shows.
+          loadPageAnnots(reader.page)
         }
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
@@ -11116,7 +11140,7 @@ window.__ModuleLoader__.load({
                   bookId: reader.bookId,
                   code: reader.code,
                   page,
-                  rev: remoteAnnotRev,
+                  rev: remoteAnnotRev + inkRev,
                 }),
                 overlayPage: inkPage,
               }),
@@ -12081,6 +12105,10 @@ window.__ModuleLoader__.load({
 .md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
 .md-reader-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
+/* The stage scrolls; this frame does not. The pointer layer lives here so it
+   always covers what is on screen, at any scroll offset. */
+.md-reader-stage-host { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.md-reader-stage-host > .md-reader-stage { flex: 1 1 auto; min-height: 0; }
 .md-reader-stage[data-mode="continuous"] { flex-direction: column; align-items: center; justify-content: flex-start; }
 /* The single page rides on the shared annotation plane: the hand tool (or a
    held space) pans it, and a stage-sized capture layer takes the pointer while
