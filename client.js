@@ -10557,6 +10557,7 @@ window.__ModuleLoader__.load({
       const canvasCapture = captureInk
         ? h('div', {
           className: 'md-canvas-capture',
+          'data-tool': annotTool,
           onPointerDown: event => annotDown(event, 'main'),
           onPointerMove: annotMove,
           onPointerUp: annotUp,
@@ -12035,6 +12036,12 @@ window.__ModuleLoader__.load({
 .md-reader-stage[data-grab="true"] { cursor: grab; }
 .md-reader-stage[data-panning="true"] { cursor: grabbing; }
 .md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
+/* The stage-sized layer sits above the page, so it has to show the tool's own
+   cursor or picking a pen would look like nothing happened. */
+.md-canvas-capture[data-tool="pen"], .md-canvas-capture[data-tool="text"] { cursor: crosshair; }
+.md-canvas-capture[data-tool="line"], .md-canvas-capture[data-tool="arrow"], .md-canvas-capture[data-tool="rect"], .md-canvas-capture[data-tool="diamond"], .md-canvas-capture[data-tool="ellipse"] { cursor: crosshair; }
+.md-canvas-capture[data-tool="erase"] { cursor: cell; }
+.md-canvas-capture[data-tool="select"] { cursor: default; }
 .md-annot[data-extended="true"] .md-annot-ink { overflow: visible; }
 .md-annot-static { pointer-events: none; }
 .md-canvas-hint { font-size: 11.5px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
