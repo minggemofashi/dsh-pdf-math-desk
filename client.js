@@ -14662,13 +14662,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         jumping.current = true
         const jumpTo = () => {
           const node = slots.current.get(number)
-          if (node !== undefined && node !== null && typeof node.scrollIntoView === 'function') {
-            node.scrollIntoView({ block: 'start' })
-          }
+          const scrollport = stage.current
+          if (node === null || node === undefined || scrollport === null || scrollport === undefined) return
+          const top = node.getBoundingClientRect().top - scrollport.getBoundingClientRect().top + scrollport.scrollTop
+          scrollport.scrollTop = Math.max(0, top)
         }
         jumpTo()
-        setTimeout(jumpTo, 320)
-        setTimeout(() => { jumping.current = false }, 700)
+        for (const delay of [80, 240, 600]) setTimeout(jumpTo, delay)
+        setTimeout(() => { jumping.current = false }, 900)
       }, [])
 
       useEffect(() => {
@@ -14691,6 +14692,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           visibleTimer.current = null
         }
         jumping.current = true
+        if (mode === 'single') {
+          const scrollport = stage.current
+          if (scrollport !== null && scrollport !== undefined) {
+            scrollport.scrollTop = 0
+            scrollport.scrollLeft = 0
+          }
+        }
         const timer = setTimeout(() => { jumping.current = false }, 700)
         return () => clearTimeout(timer)
       }, [mode])
