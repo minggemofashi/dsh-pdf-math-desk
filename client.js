@@ -14219,6 +14219,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const canRender = envTools.python && envTools.tex
       const canTranslate = canRender && envTools.apiKey === true
       const canExport = envTools.python
+      const activeWorkspace = catalog === null || catalog.target === null || catalog.target === undefined
+        || catalog.target.workspaceId === null || catalog.target.workspaceId === undefined || catalog.target.workspaceId === ''
+        ? undefined
+        : workspaces.find(item => String(item.id) === String(catalog.target.workspaceId))
+      const workspaceLabel = activeWorkspace === undefined
+        ? (catalog !== null && catalog.target !== null && catalog.target !== undefined
+          && catalog.target.workspaceId !== null && catalog.target.workspaceId !== undefined && catalog.target.workspaceId !== ''
+          ? (typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '')
+          : '')
+        : (activeWorkspace.title === '' ? activeWorkspace.path : activeWorkspace.title)
       let body
       if (blockingError !== '' && (catalog === null || work === null)) {
         body = h('div', { className: 'md-state md-state-error', role: 'alert' },
@@ -14400,16 +14410,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         pickerCandidates.sort((left, right) => right.updatedAt - left.updatedAt)
       }
 
-      const activeWorkspace = catalog === null || catalog.target === null
-        || catalog.target.workspaceId === null || catalog.target.workspaceId === ''
-        ? undefined
-        : workspaces.find(item => String(item.id) === String(catalog.target.workspaceId))
-      const workspaceLabel = activeWorkspace === undefined
-        ? (catalog !== null && catalog.target !== null && catalog.target !== undefined
-          && catalog.target.workspaceId !== null && catalog.target.workspaceId !== undefined && catalog.target.workspaceId !== ''
-          ? (typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '')
-          : '')
-        : (activeWorkspace.title === '' ? activeWorkspace.path : activeWorkspace.title)
       return h('div', { className: 'md-root', 'data-preview': preview === null ? undefined : 'open', ref: rootRef },
         h('style', null, CSS),
         h('input', {
