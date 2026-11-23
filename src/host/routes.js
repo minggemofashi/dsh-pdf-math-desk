@@ -294,6 +294,51 @@ async function activeLibrary() {
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname.replace(/\/+$/, '')
 
+      // Temporary development probe for the session APIs stage 7.6 needs.
+      // Read-only: it never creates, sends to, or archives a session.
+      if (path === `${PREFIX}/_session-probe`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const probe = typeof options.sessionProbe === 'function' ? options.sessionProbe() : null
+          if (probe === null || probe === undefined || probe.sessions === undefined || probe.agents === undefined) {
+            fail(response, 503, 'probe-unavailable', '会话服务尚未就绪')
+            return
+          }
+          const live = probe.sessions.list().slice(0, 3)
+          const first = live[0]
+          let boundary = null
+          if (first !== undefined) {
+            try {
+              boundary = probe.agents.turnBoundaryOf(first)
+            } catch (error) {
+              boundary = { error: String(error && error.message ? error.message : error) }
+            }
+          }
+          let events = []
+          if (first !== undefined) {
+            const source = typeof first.events === 'function' ? first.events() : first.events
+            events = Array.isArray(source) ? source : []
+          }
+          const lastUser = [...events].reverse().find(event => event !== null && event !== undefined && event.type === 'user/message')
+          const data = lastUser === undefined ? null : (lastUser.data === undefined ? lastUser : lastUser.data)
+          const workspace = probe.workspace
+          sendJson(response, 200, {
+            ok: true,
+            sessionIds: live.map(session => String(session.id)),
+            boundary,
+            userKeys: data === null ? null : Object.keys(data),
+            contentTypes: data !== null && Array.isArray(data.content) ? data.content.map(block => (block === null ? null : block.type)) : null,
+            workspaceArchive: workspace === undefined ? null : typeof workspace.archiveSession === 'function',
+          })
+        } catch (error) {
+          fail(response, 500, 'probe-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       // Features that need a catalog stop at a clear 409 instead of inventing a
       // default library. Library management, settings, static assets and session
       // bookkeeping remain available so the user can add the first library.

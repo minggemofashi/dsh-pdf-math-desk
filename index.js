@@ -124,6 +124,13 @@ export function apply(ctx, rawConfig) {
       return connection.requestRejection(request)
     },
     md2texScript: join(dirname(fileURLToPath(import.meta.url)), 'tools', 'md2tex.py'),
+    // Temporary read-only probe for the session APIs stage 7.6 needs; remove
+    // together with the route once the shapes are confirmed.
+    sessionProbe: () => ({
+      agents: ctx.get('agents'),
+      sessions: ctx.get('sessions'),
+      workspace: ctx.get('workspaceRegistry'),
+    }),
     pending,
     links,
     libraries,
