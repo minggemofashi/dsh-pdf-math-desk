@@ -1108,6 +1108,15 @@ window.__ModuleLoader__.load({
       dataReport: '导入完成：导入 {imported}，改名 {renamed}，跳过 {skipped}，重写书库 {rewritten}',
       dataRootHint: '书库 {id} 的新根目录',
       dataFailed: '迁移操作失败',
+      dataBookTitle: '导入书籍包',
+      dataBookHint: '选择本机 PDF 压缩包；解压到书库的分片/整本目录，同名按上面的冲突策略处理',
+      dataBookTarget: '目标',
+      dataBookFragments: '分片',
+      dataBookWhole: '整本',
+      dataBookSubdir: '子目录（可选）',
+      dataBookSubdirPh: '例如：新书',
+      dataBookImport: '导入书籍包',
+      dataBookReport: '书籍包：导入 {imported}，改名 {renamed}，跳过 {skipped}，提醒 {warnings}',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
       attachHint: '支持 PDF、图片与 PPT（自动转 PDF），单个不超过 50 MB；会复制到本章的附件目录',
@@ -1756,6 +1765,15 @@ window.__ModuleLoader__.load({
       dataReport: 'Imported {imported}, renamed {renamed}, skipped {skipped}, rewrote {rewritten} libraries',
       dataRootHint: 'New root of library {id}',
       dataFailed: 'Migration action failed',
+      dataBookTitle: 'Import a book archive',
+      dataBookHint: 'Pick a local PDF ZIP; it is unpacked into 分片/整本. Name clashes follow the conflict policy above.',
+      dataBookTarget: 'Target',
+      dataBookFragments: 'Fragments',
+      dataBookWhole: 'Whole book',
+      dataBookSubdir: 'Subfolder (optional)',
+      dataBookSubdirPh: 'e.g. New book',
+      dataBookImport: 'Import book archive',
+      dataBookReport: 'Book archive: imported {imported}, renamed {renamed}, skipped {skipped}, warnings {warnings}',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
       attachHint: 'PDFs, images and PPT (converted to PDF) up to 50 MB; copied into this chapter’s attachment folder',
@@ -4258,6 +4276,27 @@ window.__ModuleLoader__.load({
           setDataBusy('')
         }
       }
+      const [bookPath, setBookPath] = useState('')
+      const [bookTarget, setBookTarget] = useState('fragments')
+      const [bookSubdir, setBookSubdir] = useState('')
+      const [bookReport, setBookReport] = useState(null)
+      const runBookImport = async () => {
+        setDataBusy('book')
+        setBookReport(null)
+        try {
+          const payload = await request('POST', 'library-import', {
+            path: bookPath.trim(),
+            target: bookTarget,
+            subdir: bookSubdir.trim(),
+            strategy: dataStrategy,
+          })
+          setBookReport(payload !== null && payload !== undefined ? payload.report : null)
+        } catch (error) {
+          dataFail(error)
+        } finally {
+          setDataBusy('')
+        }
+      }
       useEffect(() => {
         request('GET', 'deepseek-key')
           .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
@@ -4675,6 +4714,45 @@ window.__ModuleLoader__.load({
                 renamed: Array.isArray(dataReport.renamed) ? dataReport.renamed.length : 0,
                 skipped: Array.isArray(dataReport.skipped) ? dataReport.skipped.length : 0,
                 rewritten: Array.isArray(dataReport.rewrittenLibraries) ? dataReport.rewrittenLibraries.length : 0,
+              }))
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('dataBookTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('dataBookHint')),
+          h('div', { className: 'md-settings-row' },
+            h('input', {
+              className: 'md-settings-input', type: 'text',
+              value: bookPath,
+              placeholder: 'D:\\books\\chapters.zip',
+              onChange: event => setBookPath(event.target.value),
+            }),
+            h('select', {
+              className: 'md-settings-input',
+              value: bookTarget,
+              onChange: event => setBookTarget(event.target.value),
+            },
+              h('option', { value: 'fragments' }, format('dataBookFragments')),
+              h('option', { value: 'whole' }, format('dataBookWhole'))),
+            h('input', {
+              className: 'md-settings-input', type: 'text',
+              value: bookSubdir,
+              placeholder: format('dataBookSubdirPh'),
+              onChange: event => setBookSubdir(event.target.value),
+            }),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: dataBusy === 'book' || bookPath.trim() === '',
+              onClick: runBookImport,
+            }, format('dataBookImport'))
+          ),
+          bookReport === null
+            ? null
+            : h('p', { className: 'md-settings-note' },
+              format('dataBookReport', {
+                imported: Array.isArray(bookReport.imported) ? bookReport.imported.length : 0,
+                renamed: Array.isArray(bookReport.renamed) ? bookReport.renamed.length : 0,
+                skipped: Array.isArray(bookReport.skipped) ? bookReport.skipped.length : 0,
+                warnings: Array.isArray(bookReport.warnings) ? bookReport.warnings.length : 0,
               }))
         )
       )

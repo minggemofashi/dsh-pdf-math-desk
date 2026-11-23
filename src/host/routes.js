@@ -41,6 +41,7 @@ import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, r
 import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
 import { MAX_FONT_BYTES, downloadFont, fontStatus, installFont, readFont, removeFont } from './fonts.js'
 import { createBackup, importBackup, readBackup } from './backup.js'
+import { importBookArchive } from './book-import.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
@@ -424,6 +425,44 @@ async function activeLibrary() {
           sendBytes(response, 200, bytes, 'application/zip', `attachment; filename="${name}"`)
         } catch {
           fail(response, 404, 'missing-file', '找不到这个迁移包')
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/library-import`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const source = typeof record.path === 'string' ? record.path : ''
+        if (source === '') {
+          fail(response, 400, 'invalid-path', '请选择书籍包 ZIP 文件')
+          return
+        }
+        const parts = typeof record.subdir === 'string'
+          ? record.subdir.split(/[\\/]+/).filter(part => part !== '' && part !== '.' && part !== '..')
+          : []
+        if (typeof record.subdir === 'string' && /(^|[\\/])\.\.([\\/]|$)/.test(record.subdir)) {
+          fail(response, 400, 'invalid-subdir', '子目录不能包含 ..')
+          return
+        }
+        try {
+          const library = await activeLibrary()
+          const base = record.target === 'whole'
+            ? join(library.libraryDir, '整本')
+            : (typeof library.fragmentDir === 'string' && library.fragmentDir !== '' ? library.fragmentDir : join(library.libraryDir, '分片'))
+          const targetDir = parts.length === 0 ? base : join(base, ...parts)
+          const report = await importBookArchive({
+            archivePath: source,
+            targetDir,
+            strategy: typeof record.strategy === 'string' ? record.strategy : 'merge',
+          })
+          sendJson(response, 200, { ok: true, report })
+        } catch (error) {
+          fail(response, 500, 'library-import-failed', String(error && error.message ? error.message : error))
         }
         return
       }
