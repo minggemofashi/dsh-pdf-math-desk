@@ -832,7 +832,19 @@ async function activeLibrary() {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
           return
         }
-        const body = await mutationBody(request, response)
+        // An upload is a base64 file body: the default 16 KB JSON limit would
+        // reject every real attachment before it reached the size check.
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        let body
+        try {
+          body = await readJson(request, 80 * 1024 * 1024)
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
         if (body === undefined) return
         const record = body !== null && typeof body === 'object' ? body : {}
         const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
