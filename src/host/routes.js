@@ -312,6 +312,7 @@ async function activeLibrary() {
         || path.startsWith(`${PREFIX}/vendor/`)
         || path === `${PREFIX}/font`
         || path === `${PREFIX}/font/file`
+        || path === `${PREFIX}/backup/settings`
         || path === `${PREFIX}/state`
         || path === `${PREFIX}/pending`
         || path === `${PREFIX}/pending/remove`
@@ -411,6 +412,17 @@ async function activeLibrary() {
         } catch (error) {
           const message = String(error && error.message ? error.message : error)
           fail(response, 500, 'backup-failed', message)
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/backup/settings`) {
+        try {
+          const raw = await readFile(join(config.dataDir, 'backup', 'imported-settings.json'), 'utf8')
+          const parsed = JSON.parse(raw)
+          sendJson(response, 200, { ok: true, settings: parsed !== null && typeof parsed === 'object' ? parsed : {} })
+        } catch {
+          fail(response, 404, 'missing-settings', '没有导入的浏览器设置')
         }
         return
       }

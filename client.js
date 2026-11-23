@@ -1111,6 +1111,9 @@ window.__ModuleLoader__.load({
       dataReport: '导入完成：导入 {imported}，改名 {renamed}，跳过 {skipped}，重写书库 {rewritten}',
       dataRootHint: '书库 {id} 的新根目录',
       dataFailed: '迁移操作失败',
+      dataApplySettings: '应用导入的浏览器设置',
+      dataApplied: '已应用 {n} 项设置；刷新页面后生效',
+      dataNoSettings: '没有导入的浏览器设置',
       dataBookTitle: '导入书籍包',
       dataBookHint: '选择本机 PDF 压缩包；解压到书库的分片/整本目录，同名按上面的冲突策略处理',
       dataBookTarget: '目标',
@@ -1771,6 +1774,9 @@ window.__ModuleLoader__.load({
       dataReport: 'Imported {imported}, renamed {renamed}, skipped {skipped}, rewrote {rewritten} libraries',
       dataRootHint: 'New root of library {id}',
       dataFailed: 'Migration action failed',
+      dataApplySettings: 'Apply imported browser settings',
+      dataApplied: 'Applied {n} settings; refresh the page to use them',
+      dataNoSettings: 'No imported browser settings found',
       dataBookTitle: 'Import a book archive',
       dataBookHint: 'Pick a local PDF ZIP; it is unpacked into 分片/整本. Name clashes follow the conflict policy above.',
       dataBookTarget: 'Target',
@@ -4323,6 +4329,31 @@ window.__ModuleLoader__.load({
           setDataBusy('')
         }
       }
+      const applyImportedSettings = async () => {
+        try {
+          const payload = await request('GET', 'backup/settings')
+          const settings = payload !== null && payload !== undefined && payload.settings !== null && typeof payload.settings === 'object'
+            ? payload.settings
+            : {}
+          const keys = Object.keys(settings).filter(key => key.startsWith('pdfdesk:'))
+          if (keys.length === 0) {
+            window.alert(format('dataNoSettings'))
+            return
+          }
+          let applied = 0
+          for (const key of keys) {
+            try {
+              window.localStorage.setItem(key, String(settings[key]))
+              applied += 1
+            } catch {
+              // storage unavailable for this key
+            }
+          }
+          window.alert(format('dataApplied', { n: applied }))
+        } catch (error) {
+          dataFail(error)
+        }
+      }
       useEffect(() => {
         request('GET', 'deepseek-key')
           .then(payload => setApiKeyNote(payload !== null && payload.configured === true ? format('apiKeyConfigured') : format('apiKeyMissing')))
@@ -4764,6 +4795,14 @@ window.__ModuleLoader__.load({
                 skipped: Array.isArray(dataReport.skipped) ? dataReport.skipped.length : 0,
                 rewritten: Array.isArray(dataReport.rewrittenLibraries) ? dataReport.rewrittenLibraries.length : 0,
               }))
+          ,
+          dataReport === null
+            ? null
+            : h('div', { className: 'md-settings-row' },
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                onClick: applyImportedSettings,
+              }, format('dataApplySettings')))
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataBookTitle')),
