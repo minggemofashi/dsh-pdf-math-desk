@@ -355,6 +355,7 @@ async function activeLibrary() {
               dataDir: config.dataDir,
               libraries: list,
               include,
+              settings: include.settings && record.settings !== null && typeof record.settings === 'object' ? record.settings : undefined,
               pluginVersion: PLUGIN_VERSION,
               machine: { platform: process.platform, oldHome: process.env.USERPROFILE ?? process.env.HOME ?? '' },
             })

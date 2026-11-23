@@ -1098,6 +1098,7 @@ window.__ModuleLoader__.load({
       dataDownload: '下载迁移包',
       dataFonts: '包含手写字体（约 22 MB）',
       dataProjcache: '包含会话投影缓存（可重建，体积大）',
+      dataSettings: '包含浏览器设置（阅读宽度/快捷键等，导出为 settings.json）',
       dataImportTitle: '导入迁移包',
       dataImportHint: '填写本机 ZIP 路径；合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
       dataPath: 'ZIP 路径',
@@ -1757,6 +1758,7 @@ window.__ModuleLoader__.load({
       dataDownload: 'Download backup',
       dataFonts: 'Include the handwriting font (~22 MB)',
       dataProjcache: 'Include the session projection cache (rebuildable, large)',
+      dataSettings: 'Include browser settings (reading width, shortcuts…) as settings.json',
       dataImportTitle: 'Import a backup',
       dataImportHint: 'Enter the ZIP path on this machine. Merge never overwrites: conflicts become *.imported-<time>.',
       dataPath: 'ZIP path',
@@ -4231,6 +4233,7 @@ window.__ModuleLoader__.load({
       const [dataReport, setDataReport] = useState(null)
       const [backupFonts, setBackupFonts] = useState(false)
       const [backupProjcache, setBackupProjcache] = useState(false)
+      const [backupSettings, setBackupSettings] = useState(false)
       const dataFail = error => {
         window.alert(`${format('dataFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
       }
@@ -4238,9 +4241,23 @@ window.__ModuleLoader__.load({
         setDataBusy('create')
         setDataReport(null)
         try {
+          const settings = {}
+          if (backupSettings) {
+            try {
+              for (let index = 0; index < window.localStorage.length; index += 1) {
+                const key = window.localStorage.key(index)
+                if (typeof key === 'string' && key.startsWith('pdfdesk:')) {
+                  settings[key] = window.localStorage.getItem(key) ?? ''
+                }
+              }
+            } catch {
+              // storage unavailable: the backup still covers the Host data
+            }
+          }
           const payload = await request('POST', 'backup', {
             action: 'create',
-            include: { fonts: backupFonts, projcache: backupProjcache },
+            include: { fonts: backupFonts, projcache: backupProjcache, settings: backupSettings },
+            settings,
           })
           setDataBackup(payload)
         } catch (error) {
@@ -4659,7 +4676,14 @@ window.__ModuleLoader__.load({
                 checked: backupProjcache,
                 onChange: event => setBackupProjcache(event.target.checked),
               }),
-              ` ${format('dataProjcache')}`)
+              ` ${format('dataProjcache')}`),
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: backupSettings,
+                onChange: event => setBackupSettings(event.target.checked),
+              }),
+              ` ${format('dataSettings')}`)
           ),
           h('div', { className: 'md-settings-row' },
             h(KitButton, {

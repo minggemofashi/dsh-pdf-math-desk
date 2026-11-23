@@ -49,7 +49,7 @@ export async function collectBackup(options) {
     workspace: false,
     pluginState: false,
     libraryData: [],
-    settings: include.settings === true,
+    settings: false,
     fonts: false,
     projcache: false,
   }
@@ -84,6 +84,11 @@ export async function collectBackup(options) {
   if (include.fonts === true) {
     included.fonts = await copyIfExists(join(dataDir, 'fonts'), join(root, 'fonts'))
     if (included.fonts) copied.push('fonts')
+  }
+  if (include.settings === true && options.settings !== null && typeof options.settings === 'object') {
+    await writeFile(join(root, 'settings.json'), `${JSON.stringify(options.settings, null, 2)}\n`, 'utf8')
+    included.settings = true
+    copied.push('settings.json')
   }
   if (include.projcache === true) {
     included.projcache = await copyIfExists(join(home, 'storages', 'session_projcache'), join(root, 'projcache'))
@@ -260,6 +265,7 @@ export function destinationOf(name, roots) {
   if (name.startsWith('plugin-state/')) return join(roots.dataDir, name.slice('plugin-state/'.length))
   if (name.startsWith('fonts/')) return join(roots.dataDir, 'fonts', name.slice('fonts/'.length))
   if (name.startsWith('projcache/')) return join(roots.dshHome, 'storages', 'session_projcache', name.slice('projcache/'.length))
+  if (name === 'settings.json') return join(roots.dataDir, 'backup', 'imported-settings.json')
   if (name.startsWith('libraries/')) {
     const parts = name.split('/')
     const id = parts[1]
