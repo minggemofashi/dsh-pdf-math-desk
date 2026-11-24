@@ -8,7 +8,7 @@
 
 - **单会话单任务**：一个会话只做一个阶段的一件事；按任务阶段切分，不按时间或 bug 数量切分。
 - **写审分离**：同一会话不得既写业务代码又做审查/验收；审查和测试必须在独立上下文中完成。
-- 只有 **programmer** 可以修改业务代码。其他角色只读代码，或只写自己角色文档规定的输出。
+- 只有 **programmer** 可以修改业务代码（含 `locale/*.json` 等纯字符串值）。其他角色只读代码，或只写自己角色文档规定的输出。
 - 角色文档是行为边界。开工前先读 `docs/roles/<你的角色>.md`；不得越出其中“禁止”一节。
 - 任何角色文档的变更（含自己的）必须经用户明确确认后才落盘；确认前只写提案。每个角色一次最多提 2 条规则变更。
 - 新增角色必须经用户确认；不要为了覆盖单个问题临时扩张角色体系。
@@ -22,6 +22,7 @@
 - 改动超过 2 个文件（3 个及以上）必须先出计划并等用户确认。
 - 公共接口、事件名、配置结构、数据 schema、受保护文件不得擅自改动；需要动时先出计划并等用户确认。
 - 受保护契约至少包括：公开包接口与 `package.json` 的 `exports` / `engines` / `dsh` 配置、`cordis.patch.yml`、`/pdfdesk/*` 路由、locale 键结构、Host/浏览器共享的事件名、`~/.dsh/pdfdesk/` 与 `.pdfdesk/` 的存储键和 sidecar 结构。
+- **纯文案通道**：只改纯字符串值（`locale/*.json` 的值、独立文案常量）的 diff 仍由 programmer 落地；不得改 key、层级、占位符、条件分支或逻辑；必须过语法校验与构建，并跑受影响的 smoke，不重复完整功能测试。内联字符串、prompt、错误分支、危险操作流程按正常代码变更走审查与测试。
 - 验收标准只能来自 `docs/requirements/` 中的需求规格或本文件；实现者不得自定、放宽验收标准，也不得自行判定“通过”。
 - 测试子 Agent 的验收标准必须来自需求规格或本文件，不得由 programmer 自定。
 - 模块化边界检查属于 code-reviewer，不属于 programmer；programmer 只负责不继续扩大耦合。
@@ -38,13 +39,13 @@
 ## 3. 仓库与发布边界
 
 - **默认只本地提交通档，不发版**：只有用户明确说「发布 / 发版 / 更新 / 推送」时，才可以升版本、打 tag、push、创建 GitHub Release、发 npm 或改市场条目；不要每轮追问“要不要发布”。
-- 发布只能由 **release-manager** 执行，且必须已有 code-reviewer 无 Critical、tester 通过的结论；发布细节见 `docs/ci.md`。
+- 发布只能由 **release-manager** 执行，且必须已读 `docs/reviews/<单元ID>.md` 与 `docs/tests/<单元ID>.md` 的**最新一轮**，结论分别无 Critical / 通过；发布细节见 `docs/ci.md`。
 - release-manager 不改 `src/`、不改测试；构建失败时停止并退回 programmer，不通过改代码“修构建”。
 - 不自动修改 CI 配置；需要新建或修改 CI / Trusted Publishing 时，先由用户确认方案。
 - `cordis.patch.yml` 必须保持中性，不写具体书库路径；真实书库由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
 - 不进 git：`node_modules/`、`dist/`、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
 - 不提交个人目录绝对路径、API Key、token、密码；提交前用 `git diff --cached` 检查。
-- 仓库里允许并应持久化的项目记忆：`docs/requirements/`、`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/feedback/`、`docs/boss-handover.md`、`docs/features.md`、`docs/copy/`、`CHANGELOG.md`。临时草稿和含个人信息的诊断仍放仓库外。
+- 仓库里允许并应持久化的项目记忆：`docs/requirements/`、`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/feedback/`、`docs/boss-handover.md`、`docs/features.md`、`docs/copy/`、`docs/reviews/`、`docs/tests/`、`CHANGELOG.md`。临时草稿和含个人信息的诊断仍放仓库外。
 - CI 细节、发布命令和历史坑只在 `docs/ci.md` / `docs/RELEASE.md`，不要搬回本文件。
 
 ## 4. 改完必跑的验证
@@ -78,8 +79,8 @@ node .dsh-scratch\host-test.mjs
 | 判断当前该谁做、拆几个会话、发布规模 | `docs/roles/boss.md` |
 | 把模糊需求写成需求规格 | `docs/roles/auditor.md`，输出到 `docs/requirements/` |
 | 实现一个执行单元 | `docs/todo.md` + `docs/roles/programmer.md` |
-| 独立审查 diff | `docs/roles/code-reviewer.md` |
-| 独立验收 | `docs/roles/tester.md` + `docs/TESTING.md` |
+| 独立审查 diff | `docs/roles/code-reviewer.md`，输出到 `docs/reviews/<单元ID>.md` |
+| 独立验收 | `docs/roles/tester.md` + `docs/TESTING.md`，输出到 `docs/tests/<单元ID>.md` |
 | 发布 | `docs/roles/release-manager.md` + `docs/ci.md` |
 | 反馈角色体系的问题 | `docs/roles/feedback-collector.md`，输出到 `docs/feedback/` |
 | 查已定架构/被否决方案/隐性契约 | `docs/decisions.md` |
