@@ -3152,7 +3152,7 @@ window.__ModuleLoader__.load({
      * setChapterPage / reportChapterPage below, which is the only writer.
      */
     const VIEW_PUBLISHED = {
-      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev', 'questionRev', 'translated', 'translating'],
+      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev', 'questionRev'],
       side: ['mode', 'annotRev', 'questionRev'],
     }
 
@@ -3236,6 +3236,241 @@ window.__ModuleLoader__.load({
      */
     function readView(bookId, code) {
       return viewLink(bookId, code).state
+    }
+
+    /* -------------------------------------------------- translation facts -- */
+
+    /**
+     * One chapter's translation facts, shared by every end in this page: whether
+     * a usable translation file exists, and whether a translation is running.
+     * Keyed by `chapterKey`, held only in memory, and the single source for both
+     * "叠加" entries. The durable state stays where it was: the translated file
+     * on disk and the `pdfdesk:job:*` key; this cache only remembers/answers it.
+     */
+    const translationFacts = new Map()
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {string} the localStorage key of the chapter's translation job.
+     */
+    function translationJobKey(bookId, code) {
+      return `pdfdesk:job:${bookId}:${code}`
+    }
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {string} the persisted job id, or '' when none is stored.
+     */
+    function readStoredJob(bookId, code) {
+      try {
+        const job = window.localStorage.getItem(translationJobKey(bookId, code))
+        return typeof job === 'string' ? job : ''
+      } catch {
+        return ''
+      }
+    }
+
+    /**
+     * Drop the persisted job id, so a job that cannot be verified is not
+     * resumed. With a job id, only that job's key is removed: a newer job for the
+     * same chapter must keep its own key.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {string} [jobId] - the job that is allowed to clear the key.
+     * @returns {void}
+     */
+    function forgetStoredJob(bookId, code, jobId) {
+      try {
+        const key = translationJobKey(bookId, code)
+        if (jobId !== undefined && jobId !== '' && window.localStorage.getItem(key) !== jobId) return
+        window.localStorage.removeItem(key)
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /**
+     * Whether a finishing job still owns its chapter's persisted job key. An
+     * empty key means no newer job replaced it; a different id means the user
+     * started another translation and the old loop must not clear its state.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {string} jobId - the job asking.
+     * @returns {boolean} true when writing that job's terminal facts is safe.
+     */
+    function ownsStoredJob(bookId, code, jobId) {
+      const stored = readStoredJob(bookId, code)
+      return stored === '' || stored === jobId
+    }
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {{ known: boolean, exists: boolean | null, translating: boolean, version: number, pending: Promise<void> | null, listeners: Set<Function> }} the chapter record.
+     */
+    function translationFactsOf(bookId, code) {
+      const key = chapterKey(bookId, code)
+      let facts = translationFacts.get(key)
+      if (facts === undefined) {
+        facts = { known: false, exists: null, translating: false, version: 0, pending: null, listeners: new Set() }
+        translationFacts.set(key, facts)
+      }
+      return facts
+    }
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {{ known: boolean, exists: boolean | null, translating: boolean }} a snapshot for the UI.
+     */
+    function readTranslationFacts(bookId, code) {
+      if (bookId === '' || code === '') return { known: false, exists: null, translating: false }
+      const facts = translationFactsOf(bookId, code)
+      return { known: facts.known, exists: facts.exists, translating: facts.translating }
+    }
+
+    /**
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {Function} listener - receives the new snapshot.
+     * @returns {Function} the disposer.
+     */
+    function subscribeTranslationFacts(bookId, code, listener) {
+      const facts = translationFactsOf(bookId, code)
+      facts.listeners.add(listener)
+      return () => { facts.listeners.delete(listener) }
+    }
+
+    /**
+     * @param {{ known: boolean, exists: boolean | null, translating: boolean, listeners: Set<Function> }} facts - one chapter record.
+     * @returns {void}
+     */
+    function broadcastTranslationFacts(facts) {
+      const snapshot = { known: facts.known, exists: facts.exists, translating: facts.translating }
+      facts.listeners.forEach(listener => {
+        try {
+          listener(snapshot)
+        } catch (error) {
+          trace('side', 'translation listener failed', String(error))
+        }
+      })
+    }
+
+    /**
+     * Write one chapter's translation facts. Supplying `exists` also marks the
+     * chapter as checked, so the UI leaves the "unknown" state. Every change
+     * bumps `version`, which makes an older in-flight probe discard its answer.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {{ known?: boolean, exists?: boolean, translating?: boolean }} patch - fields to merge.
+     * @returns {void}
+     */
+    function writeTranslationFacts(bookId, code, patch) {
+      if (bookId === '' || code === '') return
+      const facts = translationFactsOf(bookId, code)
+      let changed = false
+      if (patch.exists !== undefined) {
+        const known = patch.known === undefined ? true : patch.known === true
+        if (facts.exists !== patch.exists) { facts.exists = patch.exists; changed = true }
+        if (facts.known !== known) { facts.known = known; changed = true }
+      } else if (patch.known !== undefined && facts.known !== patch.known) {
+        facts.known = patch.known
+        changed = true
+      }
+      if (patch.translating !== undefined && facts.translating !== patch.translating) {
+        facts.translating = patch.translating
+        changed = true
+      }
+      if (!changed) return
+      facts.version += 1
+      broadcastTranslationFacts(facts)
+    }
+
+    /**
+     * Ask the Host once for one chapter's translation facts and remember them.
+     * A persisted job is reconciled first (running / done / lost); otherwise the
+     * translated PDF is probed with HEAD, so the preview can answer without the
+     * reader ever being mounted. A failed or unexpected probe keeps the record
+     * unknown instead of claiming there is no translation; the next mount or
+     * chapter change asks again.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Promise<void>} resolves when this chapter's facts have been asked for.
+     */
+    function refreshTranslationFacts(bookId, code) {
+      if (bookId === '' || code === '') return Promise.resolve()
+      const facts = translationFactsOf(bookId, code)
+      if (facts.pending !== null) return facts.pending
+      const run = (async () => {
+        const jobId = readStoredJob(bookId, code)
+        if (jobId !== '') {
+          try {
+            const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
+            // A newer job may have replaced this key while the status was read;
+            // its lifecycle owns the chapter now.
+            if (!ownsStoredJob(bookId, code, jobId)) return
+            const status = state !== null && typeof state === 'object' ? state.status : ''
+            if (status === 'running') {
+              writeTranslationFacts(bookId, code, { translating: true })
+              return
+            }
+            forgetStoredJob(bookId, code, jobId)
+            if (status === 'done') {
+              writeTranslationFacts(bookId, code, { translating: false, exists: true })
+              return
+            }
+            // error, or a state this build does not know: the job is over.
+            writeTranslationFacts(bookId, code, { translating: false })
+          } catch {
+            // The job file is gone or the route failed: it cannot be claimed as
+            // running any more (review W2). Fall through to the file probe.
+            if (!ownsStoredJob(bookId, code, jobId)) return
+            forgetStoredJob(bookId, code, jobId)
+            writeTranslationFacts(bookId, code, { translating: false })
+          }
+        }
+        const version = facts.version
+        let exists = null
+        try {
+          const url = chapterPdfUrl(bookId, code, { variant: 'translated' })
+          const response = await fetch(url, { method: 'HEAD', credentials: 'same-origin' })
+          if (response.status === 404) exists = false
+          else if (response.ok) exists = true
+        } catch {
+          exists = null
+        }
+        // A job lifecycle write while the probe ran is newer than this answer.
+        if (facts.version !== version) return
+        if (exists === null) return
+        writeTranslationFacts(bookId, code, { exists })
+      })().finally(() => {
+        facts.pending = null
+      })
+      facts.pending = run
+      return run
+    }
+
+    /**
+     * Live view of one chapter's translation facts. Both ends read this record;
+     * neither keeps a second copy.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {{ known: boolean, exists: boolean | null, translating: boolean }} the chapter facts.
+     */
+    function useTranslationFacts(bookId, code) {
+      const chapter = chapterKey(bookId, code)
+      // The record is keyed: when the reader switches chapters, the very first
+      // render must already answer for the new chapter, not show the previous
+      // one's facts until an effect catches up.
+      const [entry, setEntry] = useState(() => ({ chapter, facts: readTranslationFacts(bookId, code) }))
+      useEffect(() => {
+        setEntry({ chapter, facts: readTranslationFacts(bookId, code) })
+        if (bookId === '' || code === '') return undefined
+        return subscribeTranslationFacts(bookId, code, facts => setEntry({ chapter, facts }))
+      }, [bookId, code])
+      return entry.chapter === chapter ? entry.facts : readTranslationFacts(bookId, code)
     }
 
     /** How long one programmatic scroll keeps scroll reports from winning. */
@@ -10175,7 +10410,16 @@ window.__ModuleLoader__.load({
       const overlayLayer = useRef(null)
       const overlayStart = useRef(null)
       const [translateTarget, setTranslateTarget] = useState('zh')
-      const [translating, setTranslating] = useState(false)
+      // Translation facts live in the shared per-chapter cache, not in this
+      // component: switching chapters must not carry the previous chapter's
+      // answer along, and the preview must read the same record.
+      const translation = useTranslationFacts(reader.bookId, reader.code)
+      const hasTranslation = translation.exists === true
+      const translating = translation.translating
+      // The chapter this render shows. In-flight job callbacks compare against
+      // it, so a result for the chapter the user left cannot touch this one.
+      const chapterRef = useRef('')
+      chapterRef.current = chapterKey(reader.bookId, reader.code)
       const [translateNote, setTranslateNote] = useState('')
       const slotRefs = useRef(new Map())
       const switchingMode = useRef(false)
@@ -10357,15 +10601,18 @@ window.__ModuleLoader__.load({
       }, [noteKey])
       const cancelTranslate = () => {
         if (jobRef.current === '') return
-        request('POST', 'translate-cancel', { job: jobRef.current }).catch(() => {})
+        const jobId = jobRef.current
+        request('POST', 'translate-cancel', { job: jobId }).catch(() => {})
         jobRef.current = ''
-        setTranslating(false)
+        forgetStoredJob(reader.bookId, reader.code, jobId)
+        // Only the job this button cancels may reset the chapter's state; a
+        // newer job for the same chapter keeps its own key.
+        if (ownsStoredJob(reader.bookId, reader.code, jobId)) {
+          writeTranslationFacts(reader.bookId, reader.code, { translating: false })
+        }
         setDeskStatus('idle')
         updateNote(format('translateCancelled'))
       }
-      // null means "not known yet": the translated-info query has not answered.
-      // A false value is a checked chapter with no translation file.
-      const [hasTranslation, setHasTranslation] = useState(null)
       const [dualDoc, setDualDoc] = useState(null)
       const rebuilt = useRef(new Set())
       const dualLeft = useRef(null)
@@ -10485,29 +10732,13 @@ window.__ModuleLoader__.load({
       }, [dual, overlay, reader.bookId, reader.code, docRev])
 
 
-      useEffect(() => {
-        let cancelled = false
-        request('GET', `translated-info?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&name=${encodeURIComponent(`${reader.fileName}.pdf`)}`)
-          .then(payload => {
-            if (!cancelled && payload !== null) setHasTranslation(payload.exists === true)
-          })
-          .catch(() => {})
-        return () => {
-          cancelled = true
-        }
-      }, [reader.bookId, reader.code, reader.fileName])
-      // The two "叠加" entries (this reader's rail and the right preview's top
-      // bar) need the chapter's translation facts. The reader is the only end
-      // that starts or watches a translation job, so it publishes both facts on
-      // the chapter's shared view record; the preview disables its own entry
-      // from the same record instead of keeping a second copy.
+      // The reader keeps the shared per-chapter facts fresh while it is open;
+      // the preview asks for the same facts itself when the reader is not
+      // mounted, so neither end depends on the other being alive.
       useEffect(() => {
         if (reader.bookId === '' || reader.code === '') return
-        syncView(reader.bookId, reader.code, {
-          translated: hasTranslation === null ? undefined : hasTranslation,
-          translating,
-        }, 'reader')
-      }, [reader.bookId, reader.code, hasTranslation, translating])
+        void refreshTranslationFacts(reader.bookId, reader.code)
+      }, [reader.bookId, reader.code])
       const maskKey = `pdfdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
         const prefetched = annotPrefetch.current.get(reader.page)
@@ -11328,48 +11559,71 @@ window.__ModuleLoader__.load({
       }
 
       // A chapter translation runs on the Host; reopening the reader resumes
-      // watching it instead of losing the progress.
+      // watching it instead of losing the progress. The facts it learns belong to
+      // the chapter that started the job, even if the reader has moved on or is
+      // gone: only this chapter's UI reacts to them.
       useEffect(() => {
         let cancelled = false
-        const key = `pdfdesk:job:${reader.bookId}:${reader.code}`
-        let jobId = ''
-        try {
-          jobId = window.localStorage.getItem(key) ?? ''
-        } catch {
-          jobId = ''
-        }
+        const bookId = reader.bookId
+        const code = reader.code
+        const key = chapterKey(bookId, code)
+        const jobId = readStoredJob(bookId, code)
         if (jobId === '') return undefined
-        deskStatus.job = jobId
-        setTranslating(true)
+        const mine = () => chapterRef.current === key
+        const owns = () => ownsStoredJob(bookId, code, jobId)
+        if (deskStatus.job === '') deskStatus.job = jobId
+        writeTranslationFacts(bookId, code, { translating: true })
         const tick = async () => {
           try {
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
-            if (cancelled) return
+            const owned = owns()
             if (state.status === 'done') {
-              setHasTranslation(true)
-              setTranslating(false)
-              deskStatus.job = ''
+              if (owned) forgetStoredJob(bookId, code, jobId)
+              writeTranslationFacts(bookId, code, owned
+                ? { translating: false, exists: true }
+                : { exists: true })
+              if (deskStatus.job === jobId) deskStatus.job = ''
+              if (cancelled || !mine()) return
               setDeskStatus('done')
               setTimeout(() => setDeskStatus('idle'), 8000)
               rememberPartial(state)
               setDocRev(value => value + 1)
               updateNote(doneNote(state))
-              window.localStorage.removeItem(key)
               return
             }
             if (state.status === 'error') {
-              setTranslating(false)
-              deskStatus.job = ''
+              if (!owned) return
+              forgetStoredJob(bookId, code, jobId)
+              writeTranslationFacts(bookId, code, { translating: false })
+              // A finished job may still have left an older usable artifact:
+              // ask the file once so the entries can recover.
+              void refreshTranslationFacts(bookId, code)
+              if (deskStatus.job === jobId) deskStatus.job = ''
+              if (cancelled || !mine()) return
               setDeskStatus('error')
               setTimeout(() => setDeskStatus('idle'), 8000)
               updateNote(`${format('translateFailed')}：${state.error}`)
-              window.localStorage.removeItem(key)
               return
             }
+            if (state.status !== 'running') throw new Error('翻译状态不可用')
+            if (!owned) return
+            if (cancelled || !mine()) return
             updateNote(`${format('translating')} ${state.done}/${state.total}`)
             setTimeout(() => { void tick() }, 2000)
           } catch {
-            // job file may be gone; stop watching
+            // The job file may be gone or the route failed. It cannot be verified,
+            // so stop claiming it is running and stop resuming it (review W2).
+            if (!owns()) return
+            forgetStoredJob(bookId, code, jobId)
+            writeTranslationFacts(bookId, code, { translating: false })
+            // Recover the availability from the file itself (an older artifact
+            // may still be usable) instead of leaving the entries locked.
+            void refreshTranslationFacts(bookId, code)
+            if (deskStatus.job === jobId) deskStatus.job = ''
+            if (cancelled || !mine()) return
+            setDeskStatus('error')
+            setTimeout(() => setDeskStatus('idle'), 8000)
+            updateNote(format('translateFailed'))
           }
         }
         void tick()
@@ -11640,57 +11894,74 @@ window.__ModuleLoader__.load({
           return
         }
         if (translating || reader.phase !== 'ready') return
-        setTranslating(true)
+        const bookId = reader.bookId
+        const code = reader.code
+        const key = chapterKey(bookId, code)
+        const mine = () => chapterRef.current === key
+        let jobId = ''
+        const owns = () => (jobId === '' ? true : ownsStoredJob(bookId, code, jobId))
+        writeTranslationFacts(bookId, code, { translating: true })
         setDeskStatus('busy')
         updateNote(format(resume ? 'translatingResume' : 'translating'))
         try {
           const started = await request('POST', 'translate-chapter', {
-            book: reader.bookId,
-            code: reader.code,
+            book: bookId,
+            code,
             target: translateTarget,
             resume,
           })
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
-          const jobId = started.jobId
+          jobId = started.jobId
           jobRef.current = jobId
           deskStatus.job = jobId
           try {
-            window.localStorage.setItem(`pdfdesk:job:${reader.bookId}:${reader.code}`, jobId)
+            window.localStorage.setItem(translationJobKey(bookId, code), jobId)
           } catch {
             // storage unavailable
           }
           for (;;) {
             await new Promise(resolve => setTimeout(resolve, 2000))
             const state = await request('GET', `translate-status?job=${encodeURIComponent(jobId)}`)
-            if (state.status === 'done' || state.status === 'error') {
-              try {
-                window.localStorage.removeItem(`pdfdesk:job:${reader.bookId}:${reader.code}`)
-              } catch {
-                // storage unavailable
-              }
-            }
+            const owned = owns()
             if (state.status === 'done') {
+              if (owned) forgetStoredJob(bookId, code, jobId)
+              // The artifact now exists for the chapter that started the job.
+              writeTranslationFacts(bookId, code, owned
+                ? { translating: false, exists: true }
+                : { exists: true })
+              if (!owned || !mine()) break
               rememberPartial(state)
-              // The translation artifact now exists: the reader's entries (and,
-              // through the shared record, the preview's) become available
-              // without reopening the chapter.
-              setHasTranslation(true)
               setDocRev(value => value + 1)
               updateNote(doneNote(state))
               break
             }
             if (state.status === 'error') throw new Error(state.error === '' ? '翻译失败' : state.error)
+            if (state.status !== 'running') throw new Error('翻译状态不可用')
+            // Still watch the job after the reader moved to another chapter, but
+            // never write its progress onto that chapter's note.
+            if (!owned || !mine()) continue
             updateNote(`${format('translating')} ${state.done}/${state.total}`)
           }
         } catch (error) {
           const message = error !== null && error !== undefined && error.message ? String(error.message) : String(error)
-          setDeskStatus('error')
-          setTimeout(() => setDeskStatus('idle'), 8000)
-          updateNote(`${format('translateFailed')}：${message}`)
+          // A status this build cannot read is not a running job: clear the key
+          // that would resume it, and let the entries recover (review W2). A
+          // newer job for the same chapter keeps its own key and state.
+          if (owns()) {
+            forgetStoredJob(bookId, code, jobId)
+            writeTranslationFacts(bookId, code, { translating: false })
+            // An older artifact may still be usable; ask the file once.
+            void refreshTranslationFacts(bookId, code)
+            if (mine()) {
+              setDeskStatus('error')
+              setTimeout(() => setDeskStatus('idle'), 8000)
+              updateNote(`${format('translateFailed')}：${message}`)
+            }
+          }
         } finally {
-          jobRef.current = ''
-          deskStatus.job = ''
-          setTranslating(false)
+          if (jobId !== '' && jobRef.current === jobId) jobRef.current = ''
+          if (jobId !== '' && deskStatus.job === jobId) deskStatus.job = ''
+          if (owns()) writeTranslationFacts(bookId, code, { translating: false })
         }
       }
       const label = reader.name === '' ? `${reader.fileName}.pdf` : reader.name
@@ -11708,11 +11979,9 @@ window.__ModuleLoader__.load({
       // the boxes it made, plain when the user has moved or added their own.
       const autoBoxed = autoBoxes !== null && sameMasks(masks, autoBoxes)
       // "叠加" frames reveal the translated page, so it needs this chapter's
-      // translation artifact. Both entries read the same shared record: no
-      // artifact (or not known yet), or a running translation, means nothing to
-      // reveal. The right preview uses the very same condition on the same
-      // record, so the two buttons cannot disagree.
-      const overlayUnavailable = storeView.translated !== true || storeView.translating === true
+      // translation artifact. The preview computes the very same condition from
+      // the same per-chapter facts, so the two buttons cannot disagree.
+      const overlayUnavailable = !hasTranslation || translating
       // In the bilingual view the translated column keeps its own undo stack;
       // the toolbar acts on the column that was used last. Question marks share
       // one chapter-wide stack, and the last kind of edit picks the stack: a
@@ -15603,11 +15872,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [bookId, code, menuActions])
 
-      // The top bar's "叠加" frames the translated page, so it needs the same
-      // chapter facts the reader publishes: no artifact (or not known yet), or a
-      // running translation, leaves nothing to reveal. Reading the shared view
-      // record keeps the two entries in step instead of a second local copy.
-      const overlayUnavailable = storeView.translated !== true || storeView.translating === true
+      // The top bar's "叠加" frames the translated page, so it needs this
+      // chapter's translation facts. It reads the shared per-chapter cache and,
+      // when the reader is not mounted (restored tab, preview only), asks the
+      // Host itself; an unknown answer keeps the button disabled until a query
+      // fills it, so a reader-less preview does not stay locked (review W3).
+      const translation = useTranslationFacts(bookId, code)
+      const overlayUnavailable = translation.exists !== true || translation.translating === true
+      useEffect(() => {
+        if (bookId === '' || code === '' || translation.known) return undefined
+        void refreshTranslationFacts(bookId, code)
+        return undefined
+      }, [bookId, code, translation.known])
 
       const body = target === null
         ? h('div', { className: 'md-reader-state', role: 'alert' }, format('sideForeign'))
