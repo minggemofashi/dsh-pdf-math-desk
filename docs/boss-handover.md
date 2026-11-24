@@ -55,9 +55,10 @@
 
 1. **CI / Trusted Publishing 尚未启用**：仓库当前没有 `.github/workflows`，npm 仍是本地 staged publish + 用户批准。是否迁移到 tag 触发的 CI / Trusted Publishing，需要用户确认；迁移前不要写一个“看起来已启用”的工作流。详见 `docs/ci.md`。
 2. **旧发布/测试文档的归属**：`docs/RELEASE.md` 继续作为详细历史 runbook，`docs/ci.md` 是体系入口；`docs/TESTING.md` 继续作为干净环境测试矩阵。是否把它们进一步并入角色文档尚未决定，目前不影响执行。
-3. **真实任务试跑已完成（U1，2026-11-24）**：U1 走完 派发→返修→Round 2 审查→Round 2 测试，现 `待发布`（未发布）。试跑暴露的问题已落规则 DEC-0008：Round 1 tester 用 32 分钟/262 次调用、测必然返修的旧代码并深挖 Warning；Round 2 按新规在预算内完成、报告完整、未出现二次返修。下一步由 feedback-collector 收集“哪个角色交接不清楚/哪份文档没被读”的证据，再决定是否微调；不要先凭想象加角色或改规则。
+3. **真实任务试跑已完成（U1，2026-11-24）**：U1 走完 派发→返修→Round 2 审查→Round 2 测试，并随 **v1.4.1 发布**。试跑暴露的问题已落规则 DEC-0008：Round 1 tester 用 32 分钟/262 次调用、测必然返修的旧代码并深挖 Warning；Round 2 按新规在预算内完成、报告完整、未出现二次返修。下一步由 feedback-collector 收集“哪个角色交接不清楚/哪份文档没被读”的证据，再决定是否微调；不要先凭想象加角色或改规则。
 4. **双语页码文档不一致**：README 写“两栏共享页码与翻页”，既有 AGENTS / `docs/decisions.md` 记录“双语两栏页码不同步（v0.72.5）”。当前按既有约束执行；下次 major 由 feature-inventory 核对实现并修正 README，不要静默二选一。
 5. **旧计划 triage 结论**：已按 2026-11-24 用户裁决记录在 §2.1；A/B/D 组归档（不删文件），C 组三项仍有效（重构与模块化、启动诊断阻塞、awesome PR 待用户执行）。旧计划文件暂不迁移、不删除。
+6. **v1.4.1 已发布（2026-11-24）**：GitHub Release 与 npm 1.4.1 完成并实测；tag `v1.4.1` → `d54227d`；zip sha256 `3af6e024…c9825`。市场条目本地已指向 1.4.1，但 **awesome-dsh-plugin 上游 PR 仍需用户提交**（该目录不是 git 仓库），合并前市场安装可能仍是旧版；步骤见工作区 `awesome-dsh-plugin-PR.md`。
 
 ## 5. 换届记录
 
