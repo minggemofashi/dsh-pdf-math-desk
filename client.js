@@ -3152,7 +3152,7 @@ window.__ModuleLoader__.load({
      * setChapterPage / reportChapterPage below, which is the only writer.
      */
     const VIEW_PUBLISHED = {
-      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev', 'questionRev'],
+      reader: ['scale', 'mode', 'variant', 'docRev', 'annotRev', 'questionRev', 'translated', 'translating'],
       side: ['mode', 'annotRev', 'questionRev'],
     }
 
@@ -10363,7 +10363,9 @@ window.__ModuleLoader__.load({
         setDeskStatus('idle')
         updateNote(format('translateCancelled'))
       }
-      const [hasTranslation, setHasTranslation] = useState(false)
+      // null means "not known yet": the translated-info query has not answered.
+      // A false value is a checked chapter with no translation file.
+      const [hasTranslation, setHasTranslation] = useState(null)
       const [dualDoc, setDualDoc] = useState(null)
       const rebuilt = useRef(new Set())
       const dualLeft = useRef(null)
@@ -10494,6 +10496,18 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [reader.bookId, reader.code, reader.fileName])
+      // The two "叠加" entries (this reader's rail and the right preview's top
+      // bar) need the chapter's translation facts. The reader is the only end
+      // that starts or watches a translation job, so it publishes both facts on
+      // the chapter's shared view record; the preview disables its own entry
+      // from the same record instead of keeping a second copy.
+      useEffect(() => {
+        if (reader.bookId === '' || reader.code === '') return
+        syncView(reader.bookId, reader.code, {
+          translated: hasTranslation === null ? undefined : hasTranslation,
+          translating,
+        }, 'reader')
+      }, [reader.bookId, reader.code, hasTranslation, translating])
       const maskKey = `pdfdesk:masks:${reader.bookId}:${reader.code}:${reader.page}`
       useEffect(() => {
         const prefetched = annotPrefetch.current.get(reader.page)
@@ -10944,11 +10958,13 @@ window.__ModuleLoader__.load({
        * @param {string} id - tool id.
        * @param {string} labelKey - locale key for the label and tooltip.
        * @param {string} path - SVG path for `annotIcon`.
+       * @param {boolean} [disabled] - whether the tool is unavailable right now.
        * @returns {import('react').ReactElement} the button.
        */
-      const railTool = (id, labelKey, path) => h(KitButton, {
+      const railTool = (id, labelKey, path, disabled) => h(KitButton, {
         type: 'button',
         className: 'md-rail-btn',
+        disabled: disabled === true,
         'aria-pressed': annotTool === id ? 'true' : 'false',
         title: format(labelKey),
         'aria-label': format(labelKey),
@@ -11655,6 +11671,10 @@ window.__ModuleLoader__.load({
             }
             if (state.status === 'done') {
               rememberPartial(state)
+              // The translation artifact now exists: the reader's entries (and,
+              // through the shared record, the preview's) become available
+              // without reopening the chapter.
+              setHasTranslation(true)
               setDocRev(value => value + 1)
               updateNote(doneNote(state))
               break
@@ -11687,6 +11707,12 @@ window.__ModuleLoader__.load({
       // The block button is a toggle: pressed while the page still holds exactly
       // the boxes it made, plain when the user has moved or added their own.
       const autoBoxed = autoBoxes !== null && sameMasks(masks, autoBoxes)
+      // "叠加" frames reveal the translated page, so it needs this chapter's
+      // translation artifact. Both entries read the same shared record: no
+      // artifact (or not known yet), or a running translation, means nothing to
+      // reveal. The right preview uses the very same condition on the same
+      // record, so the two buttons cannot disagree.
+      const overlayUnavailable = storeView.translated !== true || storeView.translating === true
       // In the bilingual view the translated column keeps its own undo stack;
       // the toolbar acts on the column that was used last. Question marks share
       // one chapter-wide stack, and the last kind of edit picks the stack: a
@@ -12735,7 +12761,7 @@ window.__ModuleLoader__.load({
             railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
             railTool('diamond', 'shapeDiamond', 'M12 3 21 12 12 21 3 12z'),
             railTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
-            railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16'),
+            railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16', overlayUnavailable),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
             h(KitButton, {
               type: 'button', className: 'md-rail-btn',
@@ -15577,6 +15603,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [bookId, code, menuActions])
 
+      // The top bar's "叠加" frames the translated page, so it needs the same
+      // chapter facts the reader publishes: no artifact (or not known yet), or a
+      // running translation, leaves nothing to reveal. Reading the shared view
+      // record keeps the two entries in step instead of a second local copy.
+      const overlayUnavailable = storeView.translated !== true || storeView.translating === true
+
       const body = target === null
         ? h('div', { className: 'md-reader-state', role: 'alert' }, format('sideForeign'))
         : phase === 'error'
@@ -15802,6 +15834,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
+            disabled: overlayUnavailable,
             'aria-pressed': tool === 'mask' ? 'true' : 'false',
             title: format('overlayHint'),
             'aria-label': format('overlayToggle'),
