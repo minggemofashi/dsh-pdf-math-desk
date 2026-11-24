@@ -21,8 +21,9 @@
 | DEC-0004 | 2026-11-24 | 已接受（补录） | 本地优先的数据布局与隐私边界 |
 | DEC-0005 | 2026-11-24 | 已接受（补录） | 发布门禁：显式触发、独立验证、手动批准 |
 | DEC-0006 | 2026-11-24 | 已接受 | 报告落盘、状态所有权与纯文案通道 |
-| DEC-0007 | 2026-11-24 | 提议中 | U1 共享视图：reader 发布翻译事实，side 只读（方案 B） |
+| DEC-0007 | 2026-11-24 | 已取代（见 DEC-0009） | U1 共享视图：reader 发布翻译事实，side 只读（方案 B） |
 | DEC-0008 | 2026-11-24 | 已接受 | 测试预算与派发纪律（U1 试跑教训） |
+| DEC-0009 | 2026-11-24 | 已接受 | U1 最终设计：翻译事实按章共享缓存（chapterKey） |
 
 ---
 
@@ -203,7 +204,7 @@
 ## DEC-0007 · U1 共享视图：reader 发布翻译事实，side 只读（方案 B）
 
 - **日期**：2026-11-24（补录为提案）
-- **状态**：提议中（实现已存在，待用户确认；W3 修订后再定）
+- **状态**：已取代（2026-11-24；最终设计见 DEC-0009）
 - **决策者**：programmer / boss 提议（**未经用户确认**；原依据 `.dsh-scratch/u1-repro-evidence.md:111` 是程序员自述，且在仓库外，不属项目记忆）
 - **背景**：U1 要求“无本章翻译件或翻译中时，两处‘叠加’入口同时禁用”，且不得为两个入口各造一套状态。右栏原先没有“本章是否有翻译件/是否翻译中”的来源。
 
@@ -254,6 +255,32 @@
 
 - 只加“最多 2 次尝试”而不加时间箱与最小验证集：三者必须同时存在，否则仍会无声跑满半小时。
 - 把 reviewer 的 Warning 复现写进 tester 任务：会把 tester 变成诊断者，成本不可控。
+
+## DEC-0009 · U1 最终设计：翻译事实按章共享缓存（chapterKey）
+
+- **日期**：2026-11-24
+- **状态**：已接受
+- **决策者**：用户（2026-11-24 批准 U1 返修计划；经 `.dsh-scratch/u1-repro-evidence.md` §6 补录，原证据在仓库外）
+- **背景**：DEC-0007 的“扩展视图总线、reader 唯一发布者”被 W3 裁决推翻（reader 未挂载时右栏也必须可用）。
+
+### 决策
+
+1. 新增模块级 `translationFacts` 缓存，键为 `chapterKey(bookId, code)`；记录 `{known, exists, translating, version, pending, listeners}`，仅内存、不落盘。
+2. `refreshTranslationFacts` 做一次 `translate-status` 对账（running / done / error / 404 / 非预期），必要时对 `variant=translated` 的 PDF 路由做 HEAD 探测；失败保持“未知”，版本号防止旧探测覆盖更新的任务事实。
+3. ReaderView 删除本地 `hasTranslation`/`translating` 与视图总线里的翻译字段；reader 竖排、reader 顶部横向“叠加/并排”、SidePdfView 顶部“叠加”共用该缓存。
+4. SidePdfView 在 `known=false` 时自行 refresh；reader 未挂载也能取到可用性，不另存状态。
+5. `VIEW_PUBLISHED` 保持原字段集，不扩展。
+6. W2：状态失败/缺失/404 时复位 `translating`、按 jobId 清 `pdfdesk:job:*`，不做静默重试。
+7. **已知限制（用户接受）**：reader 在任务运行中被卸载且右栏已挂载时，任务完成不主动推送；右栏在下次挂载/换章 refresh 时恢复。
+
+### 后果
+
+- 契约文档 `docs/SIDE-PREVIEW.md` 需按本设计同步（T-20261124-06，已重定范围）。
+- Round 2 的 3 条 Warning（陈旧 running 任务、HEAD 304/5xx/超时、失败清理不区分状态码）作为发布前债务记录，不在 U1 内继续扩大改动。
+
+### 被否决的方案
+
+- DEC-0007 方案 B（扩展共享视图总线、reader 唯一发布者）：reader 未挂载时右栏无法自证可用性，被 W3 裁决推翻。
 
 ## 隐性契约（补录）
 
