@@ -14810,14 +14810,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         maskStartRef.current = null
         maskDraftRef.current = null
         setMaskDraft(null)
-        setSideTextDraft(null)
       }, [page, annotRev, shownVariant])
 
-      // The text draft only belongs to the drag that started it: picking another
-      // tool unmounts the layer but would leave the state behind, showing a
-      // stale dashed box (and swallowing the next drag's moves) on the way back.
-      // `tool` is deliberately kept out of the effect above, which also clears
-      // the note being typed.
+      // The text draft is dropped when the page or the shown file changes, not
+      // on `annotRev`: a commit from this pane (the implicit save a new press
+      // performs while a note editor is open) bumps the revision, and clearing
+      // the draft that same press just started would make the drag fail
+      // silently.
+      useEffect(() => {
+        setSideTextDraft(null)
+      }, [page, shownVariant])
+
+      // Picking another tool also drops the in-flight text draft; the edit layer
+      // may stay mounted for pen/select/mask, so the state would otherwise
+      // survive and swallow the next text drag's moves. `tool` is kept out of
+      // the effects above, which also clear the note being typed.
       useEffect(() => {
         if (tool !== 'text') setSideTextDraft(null)
       }, [tool])
