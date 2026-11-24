@@ -15918,7 +15918,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               panNeeds: null,
               margins: planeMargins,
               onPan: setSidePan,
-              panEnabled: tool === 'hand',
+              panEnabled: tool === 'hand' && mode === 'single',
               scrollGrab: mode === 'continuous' && tool === 'hand',
               children: [sideBounds, masksLayer, annotLayer, editLayer, questionLayer].filter(Boolean),
               // Continuous mode has no single page box: the same layers ride on
