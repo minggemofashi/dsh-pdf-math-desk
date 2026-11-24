@@ -56,7 +56,7 @@ git push --tags origin
 - `dsh-pdf-workbench-X.Y.Z.zip`（必须）
 - 可选 `dsh-pdf-workbench-X.Y.Z.tgz`（干净 worktree 里 `npm pack`，作为市场 npm 失败时的回退）
 
-Release 说明直接复制 `CHANGELOG` 的该版本条目。
+Release 说明按下面「1.6 Release 说明格式」生成，不要直接把 CHANGELOG 原文整段贴上。
 
 ## 1.5 本地交付格式（固定）
 
@@ -89,6 +89,67 @@ dsh plugin add dsh-pdf-workbench@X.Y.Z
 只有需要回退 tarball 或改仓库/包名/分类/描述时，才给本地 YAML 文件路径和 PR 正文；正常 npm 发版不需要为版本提市场 PR。
 
 Agent **不负责**代替用户输入 2FA、登录 GitHub/npm、上传 Release 资产；这些由用户在本机浏览器或交互终端完成。若用户明确要求且环境已有凭据，Agent 才可以尝试 push/上传。
+
+## 1.6 Release 说明格式（固定，给用户复制）
+
+每次发版必须同时给出三段：**Release 标题**、**Release 说明**、**上传文件路径**。说明按下面的骨架生成，内容来自 `CHANGELOG` 的该版本条目，但必须整理成用户能直接读的版本；**不要写本机路径、用户名、token 或内部流程**。
+
+**标题**
+
+```text
+vX.Y.Z
+```
+
+**说明骨架**
+
+```markdown
+## vX.Y.Z
+
+一句话概括本次更新。
+
+### 阅读与画布
+- 只写本次实际改动的条目
+
+### 标注
+- 只写本次实际改动的条目
+
+### 疑问与会话
+- 只写本次实际改动的条目
+
+### 双语 / 覆盖层
+- 双语是否稳定、覆盖层是否实验，要如实写
+- 有实验功能时必须在「已知问题」重复说明
+
+### 附件与输出
+- 只写本次实际改动的条目
+
+### 设置与数据
+- 只写本次实际改动的条目
+- 迁移未实测时必须写明
+
+### 安全与性能
+- 只写本次实际改动的条目
+
+### 已知问题
+- 实验功能、未实测功能、仍存在的明显问题
+
+### 安装
+下载 `dsh-pdf-workbench-X.Y.Z.zip`，解压后在 DSH 里 Plugins → Add plugin 选择目录并重启；或：
+
+```powershell
+dsh plugin add dsh-pdf-workbench@X.Y.Z
+```
+
+完整说明见 [README](https://github.com/minggemofashi/dsh-pdf-workbench#readme)。
+```
+
+**上传文件**
+
+```text
+<workspace>\dist\dsh-pdf-workbench-X.Y.Z.zip
+```
+
+Release 正文由 Agent 在最终回复里用代码块给出，用户直接复制到 GitHub Release；不要在正文中引用本地绝对路径。
 
 ## 2. npm
 

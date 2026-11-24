@@ -31,7 +31,7 @@
 1. 改版本 + CHANGELOG + README/截图；
 2. 跑全部检查；
 3. 构建 zip（可选 tgz）、提交、tag；
-4. **默认交付，不碰用户凭据**：给用户 GitHub Release 新建网址、npm 包网址、本地 zip/tgz 绝对路径和安装命令；push / Release / npm 由用户本机完成；
+4. **默认交付，不碰用户凭据**：给用户 GitHub Release 新建网址、可直接复制的 Release 标题/说明、npm 包网址、本地 zip/tgz 绝对路径和安装命令；push / Release / npm 由用户本机完成；Release 说明格式见 `docs/RELEASE.md` 的「1.6 Release 说明格式」；
 5. 若当前环境**已经**有可用凭据且用户明确要求 Agent 直接推，才执行 push / 上传；**永远不要索要 2FA 码、密码、token**；
 6. npm 发布由用户 `npm login --auth-type=web` 并自行处理 2FA；
 7. 市场不需要为新版本提 PR（npm 自动映射）；只有改仓库/包名/分类/描述或回退 tarball 时才改条目；
