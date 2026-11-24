@@ -180,7 +180,7 @@ node -e "console.log(require('./package.json').version)"
 
 ### 2.2 登录（用户完成 2FA）
 
-历史坑：npm 默认写 `C:\Users\<用户>\.npmrc`，当前沙箱会 `EPERM`。把 userconfig/cache 放到工作区：
+历史坑：npm 默认写 `<用户目录>\.npmrc`，当前沙箱会 `EPERM`。把 userconfig/cache 放到工作区：
 
 ```powershell
 npm login --auth-type=web --userconfig "<工作区>\.dsh-scratch\npmrc" --cache "<工作区>\.dsh-scratch\npm-cache"
