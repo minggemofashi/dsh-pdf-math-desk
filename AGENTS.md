@@ -1,124 +1,93 @@
-# 给 Agent 的约定（dsh-pdf-workbench）
+# Agent 硬约束（dsh-pdf-workbench）
 
-这个仓库是 **DSH 插件 `dsh-pdf-workbench`**（“PDF阅读”）。以下规则适用于本目录；用户明确要求时以用户为准。
+仓库：本文件所在目录，DSH 插件 **dsh-pdf-workbench**（“PDF 阅读”）。
+本文件只放硬约束、改完必跑的验证命令和文档指针；教程、任务流转、发布与 CI 细节放 `docs/`。
+用户当前明确指令优先于本文件；不确定时停下来问，不猜。
 
-## 日常改动与发版节奏
+## 1. 角色与会话
 
-**默认只存档，不发版。** 只有用户**明确说**「发布 / 发版 / 更新 / 推送」时，才做版本号、tag、push、GitHub Release 这一套。日常修复和功能**不升版本、不打 tag、不 push、不发 Release**，也**不要每轮追问“要不要发布”**——用户会说。
+- **单会话单任务**：一个会话只做一个阶段的一件事；按任务阶段切分，不按时间或 bug 数量切分。
+- **写审分离**：同一会话不得既写业务代码又做审查/验收；审查和测试必须在独立上下文中完成。
+- 只有 **programmer** 可以修改业务代码。其他角色只读代码，或只写自己角色文档规定的输出。
+- 角色文档是行为边界。开工前先读 `docs/roles/<你的角色>.md`；不得越出其中“禁止”一节。
+- 任何角色文档的变更（含自己的）必须经用户明确确认后才落盘；确认前只写提案。每个角色一次最多提 2 条规则变更。
+- 新增角色必须经用户确认；不要为了覆盖单个问题临时扩张角色体系。
+- 上下文出现稀释信号（重复确认过的事、忘记文件位置、规则自相矛盾、压缩后丢失未落盘的结论）时，按角色文档交接并换会话，不靠感觉硬撑。
+- 会话结束前，值得保留的结论必须写进指定文件；未落盘视为丢弃。
 
-发布渠道：**GitHub Release + npm（`dsh-pdf-workbench`）**；插件市场通过 `awesome-dsh-plugin` 列表提交。旧 npm 包 `dsh-pdf-math-desk` 已从 npm 删除。
+## 2. 代码修改
 
-### 日常改动（每次）
+- 先复现、再定位根因，**先定位后修**；没有稳定复现不改代码，不用特判、延时、遮罩掩盖症状。
+- **最小修复**：只修根因，不重构、不重命名、不清理无关逻辑、不顺手改行为/文案/默认值。
+- 改动超过 2 个文件（3 个及以上）必须先出计划并等用户确认。
+- 公共接口、事件名、配置结构、数据 schema、受保护文件不得擅自改动；需要动时先出计划并等用户确认。
+- 受保护契约至少包括：公开包接口与 `package.json` 的 `exports` / `engines` / `dsh` 配置、`cordis.patch.yml`、`/pdfdesk/*` 路由、locale 键结构、Host/浏览器共享的事件名、`~/.dsh/pdfdesk/` 与 `.pdfdesk/` 的存储键和 sidecar 结构。
+- 验收标准只能来自 `docs/requirements/` 中的需求规格或本文件；实现者不得自定、放宽验收标准，也不得自行判定“通过”。
+- 测试子 Agent 的验收标准必须来自需求规格或本文件，不得由 programmer 自定。
+- 模块化边界检查属于 code-reviewer，不属于 programmer；programmer 只负责不继续扩大耦合。
+- **先联动再动手**：改动前列出并检查对主阅读器/右侧预览、单页/连续/双语/叠加、工具/撤销/导出/打印、快捷键/设置、localStorage/Host 存储、旧数据兼容的影响；只改当前入口视为未完成。
+- **交互功能先确认参照**：开始交互类功能前向用户确认可模仿的目标产品/截图；用户说没有时按主流产品取舍并写进计划，不再逐项追问。
+- **跨视图同步默认不新增**：先写原因、影响视图、回退方式并请用户确认；程序性滚动/回填不得发布页码（回声抑制）。
+- `client.js` 是组装层，不是功能仓库。不得出现第三份页状态、第三套 `annotDown/annotUp`、第三套菜单动作；模块边界见 `docs/decisions.md`。
+- Host 不得直接访问未声明 inject 的 `ctx.<service>`，用 `ctx.get('<service>')`。
+- 不新增工具条按钮；用户明确要求除外。
+- 客户端改动不能热更新，改完需重启验证；不要向用户承诺 HMR。
+- 不向用户索要 2FA 码、密码或 token；不把 token 打印到日志或对话。
+- 不用 PowerShell 的 `Get-Content` / `Set-Content` 读写含中文的 UTF-8 文本；用编辑器、Node 或本仓库的读写工具。
 
-1. 跑检查（见下）；
-2. **本地提交**存档：`git add -A && git commit -m "<type>: <一句话>"`（`feat:`/`fix:`/`docs:`/`wip:` 均可，不要求版本号）；
-3. 不修改 `package.json` 的 `version`，不打 tag，不 push，不发 npm / GitHub Release / 市场条目；
-4. 需要远程协作/备份时先问用户，不要自动推送。
+## 3. 仓库与发布边界
 
-### 交互与省 token
+- **默认只本地提交通档，不发版**：只有用户明确说「发布 / 发版 / 更新 / 推送」时，才可以升版本、打 tag、push、创建 GitHub Release、发 npm 或改市场条目；不要每轮追问“要不要发布”。
+- 发布只能由 **release-manager** 执行，且必须已有 code-reviewer 无 Critical、tester 通过的结论；发布细节见 `docs/ci.md`。
+- release-manager 不改 `src/`、不改测试；构建失败时停止并退回 programmer，不通过改代码“修构建”。
+- 不自动修改 CI 配置；需要新建或修改 CI / Trusted Publishing 时，先由用户确认方案。
+- `cordis.patch.yml` 必须保持中性，不写具体书库路径；真实书库由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
+- 不进 git：`node_modules/`、`dist/`、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
+- 不提交个人目录绝对路径、API Key、token、密码；提交前用 `git diff --cached` 检查。
+- 仓库里允许并应持久化的项目记忆：`docs/requirements/`、`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/feedback/`、`docs/boss-handover.md`、`docs/features.md`、`docs/copy/`、`CHANGELOG.md`。临时草稿和含个人信息的诊断仍放仓库外。
+- CI 细节、发布命令和历史坑只在 `docs/ci.md` / `docs/RELEASE.md`，不要搬回本文件。
 
-- 用户说“下一步”时，直接做下一步并本地提交；不要重复确认已经定过的事。
-- 一个修复/功能完成就停，不必把发布流程再走一遍；发布只由用户一句话触发。
-- 回复保持短：改了什么、怎么验证、需要用户做什么；不重复贴大段背景。
-- 连续的小修复攒着，等用户说“发布”再一起升版本、写 CHANGELOG、发 Release。
+## 4. 改完必跑的验证
 
-### 发版（固定流程）
+在仓库根目录执行：
 
-**用户说「更新 / 发版 / 发布」时，严格按 [`docs/RELEASE.md`](docs/RELEASE.md) 执行，不要重新设计流程。**
+```powershell
+node --check client.js
+node --check index.js
+Get-ChildItem src\host\*.js | ForEach-Object { node --check $_.FullName }
+```
 
-固定顺序（2026-11-24 实测版）：
+- 改了 `src/client/` 或 vendor UI 后，再跑 `npm run build:host-ui`；失败就停下排查，**不要改构建链掩盖失败**。
+- 发布或验收前的分发构建：`powershell -ExecutionPolicy Bypass -File .\build-dist.ps1`。
+- 仓库外测试脚本在仓库上一级工作区执行（存在才跑，改动相关项必跑；发版跑与改动相关的全部 `*test*.mjs`）：
 
-1. 改版本 + CHANGELOG + `package-lock` + README/截图；
-2. 跑全部检查；
-3. 构建 zip、提交、打 tag；
-4. GitHub：先确认 VPN/代理和 GCM 凭据；`git` 用 `-c http.sslBackend=openssl` 规避 schannel 报错；沙箱拦截 GCM 凭据管道时，对同一条命令申请最小范围升级；
-5. push main；远程 tag 若指向旧提交则强制更新；有凭据时用 GitHub API 创建 Release 并上传 zip（token 只在进程内使用，绝不打印）；无凭据时给用户 Release 网址 + 本地 zip 路径；Release 正文按 `docs/RELEASE.md` 的固定格式；
-6. npm：从 tag 建干净 worktree；登录必须用工作区 `--userconfig/--cache` 避免写 `~/.npmrc` 被沙箱拒绝；Agent 只发登录 URL，用户自己完成 2FA；
-7. `npm stage publish` 成功后把 staged 批准网址发给用户；**必须以 `npm whoami`/`npm view` 验证，不能只看退出码**；
-8. 用户批准后验证 npm；市场条目 `tarball` 改为新版本 npm URL（当前条目固定旧版本，必须更新）；
-9. 一致性检查（package / lock / tag / GitHub / npm / README / market）。
+```powershell
+# 先 cd 到仓库上一级工作区
+node .dsh-scratch\check-keys.mjs
+node .dsh-scratch\check-deps.mjs
+node .dsh-scratch\host-test.mjs
+```
 
-**永远不要索要 2FA 码、密码或 token**；历史问题与处理见 `docs/RELEASE.md` 第 5 节。
+- 失败不提交，不判通过。`node --check` 通过不等于审查或验收通过。
+- 文档-only 改动不强制跑上述命令；必须检查链接、文件名与引用路径。
 
-### 检查（日常与发版都跑）
+## 5. 文档指针
 
-- `node --check client.js`
-- `node --check index.js`
-- 逐个 `node --check src/host/*.js`
-- 仓库外若有 `.dsh-scratch/host-test.mjs` / `check-deps.mjs` / `check-keys.mjs` 等，一并跑；测试失败不提交。
+| 要做的事 | 先读 |
+| --- | --- |
+| 判断当前该谁做、拆几个会话、发布规模 | `docs/roles/boss.md` |
+| 把模糊需求写成需求规格 | `docs/roles/auditor.md`，输出到 `docs/requirements/` |
+| 实现一个执行单元 | `docs/todo.md` + `docs/roles/programmer.md` |
+| 独立审查 diff | `docs/roles/code-reviewer.md` |
+| 独立验收 | `docs/roles/tester.md` + `docs/TESTING.md` |
+| 发布 | `docs/roles/release-manager.md` + `docs/ci.md` |
+| 反馈角色体系的问题 | `docs/roles/feedback-collector.md`，输出到 `docs/feedback/` |
+| 查已定架构/被否决方案/隐性契约 | `docs/decisions.md` |
+| major 版本盘点功能 / 更新 README | `docs/roles/feature-inventory.md` + `docs/features.md` |
+| 统一术语、错误提示、危险确认文案 | `docs/roles/ui-copywriter.md` + `docs/copy/` |
+| 用户可见的版本变化 | `CHANGELOG.md` |
 
-提交信息风格：`v0.13.2: 修复整本库没有分片目录时报错`（发版提交）；日常可用 `fix: ...` / `feat: ...`。
+## 6. 文档冲突
 
-## 仓库边界
-
-- **进 git**：`index.js`、`client.js`、`src/`、`locale/`、`vendor/`（pdf.js + LICENSE）、`tools/`（拆分工具与规范）、`samples/`（内置示例书库 PDF + manifest）、`README.md`、`安装与分发.md`、`CHANGELOG.md`、`package.json`、`cordis.patch.yml`、`icon.svg`、本文件。
-- **不进 git**：`node_modules/`、`dist/`（构建产物）、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
-- `cordis.patch.yml` 必须保持**中性**：不写具体书库路径，示例只放在注释里。真实书库列表由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
-- 不要提交任何**个人目录的绝对路径**（真实书库路径只放在运行时的 `~/.dsh/pdfdesk/libraries.json`，仓库里一律用示例 `D:\数学书库`）、API key、token 等；提交前 `git diff --cached` 检查一遍。
-
-## 打包与分发
-
-- 分发副本放在仓库外的 `dist/`，由“复制插件目录 + 把 `cordis.patch.yml` 换成中性版 + 替换文档里的本机路径”生成；文件名 `dsh-pdf-workbench-<version>.zip`。
-- 安装方式见 `安装与分发.md`：DSH → Plugins → Add plugin 选目录；或 `plugin_manager install_bundle` 绝对路径。
-- 版本号必须与 tag、zip 文件名、CHANGELOG 一致。
-
-## 代码注意
-
-- 客户端插件是 Host + 浏览器两半；Host 只依赖 Node 内置模块，浏览器侧用 `window.__ModuleLoader__` 注册 slot。
-- 不要在 Host 里直接访问未声明 inject 的 `ctx.<service>`；用 `ctx.get('<service>')`，否则会抛 `cannot get property ... without inject`。
-- 不要用 PowerShell 的 `Get-Content`/`Set-Content` 读写含中文的 UTF-8 文件（会按 GBK 解码损坏）；用编辑器/Node/本仓库的读写工具。
-- 客户端改动无法热更新：改完要重启 DSH 验证；不要承诺 HMR。
-
-## 分析问题：先第一性原理
-
-- **先复现**：记录操作步骤、期望、实际，以及相关状态（页、模式、缩放、变体、批注 key、数据来源）。没有稳定复现不要直接改代码。
-- **找不变量，再找违反点**：例如“同一章只有一个当前页，显示页必须等于它”“批注键只由书/章/页决定”。在违反不变量的根因处修。
-- **禁止症状补丁**：不靠特判、延时、遮罩、强制刷新掩盖问题；如果只能这样，先在计划里写明原因和退出条件。
-- 复现与根因写入 `docs/DIAGNOSIS-*.md` 或提交信息；修复后补一条能阻止复发的测试。
-
-## 修改前必须做（2026-11-23 用户要求）
-
-- **先联动，再动手**：列出这次改动会影响的现有功能，逐条说明保持还是改变。至少检查：主阅读器 / 右侧预览两处、单页 / 连续 / 双语 / 叠加、工具（笔/橡皮/文本/形状/疑问/手）、撤销重置、导出/打印、快捷键与设置项、localStorage 与 Host 存储键、旧数据兼容。只改当前入口、不检查其他入口的提交视为未完成。
-- **模块化优先**：新逻辑先放进明确的模块边界（见「模块化要求」），不在 `client.js` 里继续堆内联实现；纯逻辑先抽函数并加测试，再接线。
-- **先确认可模仿的目标**：开始一个功能（尤其交互类）前，**向用户确认一个可模仿的目标产品/截图**，按目标把功能做完整（空状态、边界、撤销、快捷键、两个面板一致）。用户回答“没有”时，自己按主流产品（GoodNotes / Notability / PDF Expert / 微信读书）取舍，并把选择和理由写进本地计划，不再逐项追问“要不要可移动/可回退/阈值多少”。反复因为“先做个大概”而返工是明确要避免的浪费。
-- **不新增工具条按钮**：交互优先用对象上的就地手柄（例如画布边界的“+ 方块”）、右键菜单、现有面板承载；只有用户明确要求才加新按钮。
-- **遵循本文件其余约定**：重构与功能分开提交、先计划后实现、不确定先问、测试失败不提交、只改用户用得到的东西。
-
-## 模块化要求
-
-- `client.js` 是**组装层**，不是功能仓库。新增/修改涉及页状态、批注、视图同步、菜单动作、提示词时，先抽模块（工厂/组件/动作表），再实现。
-- 模块边界固定为：`createViewStore`（页/模式/缩放单一事实源）、`createAnnotationStore`（按页数据 + 撤销栈）、`InkLayer`（指针/渲染）、`SideActions`（菜单与工具栏共用动作）、`SessionSeed`（提示词与路径）、`ContextMenu`（菜单模型与执行）。
-- 不允许出现第三份页状态、第三套 `annotDown/annotUp`、第三套菜单动作；重复就是需要抽模块的信号。
-- 重构与功能**分开提交**；纯重构不得改变行为，必须有测试兜底。
-- 每个模块至少一个测试；按钮/菜单要有“点击后状态确实变化”的断言。
-
-### 重构的“效果迁移”纪律（尤其 PDF）
-
-- **重构的第一目标是效果不变**：先固定基线，再动代码。PDF 相关必须逐项对照：页码解析、页面渲染尺寸、缩放/适应、滚动定位、覆盖层（叠加/框选/批注）坐标、文本选择、翻页边界。
-- 迁移前记录基线：当前版本的截图、每页尺寸、关键状态（page/mode/scale/annot key）、可复现操作；迁移后逐项复验，列“旧 → 新”对照表。
-- **先拆纯逻辑**（store、actions、prompt），PDF 渲染/覆盖层迁移放最后；必要时保留旧路径与切换开关做 A/B 对照，确认后再删。
-- 不借重构顺手改行为/文案/默认值；发现旧行为本身有问题，单独开问题、先问用户，不在重构里修。
-- 不确定某个效果该保留还是改变时，**先问用户**，给出“现状/候选/影响”，不要猜。
-- 一个重构提交只做一件事；大迁移拆成可回退的小步，每步跑测试与手动对照。
-
-## 同步策略（默认不新增）
-
-- 跨视图共享状态包括：`page`、`mode`、`zoom`、`tool`、`annotations`、`masks`、`scroll`、`variant`、`docRev`、`annotRev`。
-- **新增或修改任何同步前**：先在**本地**同步决策文件（工作区根目录 `数学工作台插件-同步决策.md`）写“为什么需要、影响哪些视图、回退方式”，并在实现前**问用户确认**；用户确认后才写代码。
-- 已确认：双语两栏页码不同步（v0.72.5），译文栏笔记独立保存。其余待本地 0.73 计划第 9 节确认。
-- 程序性滚动/回填不得发布页码（回声抑制）；用户动作才是唯一变更源。
-- 大改动先出路线图（本地 0.73 计划），再实施；每个阶段结束更新同步决策与测试。
-
-## 规划优先
-
-- 功能/重构开始前先写计划：目标、验收、根因假设、模块边界、同步点、测试与回退。
-- 计划文档放**本地**（工作区根目录的 `数学工作台插件-0.73计划.md` 等），不提交仓库；仓库只保留服务用户的内容。
-- 不确定具体效果/样式时**先问用户**，不要先猜：把可选方案、默认建议、影响列出来，用户确认后再实现。
-- 计划完成后在本地路线图标记；不确定的同步点列进“需要确认”。
-
-## 本地开发与仓库边界
-
-- 仓库只放用户实际用得到的东西：插件代码、`locale/`、`vendor/`、`tools/`、`samples/`、安装说明、市场索引、必要的用户文档。
-- **开发计划、交接、发布流程、人格/提示词工作流、诊断记录**放本地（工作区根目录或 `D:\...` 的本地资料），不提交。
-- `AGENTS.md` 是给 Agent 的开发约束，保留在仓库；其他开发文档若要进仓库，先问用户。
-- 提交前检查：`git diff --cached` 无个人路径/token/本地工作流文件。
+优先级从高到低：**用户当前明确指令 → 本文件 → `docs/decisions.md` → `docs/roles/*.md` → 其他文档**。
+发现文档互相矛盾时，停止执行，向用户说明冲突点；不要自行选一个解释继续做。
