@@ -49,12 +49,46 @@ git push origin main
 git push --tags origin
 ```
 
+> **默认交付，不碰用户凭据。** Agent 环境没有可用 GitHub/npm 凭据时，不要索要 2FA 码、密码或 token，也不要停在“等凭据”。保留本地提交和 tag，按下面的「本地交付格式」把文件和网址交给用户，由用户本机 push / 上传 / 登录。
+
 创建 GitHub Release `vX.Y.Z`，上传：
 
 - `dsh-pdf-workbench-X.Y.Z.zip`（必须）
 - 可选 `dsh-pdf-workbench-X.Y.Z.tgz`（干净 worktree 里 `npm pack`，作为市场 npm 失败时的回退）
 
 Release 说明直接复制 `CHANGELOG` 的该版本条目。
+
+## 1.5 本地交付格式（固定）
+
+每次发版，Agent 最终回复必须包含以下三类信息，短而可复制：
+
+**1. 本地文件（绝对路径）**
+
+```text
+<workspace>\dist\dsh-pdf-workbench-X.Y.Z.zip
+<workspace>\dist\dsh-pdf-workbench-X.Y.Z.tgz   # 有则给
+```
+
+**2. GitHub Release 新建网址**
+
+```text
+https://github.com/minggemofashi/dsh-pdf-workbench/releases/new?tag=vX.Y.Z
+```
+
+用户在该页选择/上传 zip，Release 标题填 `vX.Y.Z`，正文粘贴 CHANGELOG 对应条目。
+
+**3. npm 包网址与安装命令**
+
+```text
+https://www.npmjs.com/package/dsh-pdf-workbench
+dsh plugin add dsh-pdf-workbench@X.Y.Z
+```
+
+**可选：市场条目修正**
+
+只有需要回退 tarball 或改仓库/包名/分类/描述时，才给本地 YAML 文件路径和 PR 正文；正常 npm 发版不需要为版本提市场 PR。
+
+Agent **不负责**代替用户输入 2FA、登录 GitHub/npm、上传 Release 资产；这些由用户在本机浏览器或交互终端完成。若用户明确要求且环境已有凭据，Agent 才可以尝试 push/上传。
 
 ## 2. npm
 
@@ -67,6 +101,8 @@ cd ..\dist\npm-release
 npm login --auth-type=web
 npm stage publish --access public
 ```
+
+> 登录和 2FA 由用户在本机交互完成；Agent 不索要 2FA 码。若 Agent 环境没有已登录的 npm 会话，直接交付 npm 包网址和发布命令，不阻塞本地发版。
 
 然后批准：
 
