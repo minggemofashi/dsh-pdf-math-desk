@@ -14113,8 +14113,14 @@ window.__ModuleLoader__.load({
 .md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
-.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; z-index: 3; pointer-events: auto; }
-.md-question-input input { min-width: 130px; }
+/* The rename field paints its own surface. The adapter's wrapper is only
+   opaque while the host primitives bundle is in use, so the field must not
+   depend on it: this wrapper supplies the background in both UI modes, and the
+   adapter's own box is flattened inside it so exactly one surface shows. */
+.md-question-input { position: absolute; top: -2px; left: -1px; min-width: 130px; z-index: 3; pointer-events: auto; padding: 2px 7px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; }
+.md-question-input:focus-within { border-color: var(--dsw-alias-brand-primary); }
+.md-question-input .md-kit-input { display: block; height: auto; padding: 0; background: transparent; border: 0; border-radius: 0; }
+.md-question-input input { box-sizing: border-box; width: 100%; min-width: 130px; padding: 0; background: transparent; color: var(--dsw-alias-label-primary); border: 0; outline: none; font: inherit; font-size: 12px; line-height: 18px; }
 .md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
 .md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
