@@ -15862,6 +15862,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [bookId, code, page])
 
+      // The shared menu closes from a document-level pointerdown listener. The
+      // preview's own page surfaces stop propagation while a tool or a question
+      // mark owns the press, so that listener never saw a click on the PDF and
+      // the menu stayed open. Close it here first, before any tool consumes the
+      // press: the dismiss click must not draw or select under the menu.
+      // Right presses are left to the menu's own repeated-gesture handling.
+      useEffect(() => {
+        const node = sideRoot.current
+        if (node === null) return undefined
+        const onDown = event => {
+          if (event.button === 2 || fallbackMenu !== null) return
+          if (!(event.target instanceof Element) || event.target.closest('.md-side-body') === null) return
+          const menus = clientContext === null ? null : clientContext.get('contextMenus')
+          if (menus === null || menus === undefined || typeof menus.close !== 'function') return
+          const active = menus.active === null || menus.active === undefined || typeof menus.active.getSnapshot !== 'function'
+            ? null
+            : menus.active.getSnapshot()
+          if (active === null || active === undefined) return
+          menus.close()
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        node.addEventListener('pointerdown', onDown, true)
+        return () => node.removeEventListener('pointerdown', onDown, true)
+      }, [fallbackMenu])
+
       useEffect(() => {
         if (bookId === '' || code === '') return undefined
         const key = `${bookId}:${code}`
