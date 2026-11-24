@@ -14827,9 +14827,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }
       const toleranceFor = widthPx => inkReach(widthPx, boxSize.current.width)
       const hitTest = (entry, point) => inkHit(entry, point, toleranceFor)
-      const openNote = point => {
+      const openNote = (point, box) => {
         const list = strokesRef.current
-        const found = list.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
+        const found = box === undefined
+          ? list.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
+          : -1
         noteSeq.current += 1
         if (found >= 0) {
           const entry = list[found]
@@ -14850,11 +14852,20 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         noteText.current = ''
+        // A drag-created box opens at exactly the dragged size, like the reader's
+        // note: the press point alone is only the fallback for a plain click.
+        const fallbackWidth = Math.min(0.38, Math.max(0.18, 1 - point[0] - 0.02))
+        const x = box === undefined ? point[0] : box.x
+        const y = box === undefined ? point[1] : box.y
+        const w = box === undefined ? fallbackWidth : Math.max(0.04, box.w)
+        const h = box === undefined ? 0.09 : Math.max(0.035, box.h)
         setNoteEdit({
           id: noteSeq.current,
           index: -1,
-          x: point[0],
-          y: point[1],
+          x,
+          y,
+          w,
+          h,
           text: '',
           color: noteStyle.color,
           fontSize: noteStyle.fontSize,
@@ -15509,6 +15520,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                 h: Math.abs(shapeDraft.y1 - shapeDraft.y0),
               },
               roughness: shapeRoughness,
+            })),
+          // The same dashed box the reader draws while a text area is dragged:
+          // without it the drag looks like a dead click until the release.
+          sideTextDraft === null
+            ? null
+            : h('svg', {
+              className: 'md-annot-ink',
+              viewBox: '0 0 1 1',
+              preserveAspectRatio: 'none',
+              'aria-hidden': true,
+            }, h('rect', {
+              className: 'md-text-draft',
+              x: Math.min(sideTextDraft.x0, sideTextDraft.x1),
+              y: Math.min(sideTextDraft.y0, sideTextDraft.y1),
+              width: Math.abs(sideTextDraft.x1 - sideTextDraft.x0),
+              height: Math.abs(sideTextDraft.y1 - sideTextDraft.y0),
+              fill: 'none',
+              stroke: '#2f6df6',
+              strokeWidth: 1.5,
+              strokeDasharray: '5 4',
+              vectorEffect: 'non-scaling-stroke',
             })),
           maskDraft === null
             ? null
