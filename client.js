@@ -14810,7 +14810,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         maskStartRef.current = null
         maskDraftRef.current = null
         setMaskDraft(null)
+        setSideTextDraft(null)
       }, [page, annotRev, shownVariant])
+
+      // The text draft only belongs to the drag that started it: picking another
+      // tool unmounts the layer but would leave the state behind, showing a
+      // stale dashed box (and swallowing the next drag's moves) on the way back.
+      // `tool` is deliberately kept out of the effect above, which also clears
+      // the note being typed.
+      useEffect(() => {
+        if (tool !== 'text') setSideTextDraft(null)
+      }, [tool])
 
       // Point in page coordinates (0..1 plus the plane's margins). Measured
       // against the editing layer, which is exactly the page box at any zoom;
@@ -14918,7 +14928,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         event.stopPropagation()
         if (tool === 'select') {
           const list = strokesRef.current
-          const found = list.findIndex(entry => annotHit(entry, point))
+          const found = list.findIndex(entry => hitTest(entry, point))
           if (found >= 0) {
             const entry = list[found]
             setSelection({ index: found, kind: entry.kind === 'text' ? 'text' : entry.kind === 'shape' ? 'shape' : 'stroke' })
@@ -14943,7 +14953,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           // Match the reader: a drag creates the box; a click on an existing
           // note selects and moves it instead of stacking another one.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
+          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
           if (found >= 0) {
             setSelection({ index: found, kind: 'text' })
             setSideDrag({ index: found, start: point, dx: 0, dy: 0 })
