@@ -15723,8 +15723,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const sideBounds = h(PlaneBounds, { margins: planeMargins, onExpand: expandSidePlane })
       // The pointer layer covers the preview's viewport so a mark may start
       // outside the page, exactly like the reader. PdfViewer wraps it outside
-      // the scroller, so scrolling cannot uncover it.
-      const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'question'
+      // the scroller, so scrolling cannot uncover it. The box tool is the
+      // exception, again like the reader: its boxes keep their own pointer
+      // layer inside the page box (drag the grip, pull a handle, right-click
+      // to delete), so a viewport layer above them would eat every one of
+      // those gestures (T-10).
+      const sideMarkTool = tool !== '' && tool !== 'hand' && tool !== 'question' && tool !== 'mask'
       const sideCapture = sideMarkTool
         ? h('div', {
           className: 'md-canvas-capture',
