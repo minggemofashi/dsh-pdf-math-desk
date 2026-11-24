@@ -64,7 +64,7 @@
 ### T-20261124-01 · U1 无翻译件/翻译中时，两个“叠加”入口禁用
 
 - 状态：待发布（Round 2 测试通过：验收 1–4 + W3/W2；review Round 2 的 3 Warning 仅记录，发布前回应）
-- Round 2 Warning 处置（boss 2026-11-24）：R1–R3 **仅记录、发布前回应**，本轮不修复、不阻塞 tester；R6 与 Suggestion 3 接受为已知残余；详见 `docs/reviews/T-20261124-01.md` Round 2。
+- Round 2 Warning 处置（boss 2026-11-24）：R1–R3 **仅记录、发布前回应**，本轮不修复、不阻塞 tester；R6 与 Suggestion 3 接受为已知残余；详见 `docs/reviews/T-20261124-01.md` Round 2。tester Round 2 另记录一个观察项：reload 后约 7 s 的首击未触发、二次成功（未归因，发布前与上述 Warning 一并回应）。
 - 承接角色：programmer
 - 用户可感知的结果：
   1. 未检测到本章翻译件时，①主阅读器右侧竖排工具条里的“叠加”按钮、②右侧预览顶部工具条里的“叠加”按钮均为灰色禁用，点击无动作；
