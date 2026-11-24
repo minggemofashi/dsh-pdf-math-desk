@@ -51,9 +51,9 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | T-20261124-01 | P2 | 无翻译件或翻译中时，主阅读器右侧竖排工具条与右侧预览顶部工具条的“叠加”入口同时禁用 | `client.js`：`ReaderView` 竖排工具条 + `SidePdfView` 顶部工具条；翻译可用性/翻译中状态的单一来源 | 用户 2026-11-24 指令 U1 验收 1–4 + W3 补充裁决（详见单元详情） | 先复现；≥3 文件或触碰共享状态契约须先出计划等确认 | programmer | 待发布 | docs/tests/T-20261124-01.md |
 | T-20261124-02 | P1 | 右侧预览 PDF 疑问框功能不可用（已关闭） | `client.js`：`SidePdfView` 疑问工具/疑问层 | 用户 2026-11-24 报告 U2；2026-11-24 用户确认现象自行恢复正常，取消修复 | 已关闭：无代码改动；若在同一 commit 或其后台复现，重开并附最小复现 | programmer | 已关闭 | — |
-| T-20261124-03 | P1（暂定） | 右侧预览连续模式手形工具无法平移页面 | 待复现：`SidePdfView` 手形/`scrollGrab`/连续视图事件接线 | 用户 2026-11-24 报告 U3（报为 bug，视为预期应可用；若复现证明仅设计如此，停下交 boss/用户） | 先复现再最小修复；不得与 U2 合并 | programmer | 阻塞（缺可稳定运行的浏览器） | docs/reviews/T-20261124-03.md · docs/tests/T-20261124-03.md |
-| T-20261124-04 | P2 | 右侧预览 PDF 右键菜单点击外部不关闭 | 待复现：`SidePdfView` 右键菜单/`SIDE_MENU_KIND`/DSH `contextMenus` 或插件 `FallbackMenu` | 用户 2026-11-24 指令 U4 现状/预期/验收 | 独立单元；后续派发，本轮不执行 | programmer | 待测试 | docs/reviews/T-20261124-04.md |
-| T-20261124-05 | P2 | 重命名疑问的输入框透明 | 待复现：疑问重命名输入框（`client.js` `.md-question-input` 附近） | 用户 2026-11-24 指令 U5 现状/预期/验收 | 独立单元；后续派发，本轮不执行 | programmer | 待测试 | docs/reviews/T-20261124-05.md |
+| T-20261124-03 | P1（暂定） | 右侧预览连续模式手形工具无法平移页面 | 待复现：`SidePdfView` 手形/`scrollGrab`/连续视图事件接线 | 用户 2026-11-24 报告 U3（报为 bug，视为预期应可用；若复现证明仅设计如此，停下交 boss/用户） | 先复现再最小修复；不得与 U2 合并 | programmer | 待发布 | docs/tests/T-20261124-03.md |
+| T-20261124-04 | P2 | 右侧预览 PDF 右键菜单点击外部不关闭 | 待复现：`SidePdfView` 右键菜单/`SIDE_MENU_KIND`/DSH `contextMenus` 或插件 `FallbackMenu` | 用户 2026-11-24 指令 U4 现状/预期/验收 | 独立单元；后续派发，本轮不执行 | programmer | 待发布 | docs/tests/T-20261124-04.md |
+| T-20261124-05 | P2 | 重命名疑问的输入框透明 | 待复现：疑问重命名输入框（`client.js` `.md-question-input` 附近） | 用户 2026-11-24 指令 U5 现状/预期/验收 | 独立单元；后续派发，本轮不执行 | programmer | 待发布 | docs/tests/T-20261124-05.md |
 | T-20261124-06 | P2 | 把 U1 最终设计写入 SIDE-PREVIEW 契约文档（chapterKey 翻译事实缓存、右栏自查询、`VIEW_PUBLISHED` 未扩展） | `docs/SIDE-PREVIEW.md` §5.1/§5.2（若涉及）、§6.1.4；对照 `client.js:3241–3474`、`:3154–3157`、`:15875–15886` | DEC-0009（已接受）；`docs/reviews/T-20261124-01.md` Round 2 Suggestion 1 | 解除：设计已定稿；不涉代码，随下次文档批次派发，本轮不派发 | programmer（只改文档） | 待执行 | — |
 | T-20261124-07 | P2 | 右栏其余同名“叠加”入口（竖排工具条、右键菜单）与 U1 门控一致 | 待复现：`SidePdfView` 竖排工具条与右键菜单中的同名“叠加”项（约 `client.js:15894`、`15465`） | 用户 2026-11-24 裁决：另开 P2，不并入 U1；`docs/reviews/T-20261124-01.md` Suggestion 1 | backlog；U1 通过且共享门控确认后派发，本轮不派发 | programmer | 待执行 | — |
 
@@ -122,7 +122,7 @@
 
 ### T-20261124-03 · U3 右侧预览连续模式手形工具无法移动页面
 
-- 状态：阻塞（2026-11-24 tester Round 1：环境无法真机验证——headless Edge/Chrome 被沙箱拒绝浏览器子进程的 Mojo/命名管道（`platform_channel.cc` 0x5），无法进入被测页面；连续+手形拖动、单页平移、非手形不误滚均未执行；缺可稳定运行的浏览器或非沙箱宿主；详见 `docs/tests/T-20261124-03.md`）
+- 状态：待发布（2026-11-24 tester Round 2：依据用户桌面 DSH 实测通过——“连续模式手形拖动可滚动、松手不回弹；单页手形平移正常；换其它工具后不误滚”；tester 本环境无浏览器（沙箱 Mojo 0x5），未独立复验；详见 `docs/tests/T-20261124-03.md`）
 - 2026-11-24 boss 裁决：不重派同一无浏览器环境；U4/U5 修完后由用户在桌面 DSH 一次性实测 U3/U4/U5，tester 据用户实测证据与自动化证据落盘，报告注明“用户实测、tester 无法独立复验”。
 - 承接角色：programmer
 - 用户可感知的结果：连续模式下，右栏手形工具拖动应能平移/滚动页面；不触发选择、标注或页面跳转；单页模式保持正常。
@@ -139,7 +139,7 @@
 
 ### T-20261124-04 · U4 右侧预览右键菜单点击外部不关闭
 
-- 状态：待测试（2026-11-24 code-reviewer Round 1：无 Critical、0 Warning（3 条可选 Suggestion）；`.md-side-body` 内左键关闭已在 jsdom 前/后对比通过，右键不改；真机点击/菜单项/Esc/触控待 tester 与用户桌面 DSH 实测；详见 `docs/reviews/T-20261124-04.md`）
+- 状态：待发布（2026-11-24 tester Round 1：依据用户桌面 DSH 实测通过——“右键菜单点外关闭、点菜单项执行并关闭、别处右键切换不叠加”；review Round 1 无 Critical、3 条 Suggestion 仅记录；tester 本环境无浏览器（沙箱 Mojo 0x5），未独立复验；详见 `docs/tests/T-20261124-04.md`）
 - 2026-11-24 boss 裁决：3 条 Suggestion 仅记录、不修（收窄阅读态 / click 与 dblclick / `context-menu-trigger` 对等性）；真机项随 U3/U4/U5 一次性桌面验收。
 - 承接角色：programmer
 - 用户可感知的结果：
@@ -157,7 +157,7 @@
 
 ### T-20261124-05 · U5 重命名疑问的输入框透明
 
-- 状态：待测试（2026-11-24 code-reviewer Round 1：无 Critical、0 Warning（2 条可选 Suggestion）；根因（表面由适配层/宿主 CSS 提供）成立，wrapper 自有背景 + 适配层拍平已覆盖宿主/回退两分支；真机像素/布局按 boss 裁决留用户桌面一次性实测 U3/U4/U5；详见 `docs/reviews/T-20261124-05.md`）
+- 状态：待发布（2026-11-24 tester Round 1：依据用户桌面 DSH 实测通过——“重命名输入框有不透明背景，浅/深色页面可读，Enter/Esc 正常”；review Round 1 无 Critical、2 条 Suggestion 仅记录；tester 本环境无浏览器（沙箱 Mojo 0x5），未独立复验；详见 `docs/tests/T-20261124-05.md`）
 - 2026-11-24 boss 裁决：2 条 Suggestion 仅记录、不修；U5 真机项并入 U3/U4/U5 一次性桌面验收。
 - 承接角色：programmer
 - 用户可感知的结果：
