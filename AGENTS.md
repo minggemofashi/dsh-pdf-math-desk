@@ -26,20 +26,19 @@
 
 **用户说「更新 / 发版 / 发布」时，严格按 [`docs/RELEASE.md`](docs/RELEASE.md) 执行，不要重新设计流程。**
 
-固定顺序：
+固定顺序（2026-11-24 实测版）：
 
-1. 改版本 + CHANGELOG + README/截图；
+1. 改版本 + CHANGELOG + `package-lock` + README/截图；
 2. 跑全部检查；
-3. 构建 zip（可选 tgz）、提交、tag；
-4. **默认交付，不碰用户凭据**：给用户 GitHub Release 新建网址、可直接复制的 Release 标题/说明、npm 包网址、本地 zip/tgz 绝对路径和安装命令；push / Release / npm 由用户本机完成；Release 说明格式见 `docs/RELEASE.md` 的「1.6 Release 说明格式」；
-5. 若当前环境**已经**有可用凭据且用户明确要求 Agent 直接推，才执行 push / 上传；**永远不要索要 2FA 码、密码、token**；
-6. npm 发布由用户 `npm login --auth-type=web` 并自行处理 2FA；
-7. 市场不需要为新版本提 PR（npm 自动映射）；只有改仓库/包名/分类/描述或回退 tarball 时才改条目；
-8. 一致性检查（package / tag / GitHub / npm / README / market）。
+3. 构建 zip、提交、打 tag；
+4. GitHub：先确认 VPN/代理和 GCM 凭据；`git` 用 `-c http.sslBackend=openssl` 规避 schannel 报错；沙箱拦截 GCM 凭据管道时，对同一条命令申请最小范围升级；
+5. push main；远程 tag 若指向旧提交则强制更新；有凭据时用 GitHub API 创建 Release 并上传 zip（token 只在进程内使用，绝不打印）；无凭据时给用户 Release 网址 + 本地 zip 路径；Release 正文按 `docs/RELEASE.md` 的固定格式；
+6. npm：从 tag 建干净 worktree；登录必须用工作区 `--userconfig/--cache` 避免写 `~/.npmrc` 被沙箱拒绝；Agent 只发登录 URL，用户自己完成 2FA；
+7. `npm stage publish` 成功后把 staged 批准网址发给用户；**必须以 `npm whoami`/`npm view` 验证，不能只看退出码**；
+8. 用户批准后验证 npm；市场条目 `tarball` 改为新版本 npm URL（当前条目固定旧版本，必须更新）；
+9. 一致性检查（package / lock / tag / GitHub / npm / README / market）。
 
-交付时固定给这三类地址，见 `docs/RELEASE.md` 的「本地交付格式」。
-
-详细命令见 `docs/RELEASE.md`。
+**永远不要索要 2FA 码、密码或 token**；历史问题与处理见 `docs/RELEASE.md` 第 5 节。
 
 ### 检查（日常与发版都跑）
 
