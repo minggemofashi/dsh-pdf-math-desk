@@ -11190,9 +11190,11 @@ window.__ModuleLoader__.load({
        * @param {string} labelKey - locale key for the label and tooltip.
        * @param {string} path - SVG path for `annotIcon`.
        * @param {boolean} [disabled] - whether the tool is unavailable right now.
+       * @param {Function} [onPick] - replaces the default tool toggle (the mask
+       *   tool also needs the overlay layer that its boxes draw through).
        * @returns {import('react').ReactElement} the button.
        */
-      const railTool = (id, labelKey, path, disabled) => h(KitButton, {
+      const railTool = (id, labelKey, path, disabled, onPick) => h(KitButton, {
         type: 'button',
         className: 'md-rail-btn',
         disabled: disabled === true,
@@ -11200,7 +11202,10 @@ window.__ModuleLoader__.load({
         title: format(labelKey),
         'aria-label': format(labelKey),
         onPointerEnter: event => beginRailPanel(event.currentTarget, id),
-        onClick: () => setAnnotTool(value => (value === id ? '' : id)),
+        onClick: () => {
+          if (typeof onPick === 'function') onPick()
+          else setAnnotTool(value => (value === id ? '' : id))
+        },
       }, annotIcon(path))
       const strokeDraft = useRef(null)
       const shapeDraftRef = useRef(null)
@@ -11964,6 +11969,32 @@ window.__ModuleLoader__.load({
           if (owns()) writeTranslationFacts(bookId, code, { translating: false })
         }
       }
+      // One "叠加" mode change: a single page, no bilingual column, then the
+      // overlay layer whose boxes reveal the translated page. The top button and
+      // the rail's mask tool both need that layer: the rail used to switch only
+      // the tool flag, so picking it mounted no pointer layer and no drag could
+      // start a box (T-09).
+      const toggleOverlay = () => {
+        if (reader.variant === 'translated') return
+        if (!overlay && !hasTranslation) {
+          if (props.canTranslate !== true) {
+            if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
+            return
+          }
+          if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+            && window.confirm(format('dualNeedsTranslation'))) {
+            void runTranslate()
+          }
+          return
+        }
+        if (reader.mode !== 'single') props.onMode('single')
+        if (dual) {
+          setDual(false)
+          setDualDoc(null)
+        }
+        setTimeout(bumpViewer, 80)
+        setOverlay(value => !value)
+      }
       const label = reader.name === '' ? `${reader.fileName}.pdf` : reader.name
       const ready = reader.phase === 'ready'
       // The page this document can paint. The chapter's page stays the source of
@@ -12698,27 +12729,7 @@ window.__ModuleLoader__.load({
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small', 'aria-pressed': overlay ? 'true' : 'false',
               title: format('overlayHint'),
-              onClick: () => {
-                if (reader.variant === 'translated') return
-                if (!overlay && !hasTranslation) {
-                  if (props.canTranslate !== true) {
-                    if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
-                    return
-                  }
-                  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-                    && window.confirm(format('dualNeedsTranslation'))) {
-                    void runTranslate()
-                  }
-                  return
-                }
-                if (reader.mode !== 'single') props.onMode('single')
-                if (dual) {
-                  setDual(false)
-                  setDualDoc(null)
-                }
-                setTimeout(bumpViewer, 80)
-                setOverlay(value => !value)
-              },
+              onClick: toggleOverlay,
             }, format('overlayToggle')),
             overlay
               ? h(KitButton, {
@@ -13030,7 +13041,16 @@ window.__ModuleLoader__.load({
             railTool('rect', 'shapeRect', 'M4 5h16v14H4z'),
             railTool('diamond', 'shapeDiamond', 'M12 3 21 12 12 21 3 12z'),
             railTool('ellipse', 'shapeEllipse', 'M12 5c5 0 8 3 8 7s-3 7-8 7-8-3-8-7 3-7 8-7z'),
-            railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16', overlayUnavailable),
+            railTool('mask', 'overlayToggle', 'M4 4h16v16H4zM8 4v16M16 4v16', overlayUnavailable, () => {
+              if (annotTool === 'mask') {
+                setAnnotTool('')
+                return
+              }
+              setAnnotTool('mask')
+              // The boxes live on the overlay layer; picking the tool without
+              // switching that layer on is what made the button look inert (T-09).
+              if (!overlay) toggleOverlay()
+            }),
             h('span', { className: 'md-rail-sep', 'aria-hidden': true }),
             h(KitButton, {
               type: 'button', className: 'md-rail-btn',
