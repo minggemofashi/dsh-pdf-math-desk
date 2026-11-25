@@ -2,7 +2,7 @@
 
 > **维护者：队长/用户**。programmer 只按“状态”规则更新自己单元的状态，不改范围、验收标准或增删单元。
 > 这里只放已经拆好的执行单元；未拆清的需求留在对话/任务里，不进入本文件。
-> **2026-11-25 组织收缩（DEC-0012）**：常驻岗位只剩 `requirements` / `programmer` / `ci`；本文件下方历史记录中出现的 boss / auditor / code-reviewer / tester / release-manager 等角色名保留原样，仅作历史，不再生效。
+> **2026-11-25 组织收缩（DEC-0012）**：只剩 `requirements` / `programmer` / `ci` 三张身份卡，默认单会话；本文件下方历史记录中出现的 boss / auditor / code-reviewer / tester / release-manager 等角色名保留原样，仅作历史，不再生效。
 > **2026-11-24 试跑例外**：本批 5 条用户实测候选均登记在本文件；U2/U3 为阻塞项，未拆清前不得进入 programmer。本批验收口径来自用户直接指令，已写入各单元详情。
 
 ## 入队规则

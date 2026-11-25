@@ -364,8 +364,8 @@
 
 ### 决策
 
-1. **常驻岗位收缩为 3 个**：`requirements`（需求详细化，只在对话/消息里，不写文件）、`programmer`（唯一写者，全包：复现/根因/最小修复/自查/测试/文档更新）、`ci`（构建、版本、tag、Release、npm、市场，仅用户明确发布时启动）。路由由队长承担，不再设 boss 角色文档。
-2. **删除** `auditor`、`boss`、`code-reviewer`、`tester`、`release-manager`、`feedback-collector`、`feature-inventory`、`ui-copywriter` 常驻角色；`docs/roles/` 只保留 3 份文档；删除 `docs/boss-handover.md`。
+1. **收缩为 3 张身份卡**：`requirements`（需求详细化，只在对话/消息里，不写文件）、`programmer`（唯一写者，全包：复现/根因/最小修复/自查/测试/文档更新）、`ci`（构建、版本、tag、Release、npm、市场，仅用户明确发布时启动）。**日常默认单会话 = programmer**；`requirements` 作为同一会话的前置模式；`ci` 按需开独立会话。路由由用户/队长承担，不依赖 AgentTeams，不再设 boss 角色文档。
+2. **删除** `auditor`、`boss`、`code-reviewer`、`tester`、`release-manager`、`feedback-collector`、`feature-inventory`、`ui-copywriter` 角色卡；`docs/roles/` 只保留 3 份文档；删除 `docs/boss-handover.md`。
 3. **写审分离降级**为"单写者 + 自查清单 + 用户手测"；高风险改动（≥3 文件、受保护契约、数据迁移）可由用户临时要求一次只读复核，不作为常驻门禁。
 4. **需求块不落盘**：不再新增 `docs/requirements/`；需求全文直接写进 programmer 的任务描述/消息。历史 requirements/reviews/tests 保留，不新增。
 5. **不再写** `docs/reviews/` 与 `docs/tests/` 报告；证据留在任务结果/对话里（命令、退出码、文件:行号、未覆盖）。
@@ -375,8 +375,8 @@
 
 - 单 bug 预期 25–40 分钟；固定开销从 60–90 分钟降到 10 分钟量级。
 - 失去独立复核的固定门禁；质量由根因证据、最小 diff、自查清单、用户手测、ci 发布前检查五道兜底。
-- 团队 profile 由 `pdfdesk` 承载 3 成员；`pdfdesk-quick` 移除（快路径 = 只用 programmer）。
-- 用户已主动关闭 AgentTeams 插件；当前三岗以**会话角色/工作流**运行，`pdfdesk` profile 仅在重新启用插件时使用。
+- 三岗以**会话身份卡**运行：默认单会话（programmer）；`requirements` 为前置模式；`ci` 为按需独立会话；不再维护 AgentTeams profile。
+- 用户已主动关闭 AgentTeams 插件；`cordis.patch.yml` 中的 `agent-teams` profile 已移除（备份见「保留与回滚」）。
 
 ### 被否决的方案
 
