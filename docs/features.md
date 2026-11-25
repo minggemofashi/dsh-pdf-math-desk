@@ -1,6 +1,6 @@
 # 功能全貌（features）
 
-> **维护者：feature-inventory**，仅 major 版本触发；minor/patch 由 release-manager 在 CHANGELOG 中写清。
+> **维护者：队长/用户**，仅 major 版本核对；minor/patch 由 ci 在 CHANGELOG 中写清。
 > 本文件描述“项目现在能做什么”，不是路线图。计划中、未合入的能力不写进来。
 >
 > **当前基线：v1.4.0（2026-11-24）。** 此初始版本由搭建会话从现有 README / CHANGELOG / 代码边界转录，**不是一次完整的端到端功能审计**；下一次 major 由 feature-inventory 全量复核。

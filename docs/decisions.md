@@ -352,3 +352,39 @@
 - **实验标记**：覆盖层翻译是实验功能；整机迁移包尚未完成端到端恢复测试。README、CHANGELOG、Release 说明不得把这些写成稳定能力。
 - **平台**：只声明 Windows 10 / 11（x64）；macOS / Linux 未适配、未测试，不能承诺可用。
 - **不热更新**：客户端改动必须重启 DSH 后才能验证。
+
+---
+
+## DEC-0012 · 组织收缩：需求详细化 + programmer 全包 + CI
+
+- **日期**：2026-11-25
+- **状态**：已接受
+- **决策者**：用户
+- **背景**：九角色体系在单发小修上的固定开销 60–90 分钟，而实际写代码仅 11–19 分钟（#8 两轮合计 73 分钟，另加队长会话）；用户要求时间成本优先，只保留 CI 与"把想法详细化"两件事，其余并入 programmer。
+
+### 决策
+
+1. **常驻岗位收缩为 3 个**：`requirements`（需求详细化，只在对话/消息里，不写文件）、`programmer`（唯一写者，全包：复现/根因/最小修复/自查/测试/文档更新）、`ci`（构建、版本、tag、Release、npm、市场，仅用户明确发布时启动）。路由由队长承担，不再设 boss 角色文档。
+2. **删除** `auditor`、`boss`、`code-reviewer`、`tester`、`release-manager`、`feedback-collector`、`feature-inventory`、`ui-copywriter` 常驻角色；`docs/roles/` 只保留 3 份文档；删除 `docs/boss-handover.md`。
+3. **写审分离降级**为"单写者 + 自查清单 + 用户手测"；高风险改动（≥3 文件、受保护契约、数据迁移）可由用户临时要求一次只读复核，不作为常驻门禁。
+4. **需求块不落盘**：不再新增 `docs/requirements/`；需求全文直接写进 programmer 的任务描述/消息。历史 requirements/reviews/tests 保留，不新增。
+5. **不再写** `docs/reviews/` 与 `docs/tests/` 报告；证据留在任务结果/对话里（命令、退出码、文件:行号、未覆盖）。
+6. 发布仍由用户明确指令触发；`ci` 的"发布前检查"替代原 review/test 双门禁，缺证据即停。
+
+### 后果
+
+- 单 bug 预期 25–40 分钟；固定开销从 60–90 分钟降到 10 分钟量级。
+- 失去独立复核的固定门禁；质量由根因证据、最小 diff、自查清单、用户手测、ci 发布前检查五道兜底。
+- 团队 profile 由 `pdfdesk` 承载 3 成员；`pdfdesk-quick` 移除（快路径 = 只用 programmer）。
+- 用户已主动关闭 AgentTeams 插件；当前三岗以**会话角色/工作流**运行，`pdfdesk` profile 仅在重新启用插件时使用。
+
+### 被否决的方案
+
+- **保留 tester 作为 patch 门禁**：时间成本不变，违背本次目标。
+- **需求继续落盘**：用户明确要求只在对话里。
+- **保留 boss 独立角色**：路由由队长承担，避免多一层。
+
+### 保留与回滚
+
+- 保留：`AGENTS.md` §2–§4、本文件、`docs/todo.md` 单元格式、`docs/TESTING.md`、测试脚本、历史 reviews/tests、产品需求文档。
+- 回滚：角色文档在 git 历史；旧 profile 备份见 `.dsh-scratch/profile-backup-20261125-cordis.patch.yml`；需要时按 DEC-0001 恢复九角色。

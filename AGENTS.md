@@ -6,12 +6,13 @@
 
 ## 1. 角色与会话
 
-- **单会话单任务**：一个会话只做一个阶段的一件事；按任务阶段切分，不按时间或 bug 数量切分。
-- **写审分离**：同一会话不得既写业务代码又做审查/验收；审查和测试必须在独立上下文中完成。
-- 只有 **programmer** 可以修改业务代码（含 `locale/*.json` 等纯字符串值）。其他角色只读代码，或只写自己角色文档规定的输出。
+- **单会话单任务**：一个会话只做一件事；按任务阶段切分，不按时间或 bug 数量切分。
+- **单写者 + 自查**：只有 **programmer** 可以修改业务代码（含 `locale/*.json` 等纯字符串值）。programmer 完成后先按自查清单自查，再交用户手测；不再设独立 code-reviewer / tester 常驻角色。
+- **需求只在对话里**：`requirements` 把用户想法写成需求块，直接发给 programmer；不写 `docs/requirements/`、不落盘。
+- **CI 独立**：只有 `ci` 可以在用户明确发布时升版本、打 tag、push、发 Release、发 npm、改市场条目；programmer 不做任何发布动作。
 - 角色文档是行为边界。开工前先读 `docs/roles/<你的角色>.md`；不得越出其中“禁止”一节。
-- 任何角色文档的变更（含自己的）必须经用户明确确认后才落盘；确认前只写提案。每个角色一次最多提 2 条规则变更。
-- 新增角色必须经用户确认；不要为了覆盖单个问题临时扩张角色体系。
+- 任何角色文档的变更必须经用户明确确认后才落盘；确认前只写提案。
+- 高风险改动（3 个及以上文件、触碰受保护契约、数据迁移）可应要求临时开一次独立只读复核；它不是常驻门禁。
 - 上下文出现稀释信号（重复确认过的事、忘记文件位置、规则自相矛盾、压缩后丢失未落盘的结论）时，按角色文档交接并换会话，不靠感觉硬撑。
 - 会话结束前，值得保留的结论必须写进指定文件；未落盘视为丢弃。
 - **会话预算**：单会话超过 300–500 步必须交接换新会话；按波次（3–5 个单元）开工，不按周开巨会话；只读相关文件，不整本读 `client.js` 或全量历史。详见 `docs/decisions.md` DEC-0011。
@@ -23,10 +24,10 @@
 - 改动超过 2 个文件（3 个及以上）必须先出计划并等用户确认。
 - 公共接口、事件名、配置结构、数据 schema、受保护文件不得擅自改动；需要动时先出计划并等用户确认。
 - 受保护契约至少包括：公开包接口与 `package.json` 的 `exports` / `engines` / `dsh` 配置、`cordis.patch.yml`、`/pdfdesk/*` 路由、locale 键结构、Host/浏览器共享的事件名、`~/.dsh/pdfdesk/` 与 `.pdfdesk/` 的存储键和 sidecar 结构。
-- **纯文案通道**：只改纯字符串值（`locale/*.json` 的值、独立文案常量）的 diff 仍由 programmer 落地；不得改 key、层级、占位符、条件分支或逻辑；必须过语法校验与构建，并跑受影响的 smoke，不重复完整功能测试。内联字符串、prompt、错误分支、危险操作流程按正常代码变更走审查与测试。
-- 验收标准只能来自 `docs/requirements/` 中的需求规格或本文件；实现者不得自定、放宽验收标准，也不得自行判定“通过”。
-- 测试子 Agent 的验收标准必须来自需求规格或本文件，不得由 programmer 自定。
-- 模块化边界检查属于 code-reviewer，不属于 programmer；programmer 只负责不继续扩大耦合。
+- **纯文案通道**：只改纯字符串值（`locale/*.json` 的值、独立文案常量）的 diff 仍由 programmer 落地；不得改 key、层级、占位符、条件分支或逻辑；必须过语法校验与构建，并跑受影响的 smoke，不重复完整功能测试。内联字符串、prompt、错误分支、危险操作流程按正常代码变更走自查与用户手测。
+- 验收标准只能来自需求块、用户当前指令或本文件；实现者不得自定、放宽验收标准。
+- 测试子 Agent 的验收标准必须来自需求块、用户指令或本文件，不得由 programmer 自定。
+- 模块化边界检查并入 programmer 的自查清单；不新增第三套状态/动作/菜单。
 - **先联动再动手**：改动前列出并检查对主阅读器/右侧预览、单页/连续/双语/叠加、工具/撤销/导出/打印、快捷键/设置、localStorage/Host 存储、旧数据兼容的影响；只改当前入口视为未完成。
 - **交互功能先确认参照**：开始交互类功能前向用户确认可模仿的目标产品/截图；用户说没有时按主流产品取舍并写进计划，不再逐项追问。
 - **跨视图同步默认不新增**：先写原因、影响视图、回退方式并请用户确认；程序性滚动/回填不得发布页码（回声抑制）。
@@ -40,13 +41,13 @@
 ## 3. 仓库与发布边界
 
 - **默认只本地提交通档，不发版**：只有用户明确说「发布 / 发版 / 更新 / 推送」时，才可以升版本、打 tag、push、创建 GitHub Release、发 npm 或改市场条目；不要每轮追问“要不要发布”。
-- 发布只能由 **release-manager** 执行，且必须已读 `docs/reviews/<单元ID>.md` 与 `docs/tests/<单元ID>.md` 的**最新一轮**，结论分别无 Critical / 通过；发布细节见 `docs/ci.md`。
-- release-manager 不改 `src/`、不改测试；构建失败时停止并退回 programmer，不通过改代码“修构建”。
+- 发布只能由 **ci** 执行，且必须已核对 programmer 的任务结果（diff 范围、根因、验证命令与退出码、未覆盖项）与用户手测结论；发布细节见 `docs/ci.md`。
+- ci 不改 `src/`、不改测试；构建失败时停止并退回 programmer，不通过改代码“修构建”。
 - 不自动修改 CI 配置；需要新建或修改 CI / Trusted Publishing 时，先由用户确认方案。
 - `cordis.patch.yml` 必须保持中性，不写具体书库路径；真实书库由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
 - 不进 git：`node_modules/`、`dist/`、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
 - 不提交个人目录绝对路径、API Key、token、密码；提交前用 `git diff --cached` 检查。
-- 仓库里允许并应持久化的项目记忆：`docs/requirements/`、`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/feedback/`、`docs/boss-handover.md`、`docs/features.md`、`docs/copy/`、`docs/reviews/`、`docs/tests/`、`CHANGELOG.md`。临时草稿和含个人信息的诊断仍放仓库外。
+- 仓库里允许并应持久化的项目记忆：`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/features.md`、`docs/copy/`、`CHANGELOG.md`；`docs/requirements/`、`docs/reviews/`、`docs/tests/` 是历史记录，保留但不新增（需求块只在对话/任务里，不落盘）。临时草稿和含个人信息的诊断仍放仓库外。
 - CI 细节、发布命令和历史坑只在 `docs/ci.md` / `docs/RELEASE.md`，不要搬回本文件。
 
 ## 4. 改完必跑的验证
@@ -70,23 +71,20 @@ node .dsh-scratch\check-deps.mjs
 node .dsh-scratch\host-test.mjs
 ```
 
-- 失败不提交，不判通过。`node --check` 通过不等于审查或验收通过。
+- 失败不提交，不判通过。`node --check` 通过不等于自查或用户验收通过。
 - 文档-only 改动不强制跑上述命令；必须检查链接、文件名与引用路径。
 
 ## 5. 文档指针
 
 | 要做的事 | 先读 |
 | --- | --- |
-| 判断当前该谁做、拆几个会话、发布规模 | `docs/roles/boss.md` |
-| 把模糊需求写成需求规格 | `docs/roles/auditor.md`，输出到 `docs/requirements/` |
+| 判断当前该谁做、拆几个会话 | 队长 + `docs/roles/programmer.md` |
+| 把模糊需求问清、写成需求块 | `docs/roles/requirements.md`（只在对话里，不落盘） |
 | 实现一个执行单元 | `docs/todo.md` + `docs/roles/programmer.md` |
-| 独立审查 diff | `docs/roles/code-reviewer.md`，输出到 `docs/reviews/<单元ID>.md` |
-| 独立验收 | `docs/roles/tester.md` + `docs/TESTING.md`，输出到 `docs/tests/<单元ID>.md` |
-| 发布 | `docs/roles/release-manager.md` + `docs/ci.md` |
-| 反馈角色体系的问题 | `docs/roles/feedback-collector.md`，输出到 `docs/feedback/` |
+| 发布 | `docs/roles/ci.md` + `docs/ci.md` |
 | 查已定架构/被否决方案/隐性契约 | `docs/decisions.md` |
-| major 版本盘点功能 / 更新 README | `docs/roles/feature-inventory.md` + `docs/features.md` |
-| 统一术语、错误提示、危险确认文案 | `docs/roles/ui-copywriter.md` + `docs/copy/` |
+| 真机验收矩阵（补充） | `docs/TESTING.md` |
+| major 的功能/README 事实核对 | `docs/features.md` + README |
 | 用户可见的版本变化 | `CHANGELOG.md` |
 
 ## 6. 文档冲突

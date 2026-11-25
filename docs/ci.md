@@ -1,28 +1,28 @@
 # CI 与发布流程
 
-> **执行者：release-manager**。本文是发布细节的体系入口；`docs/RELEASE.md` 是 2026-11-24 实测的详细 runbook（含历史坑）。两者冲突时，先停下请用户确认，不自行选一个执行。
+> **执行者：ci**。本文是发布细节的体系入口；`docs/RELEASE.md` 是 2026-11-24 实测的详细 runbook（含历史坑）。两者冲突时，先停下请用户确认，不自行选一个执行。
 >
-> **当前状态（2026-11-24，v1.4.0）：仓库没有 `.github/workflows`，发布仍由 release-manager 在本地手动执行；Trusted Publishing 尚未启用。** 不要因为读了本文就假设 CI 已经在跑。
+> **当前状态（2026-11-25）：仓库没有 `.github/workflows`，发布仍由 ci 在本地手动执行；Trusted Publishing 尚未启用。** 不要因为读了本文就假设 CI 已经在跑。
 
 ## 1. 启动门禁
 
 发布不是日常提交的一部分。必须同时满足：
 
 - 用户明确说「发布 / 发版 / 更新 / 推送」；
-- code-reviewer 最终结论无 Critical，Warning 已回应；
-- tester 结论为“通过”；
-- 发布规模已按 `docs/roles/boss.md` 的映射表归类；
-- major 已具备 feature-inventory 的 `docs/features.md` / README 产物，以及 ui-copywriter 的全项目文案审计结论。
+- programmer 的任务结果与证据齐全：diff 范围、根因、验证命令与退出码、未覆盖项；
+- 用户已手测通过，或明确表示接受当前结果（把原话记进发布记录）；
+- 发布规模已按本文第 2 节归类；
+- major 已由用户/队长更新 `docs/features.md` 与 README；没有更新就停，不能假装有专职盘点角色。
 
-缺一项就停，交回 boss/用户；release-manager 不补评审、不补测试、不代替缺失角色。
+缺一项就停，交回用户/队长；ci 不补测试、不补自查、不代替 programmer 修代码。
 
 ## 2. 版本号与发布规模
 
 | 规模 | 语义 | 版本 bump | 额外要求 |
 | --- | --- | --- | --- |
 | patch | 修复 bug，不新增用户可见能力 | `1.4.x` → `1.4.x+1` | CHANGELOG 写清修复内容 |
-| minor | 向后兼容的新能力 | `1.4.x` → `1.5.0` | 更新推送员整理“用户可见变更摘要” |
-| major | 破坏性变更、数据迁移、需要用户改变使用方式的大版本 | `1.x.y` → `2.0.0` | 功能盘点员全量更新 features/README；文案规范员全项目审计 |
+| minor | 向后兼容的新能力 | `1.4.x` → `1.5.0` | ci 整理“用户可见变更摘要” |
+| major | 破坏性变更、数据迁移、需要用户改变使用方式的大版本 | `1.x.y` → `2.0.0` | 用户/队长确认 features/README 已更新；ci 不自行补盘点 |
 
 无法判断时停下问用户，不自行降级。版本号必须同时出现在：
 
@@ -46,7 +46,7 @@ Get-ChildItem src\host\*.js | ForEach-Object { node --check $_.FullName }
 
 - 改了 `src/client/` 或 vendor UI 时：`npm run build:host-ui`。当前沙箱可能因 esbuild 启动 `EPERM` 失败；如果 `vendor/host-ui.*` 本次没有改动，可使用已有产物并在发布记录注明。不要为了跳过失败而改写构建链。
 - 至少跑仓库外现有的 `check-keys.mjs`、`check-deps.mjs`、`host-test.mjs`；再跑与本次改动相关的全部 `.dsh-scratch/*test*.mjs`。失败不发布。
-- 用户可见交互变更按 `docs/TESTING.md` 的干净环境矩阵补做必要验收；tester 的结论必须基于需求规格和 `AGENTS.md`，不能只看脚本。
+- 用户可见交互变更按 `docs/TESTING.md` 的干净环境矩阵补做必要验收；真机结论以用户手测为准，不能只看脚本。
 - 分发构建：
 
 ```powershell
@@ -133,18 +133,18 @@ tarball: https://registry.npmjs.org/dsh-pdf-workbench/-/dsh-pdf-workbench-X.Y.Z.
 
 迁移到 GitHub Actions + npm Trusted Publishing 时，目标形态：
 
-- **触发**：push tag `v*`（tag 仍只由 release-manager 在用户明确发版后创建），或 `workflow_dispatch` 做发布演练；不要在每个 merge 上自动发布。
+- **触发**：push tag `v*`（tag 仍只由 ci 在用户明确发版后创建），或 `workflow_dispatch` 做发布演练；不要在每个 merge 上自动发布。
 - **权限**：`permissions: contents: write`（创建 GitHub Release）和 `id-token: write`（npm OIDC）；不要长期保存 `NPM_TOKEN`。
 - **npm 侧**：在 npm 包设置中配置 Trusted Publisher：GitHub 仓库 `minggemofashi/dsh-pdf-workbench` + workflow 文件名（例如 `.github/workflows/release.yml`）+ 允许的环境（如 `npm-publish`）。具体字段以 npm 当前文档为准。
 - **工作流步骤**：checkout tag → 校验 tag 与 `package.json` 版本一致 → 跑本文第 3 节检查 → 构建 zip → `npm publish --provenance --access public` → 创建 GitHub Release / 上传资产。
 - **人工批准**：若仍使用 staged publish，保留用户批准步骤；CI 不索取 2FA，不在日志打印凭据。
 - **前置条件**：Workflow 文件、npm 配置、仓库权限三者必须同时真实存在；只写文档或只加 workflow 而未配置 npm 侧，不能对外宣称“已启用 Trusted Publishing”。
 
-迁移完成前，按本文第 3–8 节的手动流程执行；迁移后，release-manager 仍需检查发布结果与市场同步。
+迁移完成前，按本文第 3–8 节的手动流程执行；迁移后，ci 仍需检查发布结果与市场同步。
 
 ## 10. 失败处理
 
-- 构建/检查失败：停止，退回 programmer；release-manager 不改代码、不改测试来“修好”。
+- 构建/检查失败：停止，退回 programmer；ci 不改代码、不改测试来“修好”。
 - 已打 tag 但 Release 失败：记录状态，核对 tag 与提交，再重试或重建；不要在错误 tag 上继续。
 - npm 发布后发现严重问题：不要覆盖已发布版本；按补丁版本修复后重新发布。需要撤回/弃用版本时先问用户。
 - 任一渠道状态不明：停在“未完成”，逐项复核；不把部分成功说成发布成功。
