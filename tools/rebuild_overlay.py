@@ -11,6 +11,8 @@ import tempfile
 import fitz
 
 source, cache_dir, out_path, tools_dir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+# The Host picks the engine; the overlay renderer name arrives in the env.
+overlay_script = os.environ.get("MATH_DESK_OVERLAY_SCRIPT", "").strip() or "md2overlay.py"
 
 document = fitz.open(source)
 sizes = [[page.rect.width, page.rect.height] for page in document]
@@ -37,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="rebuild-overlay-") as work:
             continue
         page_pdf = os.path.join(work, "page-%03d.pdf" % (index + 1))
         result = subprocess.run(
-            [sys.executable, os.path.join(tools_dir, "md2overlay.py"), blocks_path, page_pdf,
+            [sys.executable, os.path.join(tools_dir, overlay_script), blocks_path, page_pdf,
              str(size[0]), str(size[1]), font_class],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
         )

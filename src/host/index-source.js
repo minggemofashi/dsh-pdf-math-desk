@@ -187,6 +187,9 @@ function normalizeChapters(chapters) {
       kind: typeof chapter.kind === 'string' && chapter.kind !== '' ? chapter.kind : kindOf(chapter.code),
       pages: typeof chapter.pages === 'string' ? chapter.pages : '',
       file: typeof chapter.file === 'string' ? chapter.file : '',
+      // A file kept only because every PDF is readable, not because its name
+      // follows the splitter convention. The browser hides these by default.
+      loose: chapter.loose === true,
     }
     if (byCode.has(row.code)) duplicates += 1
     byCode.set(row.code, row)
@@ -210,6 +213,9 @@ function bookRow(book) {
     cover: typeof book.cover === 'string' ? book.cover : '',
     unparsed: typeof book.unparsed === 'number' ? book.unparsed : 0,
     duplicates,
+    // A book made entirely of files whose names the splitter did not produce:
+    // readable, but hidden until the reader asks for unrecognized books.
+    loose: chapters.length > 0 && chapters.every(chapter => chapter.loose === true),
     chapters,
   }
 }
@@ -333,6 +339,7 @@ async function scanFragments(fragmentDir) {
       continue
     }
     const chapters = []
+    const keptFiles = []
     let short = ''
     let pdfCount = 0
     let unparsed = 0
@@ -344,6 +351,8 @@ async function scanFragments(fragmentDir) {
       const parsed = parseChapterFile(file)
       if (parsed === null) {
         unparsed += 1
+        // Not chapter-shaped, but still a PDF the reader may open.
+        keptFiles.push(file)
         continue
       }
       if (short === '') short = parsed.short
@@ -356,7 +365,7 @@ async function scanFragments(fragmentDir) {
         from: parsed.from,
       })
     }
-    if (chapters.length === 0) {
+    if (chapters.length === 0 && keptFiles.length === 0) {
       if (pdfCount > 0) skipped.push({ dir: entry.name, pdfCount })
       continue
     }
@@ -384,6 +393,21 @@ async function scanFragments(fragmentDir) {
       chapter.kind = kindOf(code)
       taken.add(code)
     }
+    // Every PDF is readable even when its name never followed the splitter
+    // convention: number the rest after the real chapters and mark them loose,
+    // so the browser keeps them out of the shelf until the reader asks for
+    // unrecognized books. Nothing is written back to disk or to 索引.json.
+    // Code-unit order, not locale order: "第一章" must sort before "第二章", and
+    // a pinyin collation would put them the other way round.
+    keptFiles.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    for (const name of keptFiles) {
+      const stem = name.replace(/\.pdf$/i, '')
+      let index = 1
+      while (taken.has(`c${String(index).padStart(2, '0')}`)) index += 1
+      const code = `c${String(index).padStart(2, '0')}`
+      taken.add(code)
+      chapters.push({ code, title: stem, kind: 'chapter', pages: '', file: stem, loose: true })
+    }
     for (const chapter of chapters) delete chapter.from
     chapters.sort((left, right) => left.code.localeCompare(right.code))
     const { title, author } = splitBookTitle(entry.name)
@@ -401,17 +425,24 @@ async function scanFragments(fragmentDir) {
 }
 
 /**
- * Whole-book PDFs: a library may also carry unsplit books under `整本\`, for
- * people who cannot run the splitter. Each file is one book with a single
- * synthetic chapter (`c00`), so reading works but there are no chapter rows.
+ * Whole-book PDFs: a library may also carry unsplit books, under `整本\`, loose
+ * in the library root, or dropped straight into `分片\` (people do that). Each
+ * file is one book with a single synthetic chapter (`c00`), so reading works but
+ * there are no chapter rows.
  * @param {string} libraryDir - the library root.
+ * @param {string} [fragmentDir] - the `分片` directory, when it is configured elsewhere.
  * @returns {Promise<{ books: object[], readable: boolean }>} one book per whole PDF.
  */
-async function scanWholeBooks(libraryDir) {
+async function scanWholeBooks(libraryDir, fragmentDir) {
   const found = []
   let readable = false
-  // `整本\` first so it wins when the same stem exists at the root too.
-  for (const [dir, at] of [[join(libraryDir, '整本'), 'whole'], [libraryDir, 'root']]) {
+  // `整本\` first so it wins when the same stem exists elsewhere too, then the
+  // library root, then loose PDFs directly inside `分片\`.
+  for (const [dir, at] of [
+    [join(libraryDir, '整本'), 'whole'],
+    [libraryDir, 'root'],
+    [typeof fragmentDir === 'string' && fragmentDir !== '' ? fragmentDir : join(libraryDir, '分片'), 'fragment'],
+  ]) {
     let names
     try {
       names = await readdir(dir)
@@ -436,6 +467,9 @@ async function scanWholeBooks(libraryDir) {
       title: stem,
       author: '',
       whole: true,
+      // A whole, unsplit PDF never followed the chapter naming either, so it
+      // counts as an unrecognized book and follows the same shelf switch.
+      loose: true,
       chapters: [{
         code: 'c00',
         title: '整本',
@@ -458,7 +492,9 @@ async function scanWholeBooks(libraryDir) {
 export async function loadCatalog(config) {
   const fromIndex = await readIndexFile(config.indexPath)
   const scanned = await scanFragments(config.fragmentDir)
-  const whole = config.libraryDir === undefined ? { books: [], readable: false } : await scanWholeBooks(config.libraryDir)
+  const whole = config.libraryDir === undefined
+    ? { books: [], readable: false }
+    : await scanWholeBooks(config.libraryDir, config.fragmentDir)
   // A library may legitimately hold only whole-book PDFs: `分片` missing is not
   // an error then. It is only a problem when neither layout is readable.
   const readable = scanned.readable || whole.readable

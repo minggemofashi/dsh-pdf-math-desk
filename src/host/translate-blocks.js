@@ -4,11 +4,11 @@
  * The model gets the page image once plus the block list, and returns a JSON
  * object mapping block id to translated Markdown. Cost stays close to the
  * whole-page call; only missing or invalid blocks are retried.
+ *
+ * The caller owns the transport: it stores the page image and passes the same
+ * `chat` function `translate.js` uses, so both paths always call one model.
  * @module dsh-pdf-workbench/translate-blocks
  */
-
-const API_URL = 'https://api.deepseek.com/chat/completions'
-const MODEL = 'deepseek-flash'
 
 function promptFor(target, blocks) {
   const language = target === 'zh' ? 'Simplified Chinese' : 'English'
@@ -18,8 +18,11 @@ function promptFor(target, blocks) {
     `Translate each block below into ${language}.`,
     'Keep every mathematical formula as LaTeX ($...$ inline, $$...$$ display).',
     'Do not translate variable names or theorem numbers.',
+    // The overlay places one translated block back on one original block, so a
+    // merged or split answer silently shifts every box on the page.
+    'Translate each block independently: never merge two blocks and never split one block into two entries.',
+    'Every block id must appear exactly once; keep an empty string for a block with nothing to translate.',
     'Reply with a JSON object only: block id -> translated Markdown string.',
-    'Every block id must appear exactly once; keep empty strings for blocks without text.',
     '',
     'BLOCKS:',
     list,
@@ -79,54 +82,55 @@ function unwrap(parsed) {
 }
 
 /**
- * @param {{ apiKey: string, image: string, blocks: object[], target: 'zh'|'en' }} options - page image and block list.
+ * @param {{ chat: Function, image: object, blocks: object[], target: 'zh'|'en', signal?: AbortSignal, onUsage?: Function }} options - the Host channel, the stored page image, and the block list.
  * @returns {Promise<object[]>} blocks with `md` filled in.
  */
 export async function translatePageBlocks(options) {
-  if (typeof options.apiKey !== 'string' || options.apiKey === '') {
-    throw new Error('缺少 DeepSeek API Key')
+  if (typeof options.chat !== 'function') {
+    throw new Error('翻译通道不可用：请在 设置 → AI 模型 选择翻译模型')
   }
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${options.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptFor(options.target, options.blocks) },
-            { type: 'image_url', image_url: { url: options.image } },
-          ],
-        },
-      ],
-    }),
-  })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`DeepSeek API ${response.status}: ${detail.slice(0, 300)}`)
-  }
-  const data = await response.json()
-  if (typeof options.onUsage === 'function' && data !== null && typeof data === 'object' && data.usage) {
-    const usage = data.usage
-    options.onUsage({
-      input: Number(usage.prompt_tokens) || 0,
-      output: Number(usage.completion_tokens) || 0,
-      total: Number(usage.total_tokens) || 0,
+  /**
+   * One request for one list of blocks.
+   * @param {object[]} list - the blocks to translate.
+   * @returns {Promise<object>} the parsed id → Markdown mapping.
+   */
+  const ask = async list => {
+    const content = await options.chat({
+      prompt: promptFor(options.target, list),
+      image: options.image,
+      signal: options.signal,
+      onUsage: options.onUsage,
     })
+    if (typeof content !== 'string' || content.trim() === '') throw new Error('模型返回了空内容')
+    return unwrap(parseJson(content))
   }
-  const content = data?.choices?.[0]?.message?.content
-  if (typeof content !== 'string' || content.trim() === '') throw new Error('DeepSeek API 返回了空内容')
-  const mapping = unwrap(parseJson(content))
-  const known = new Set(options.blocks.map(block => block.id))
-  const matched = Object.keys(mapping).filter(key => known.has(key))
-  if (matched.length === 0) throw new Error('模型没有按块返回（键名与块 id 不匹配）')
-  return options.blocks.map(block => ({
+
+  const blocks = options.blocks
+  let mapping = await ask(blocks)
+  const ids = new Set(blocks.map(block => block.id))
+  const matched = () => Object.keys(mapping).filter(key => ids.has(key) && typeof mapping[key] === 'string')
+  if (matched().length === 0) {
+    // An answer that names no block id is a format failure, not a partial page:
+    // retry the same list once, then give up so the job falls back to whole-page.
+    mapping = await ask(blocks)
+    if (matched().length === 0) throw new Error('模型没有按块返回（键名与块 id 不匹配）')
+  }
+  // Retry only the blocks this answer skipped. One extra image request beats a
+  // silent hole in the overlay, which used to look like a successful page.
+  const missing = blocks.filter(block => typeof mapping[block.id] !== 'string')
+  if (missing.length > 0) {
+    try {
+      const retried = await ask(missing)
+      for (const block of missing) {
+        if (typeof retried[block.id] === 'string') mapping[block.id] = retried[block.id]
+      }
+    } catch {
+      // Keep the first answer; the caller marks whatever stayed empty.
+    }
+  }
+  return blocks.map(block => ({
     ...block,
     md: typeof mapping[block.id] === 'string' ? mapping[block.id] : '',
+    missing: typeof mapping[block.id] !== 'string',
   }))
 }

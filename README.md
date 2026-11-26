@@ -158,7 +158,8 @@
 - **DSH**：插件版本要求见 `package.json` 的 `engines.dsh`。
 - **可选环境**：
   - Python 3：整章翻译、扫描件文本提取、迁移包 Python 打包；
-  - TeX Live（xelatex、ctex）：Markdown → PDF；
+  - Typst（推荐）：Markdown → PDF 的默认排版引擎。单个可执行文件即可，放在 `%LOCALAPPDATA%\dsh-pdf-workbench\typst\typst.exe`、插件的 `tools\typst\`、PATH，或设 `MATH_DESK_TYPST` 指向它；
+  - TeX Live（xelatex、ctex）：没有 Typst 时的回退排版引擎（也可用 `MATH_DESK_ENGINE=latex` 强制）；
   - 本机 PowerPoint 或 LibreOffice：PPT → PDF；
   - 手写字体可在线下载（约 22 MB）或本地导入，不装时回退系统楷体。
 
@@ -218,6 +219,7 @@ DSH → **Plugins → Add plugin** → 选择本仓库目录 → 重启 DSH。�
 
 - 插件代码：MIT
 - [pdf.js](https://mozilla.github.io/pdf.js/)：Apache-2.0
+- [KaTeX](https://katex.org/)：MIT（叠加文本层的公式渲染）
 - [rough.js](https://roughjs.com/)：MIT（手绘形状）
 - [Excalifont](https://github.com/excalidraw/excalidraw)：SIL OFL 1.1（拉丁手写）
 - [Xiaolai（小赖字体）](https://github.com/lxgw/kose-font)：SIL OFL 1.1（中文手写）

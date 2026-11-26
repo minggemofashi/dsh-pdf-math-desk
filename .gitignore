@@ -11,3 +11,5 @@ Thumbs.db
 desktop.ini
 tools/py.cmd
 tools/node.cmd
+# Local Typst install for the v1.5 D engine (52 MB, never committed).
+tools/typst/

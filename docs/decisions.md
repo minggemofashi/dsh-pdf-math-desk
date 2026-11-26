@@ -388,3 +388,28 @@
 
 - 保留：`AGENTS.md` §2–§4、本文件、`docs/todo.md` 单元格式、`docs/TESTING.md`、测试脚本、历史 reviews/tests、产品需求文档。
 - 回滚：角色文档在 git 历史；旧 profile 备份见 `.dsh-scratch/profile-backup-20261125-cordis.patch.yml`；需要时按 DEC-0001 恢复九角色。
+
+## DEC-0013 · Typst 分发：按需下载 + 已装优先
+
+- **日期**：2026-11-26
+- **状态**：已接受
+- **决策者**：用户
+- **背景**：v1.5 D 把叠加与读版内核换成 Typst，`typst.exe` 为 52,487,680 B；插件包（含 pdf.js、KaTeX）只有几 MB，随包分发会让安装包翻十倍。用户 2026-11-26 00:45 拍板。
+
+### 决策
+
+1. **按需下载 + 已装优先**：解析顺序仍是 `MATH_DESK_TYPST` → `tools/typst/` → `%LOCALAPPDATA%\dsh-pdf-workbench\typst\` → `PATH`；都没有时由设置页提供一键下载（官方 Windows x64 构建，Typst ≥0.15，SHA256 校验，落到 `%LOCALAPPDATA%\dsh-pdf-workbench\typst\typst.exe`）。
+2. **不随包**：`build-dist.ps1` 继续剔除 `tools\typst`。
+3. **始终可回退**：下载失败或用户强制 `MATH_DESK_ENGINE=latex` 时走原 LaTeX 内核，翻译/叠加/读版功能不中断。
+4. **可见**：设置→环境 显示当前引擎、版本、来源与回退原因，不让用户猜。
+5. 新增 `/pdfdesk/engine*` 路由属受保护契约，动手前先出方案等用户确认。
+
+### 后果
+
+- 新用户首次启用 Typst 需要一次联网下载；离线机器只能用 LaTeX（功能可用，但慢且依赖 TeX Live）。
+- 需要维护官方构建的 SHA256 与版本探测；Typst 升级时要同步更新校验值。
+
+### 被否决的方案
+
+- **随包分发**：+52MB，用户明确不要。
+- **只支持用户自装**：门槛高（winget/cargo），新手无法自助启用。

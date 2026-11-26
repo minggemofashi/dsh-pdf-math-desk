@@ -19,6 +19,9 @@ import sys
 
 import fitz
 
+# The Host picks the engine; the overlay renderer name arrives in the env.
+OVERLAY_SCRIPT = os.environ.get("MATH_DESK_OVERLAY_SCRIPT", "").strip() or "md2overlay.py"
+
 
 def page_markdown(page_number, cache_dir):
     path = os.path.join(cache_dir, "page-%03d.md" % page_number)
@@ -196,7 +199,7 @@ def page_pdf(page_number, size, blocks, segments, font_class, work, tools_dir):
         json.dump(synthetic, handle, ensure_ascii=False)
     page_path = os.path.join(work, "page-%03d.pdf" % page_number)
     subprocess.run(
-        [sys.executable, os.path.join(tools_dir, "md2overlay.py"), blocks_path, page_path,
+        [sys.executable, os.path.join(tools_dir, OVERLAY_SCRIPT), blocks_path, page_path,
          str(size[0]), str(size[1]), font_class],
         check=True,
     )

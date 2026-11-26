@@ -239,6 +239,158 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Whether the shelf shows whole, unsplit books. */
+    const SHOW_WHOLE_KEY = 'pdfdesk:show-whole'
+    /** Whether the shelf shows books split into chapters but named by hand. */
+    const SHOW_LOOSE_KEY = 'pdfdesk:show-loose'
+
+    /**
+     * Read one shelf visibility switch. Both default to hidden: the shelf stays
+     * about properly named books until the reader asks for the rest.
+     * @param {string} key - the storage key.
+     * @returns {boolean} whether that kind of book is shown.
+     */
+    function readShelfFlag(key) {
+      try {
+        return window.localStorage.getItem(key) === '1'
+      } catch {
+        return false
+      }
+    }
+
+    /**
+     * Save one shelf visibility switch.
+     * @param {string} key - the storage key.
+     * @param {boolean} next - the new value.
+     * @returns {void}
+     */
+    function writeShelfFlag(key, next) {
+      try {
+        window.localStorage.setItem(key, next ? '1' : '0')
+      } catch {
+        // Storage unavailable: the choice still applies this visit.
+      }
+    }
+
+    /** Opt-in for Host-created reader sessions (model at creation). */
+    const HOST_SESSION_KEY = 'pdfdesk:ai-session-host'
+
+    /**
+     * Whether reader sessions are created by the Host so they can carry a model.
+     * Off by default: a Host-created session has no DSH workspace membership yet,
+     * which breaks the workspace picker and the reader's prompt prefill.
+     * @returns {boolean} true when the opt-in is set.
+     */
+    function readHostSessionOptIn() {
+      try {
+        return window.localStorage.getItem(HOST_SESSION_KEY) === '1'
+      } catch {
+        return false
+      }
+    }
+
+    /** The stored model choice of one AI feature, keyed by feature. */
+    const AI_CHOICE_KEYS = { translate: 'pdfdesk:ai:translate', session: 'pdfdesk:ai:session', other: 'pdfdesk:ai:other' }
+
+    /**
+     * The model choice one AI feature remembers.
+     * @param {string} kind - translate | session | other.
+     * @returns {{ mode: 'follow' } | { mode: 'pinned', provider: string, model: string }} the choice.
+     */
+    function readAiChoice(kind) {
+      const key = AI_CHOICE_KEYS[kind]
+      if (key === undefined) return { mode: 'follow' }
+      try {
+        const raw = window.localStorage.getItem(key)
+        if (raw === null || raw === '') return { mode: 'follow' }
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object' || parsed.mode !== 'pinned') return { mode: 'follow' }
+        const provider = typeof parsed.provider === 'string' ? parsed.provider : ''
+        const model = typeof parsed.model === 'string' ? parsed.model : ''
+        return provider === '' || model === '' ? { mode: 'follow' } : { mode: 'pinned', provider, model }
+      } catch {
+        return { mode: 'follow' }
+      }
+    }
+
+    /**
+     * Remember the model choice of one AI feature.
+     * @param {string} kind - translate | session | other.
+     * @param {object} choice - the choice to store.
+     * @returns {void}
+     */
+    function writeAiChoice(kind, choice) {
+      const key = AI_CHOICE_KEYS[kind]
+      if (key === undefined) return
+      try {
+        window.localStorage.setItem(key, JSON.stringify(choice !== null && choice !== undefined && choice.mode === 'pinned'
+          ? { mode: 'pinned', provider: choice.provider, model: choice.model }
+          : { mode: 'follow' }))
+      } catch {
+        // Storage unavailable: the in-memory choice still applies this visit.
+      }
+    }
+
+    /** One shared read of the model inventory, so the settings tab and the reader agree. */
+    let aiCatalogPromise = null
+
+    /**
+     * The model inventory DSH exposes. Read-only: the route never selects or
+     * writes a model, so calling it cannot change what any session uses.
+     * @param {boolean} [refresh] - drop the cached copy first.
+     * @returns {Promise<{ providers: object[], default: object | null, failures: object[] }>} the catalogue.
+     */
+    function loadAiCatalog(refresh) {
+      if (aiCatalogPromise === null || refresh === true) {
+        aiCatalogPromise = request('GET', 'ai-catalog')
+          .then(payload => (payload !== null && typeof payload === 'object'
+            ? {
+              providers: Array.isArray(payload.providers) ? payload.providers : [],
+              default: payload.default !== null && typeof payload.default === 'object' ? payload.default : null,
+              failures: Array.isArray(payload.failures) ? payload.failures : [],
+            }
+            : { providers: [], default: null, failures: [] }))
+          .catch(error => {
+            aiCatalogPromise = null
+            throw error
+          })
+      }
+      return aiCatalogPromise
+    }
+
+    /**
+     * Whether one provider/model pair can read page images.
+     * @param {object | null} catalog - the model inventory.
+     * @param {string} provider - provider id.
+     * @param {string} model - model id.
+     * @returns {boolean} true when the model accepts images.
+     */
+    function modelReadsImages(catalog, provider, model) {
+      if (catalog === null || catalog === undefined) return false
+      const row = (catalog.providers ?? []).find(item => item !== null && item.id === provider)
+      if (row === undefined) return false
+      const entry = (row.models ?? []).find(item => item !== null && item.id === model)
+      return entry !== undefined && Array.isArray(entry.modalities) && entry.modalities.includes('image')
+    }
+
+    /**
+     * The exact model one AI feature resolves to right now: the live default for
+     * `follow`, or the stored pin. Null when the inventory has no answer.
+     * @param {object | null} catalog - the model inventory.
+     * @param {string} kind - translate | session | other.
+     * @returns {{ provider: string, model: string, images: boolean } | null} the resolved model.
+     */
+    function resolvedAiModel(catalog, kind) {
+      if (catalog === null || catalog === undefined) return null
+      const choice = readAiChoice(kind)
+      const selection = choice.mode === 'pinned' ? { provider: choice.provider, model: choice.model } : catalog.default
+      if (selection === null || selection === undefined) return null
+      const provider = String(selection.provider ?? '')
+      const model = String(selection.model ?? '')
+      if (provider === '' || model === '') return null
+      return { provider, model, images: modelReadsImages(catalog, provider, model) }
+    }
+
     /**
      * Remember the split-tool conversation of one library.
      * @param {string} libraryId - library id.
@@ -956,14 +1108,17 @@ window.__ModuleLoader__.load({
       translatingResume: '正在补译缺失页…',
       translateCancelled: '翻译已取消',
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
-      translateCostConfirm: '翻译会调用 DeepSeek 视觉模型并按页计费：整章通常消耗数万到数十万 token，费用由你的 API 账户承担。对齐模式还会略高（约 1.3 倍）。继续吗？',
+      translateCostConfirm: '翻译会调用你在「设置 → AI 模型」里为整章翻译选的模型，按页计费：整章通常消耗数万到数十万 token，费用记在对应供应商的账户上。对齐模式还会略高（约 1.3 倍）。继续吗？',
+      translateAiDisclaimer: '译文由 AI 生成：数学公式的识别与排版可能不完整，请对照原文核对后再使用。',
+      translateStorageHint: '另外，每一页的图会存进 DSH 附件库作为模型输入（约 0.3 MB/页；本章 {pages} 页约 {mb} MB），目前不会自动清理。',
       translating: '翻译中…',
       translateDone: '已生成',
       translateDonePartial: '翻译完成，但有 {n} 页没有返回译文（第 {pages} 页），已用 {tokens} tokens；可以点「补译缺失页」只补这几页',
       translateBlocksFallback: '第 {pages} 页没按块翻译，叠加层只能整页重排、对不齐；可以在叠加里按段落重建，或重新翻译本章按块对齐',
+      translateBlocksMissing: '有 {n} 页存在没译出来的块（叠加层那里会是空的），可以点「补译缺失页」或重译这几页',
       translateTokens: '共 {n} tokens',
       translateFailed: '翻译失败',
-      translateHint: '把本章翻成另一种语言（需要 DeepSeek API Key）',
+      translateHint: '把本章翻成另一种语言（模型在 设置 → AI 模型 里选；译文的公式识别可能不完整，请对照原文核对）',
       translateFor: '翻译为：',
       langZh: '中文',
       langEn: 'English',
@@ -1070,6 +1225,14 @@ window.__ModuleLoader__.load({
       envPythonSize: '约 25 MB',
       envTex: 'TeX Live（xelatex + ctex）',
       envTexSize: '约 5 GB',
+      envEngine: '排版引擎',
+      envEngineTypst: 'Typst {version}',
+      envEngineMissing: '未安装 Typst，当前用 LaTeX 排版',
+      envEngineForced: '已强制使用 LaTeX（MATH_DESK_ENGINE=latex）',
+      envEngineInstall: '下载 Typst（约 21 MB）',
+      envEngineInstalling: '正在下载…',
+      envEngineInstalled: '已安装，重启 DSH 生效',
+      envEngineFailed: '安装失败：{reason}',
       settingsFeatures: '特殊功能',
       toolRail: '工具条位置',
       railLeft: '左',
@@ -1080,6 +1243,42 @@ window.__ModuleLoader__.load({
       settingsTabKeys: '快捷键',
       settingsTabEnv: '环境',
       settingsTabAbout: '关于',
+      settingsTabAi: 'AI 模型',
+      settingsAiHeading: '模型',
+      settingsAiDefault: '当前 DSH 默认',
+      settingsAiNoDefault: '尚未配置默认模型',
+      settingsAiLoading: '正在读取模型列表…',
+      settingsAiFailed: '读取模型列表失败：',
+      settingsAiComing: '本页只读取：不会修改 DSH 的默认模型，也不会改变现有会话用的模型。翻译与会话的选择在接通后启用。',
+      settingsAiTranslate: '整章翻译',
+      settingsAiSession: '阅读器会话',
+      settingsAiOther: '其它 AI 调用',
+      settingsAiFollow: '跟随 DSH 默认',
+      settingsAiOn: '开',
+      settingsAiOff: '关',
+      settingsAiFollowHint: '打开时实时使用 DSH 当前默认；关闭后用右侧选定的模型',
+      settingsAiHint: '每项单独保存；不写入 DSH 的默认模型，也不影响其它会话',
+      settingsAiStorage: '翻译会把每页图片存进 DSH 附件库（约 0.3 MB/页，100 页约 30 MB），目前不会自动清理。',
+      settingsAiDisclaimer: '翻译由 AI 完成，数学公式的识别可能不完整；重要内容请对照原文核对。',
+      settingsAiProbe: '自检',
+      settingsAiProbeHint: '用「阅读器会话」的选择建一个临时会话：创建之后 DSH 的全局默认必须保持不变；临时会话会自动归档',
+      settingsAiProbeRun: '运行自检',
+      settingsAiProbeOk: '创建成功；全局默认未变',
+      settingsAiProbeChanged: '全局默认被改动了',
+      settingsAiProbeUnknown: '自检返回不完整，请查看日志',
+      settingsAiProbeFailed: '自检失败：',
+      settingsAiPending: '会话这一行暂未生效：Host 建的会话还没有 DSH 工作区归属，会让工作区重选、预填失效，正在修；翻译这一行已经接上。',
+      looseShow: '显示未识别书籍',
+      looseHide: '隐藏未识别书籍',
+      looseHidden: '有 {n} 本未识别书籍（文件名不符合命名规则），仍可打开',
+      looseAllShown: '未识别书籍已全部显示',
+      looseOnlyEmpty: '这里只有未识别书籍，当前被隐藏',
+      shelfWhole: '整本书',
+      shelfLoose: '未按命名拆分',
+      shelfShown: '：显示',
+      shelfHidden: '：隐藏',
+      shelfWholeHint: '点一下切换：整本、未拆分的 PDF 是否出现在书库',
+      shelfLooseHint: '点一下切换：已拆成多份但文件名不规范的 PDF 是否出现在书库',
       settingsNotesTitle: '笔记与备份',
       sharedPrefixClear: '清除章节共享前缀',
       sharedPrefixClearHint: '删除各章提取文本、基础会话与模式分支映射（.pdfdesk/cache）；PDF、笔记和已有会话不受影响',
@@ -1109,6 +1308,13 @@ window.__ModuleLoader__.load({
       dataFonts: '包含手写字体（约 22 MB）',
       dataProjcache: '包含会话投影缓存（可重建，体积大）',
       dataSettings: '包含浏览器设置（阅读宽度/快捷键等，导出为 settings.json）',
+      dataCacheTitle: '翻译缓存',
+      dataCacheHint: '整章翻译会逐页缓存 Markdown 与块数据，用于断点续译和重建叠加层；译文 PDF 生成后它们就没用了，可以清掉。产物（_translated.pdf / _overlay.pdf）不会被删除。',
+      dataCacheClear: '清除翻译缓存',
+      dataCacheConfirm: '除正在进行的翻译外，所有逐页缓存都会被删除；已生成的译文 PDF 不受影响。继续吗？',
+      dataCacheDone: '已清除 {n} 项缓存',
+      dataCacheRunning: '跳过 {n} 个正在进行的任务',
+      dataCacheFailed: '清除失败：',
       dataImportTitle: '导入迁移包',
       dataImportHint: '填写本机 ZIP 路径；合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
       dataPath: 'ZIP 路径',
@@ -1163,16 +1369,19 @@ window.__ModuleLoader__.load({
       shortcutScrollDown: '向下滚动',
       shortcutClose: '关闭阅读器',
       apiKeyTitle: 'DeepSeek API Key（翻译用）',
+      apiKeyDeprecated: '翻译已改走 DSH 模型（设置 → AI 模型），这一项不再需要；保留仅为兼容旧配置。',
       apiKeyConfigured: '已配置',
       apiKeyMissing: '未配置',
       apiKeySave: '保存',
       envReady: '已就绪：md→PDF、翻译和导出可用',
       envMissing: '缺少 Python / TeX：md→PDF、翻译、导出会受限',
-      envImpact: '缺少 Python：md→PDF、翻译、导出不可用；缺少 TeX：md→PDF、翻译译文合成不可用；翻译还需要 API Key。',
+      envImpact: '缺少 Python：md→PDF、翻译、导出不可用；缺少 TeX：md→PDF、翻译译文合成不可用；翻译还需要一个支持读图的 AI 模型（设置 → AI 模型）。',
       envPromptTitle: '需要环境',
       envNeedPython: 'Python 3',
       envNeedTex: 'TeX Live（xelatex、ctex）',
       envNeedKey: 'DeepSeek API Key',
+      envNeedTranslateModel: '支持图片输入的 AI 模型',
+      envPromptAiModels: '选择 AI 模型',
       envUseRender: 'Markdown 转 PDF',
       envUseTranslate: '整章翻译与译文合成',
       envUseExport: '导出本页 / 整章',
@@ -1312,7 +1521,8 @@ window.__ModuleLoader__.load({
       libraryAt: '库目录：{dir}',
       skipped: '未识别（未按章命名）：{dir}（{n} 个 PDF）',
       bookUnparsed: '{title}：{n} 个 PDF 未按章命名',
-      partialHint: '{files} 个 PDF 没按章命名，已跳过；清单见页脚',
+      partialHint: '{files} 个 PDF 没按章命名，已作为可读书籍纳入；用书库上方的两个开关决定是否显示',
+      hintDismiss: '点击关闭',
       problemUnreadable: '读不到书库（分片目录和整本目录都不存在），工作台列不出书。请确认库目录仍在（可拔掉的外置盘？），然后重试。',
       'kind.preface': '前置',
       'kind.appendix': '附录',
@@ -1632,14 +1842,17 @@ window.__ModuleLoader__.load({
       translatingResume: 'Filling in the missing pages…',
       translateCancelled: 'Translation cancelled',
       translateOverwriteConfirm: 'This chapter already has a translation; translating again overwrites it. Continue?',
-      translateCostConfirm: 'Translation calls the DeepSeek vision model page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to your API account. Alignment mode is slightly higher (~1.3x). Continue?',
+      translateCostConfirm: 'Translation calls the model you chose for whole-chapter translation in Settings → AI models, page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to that provider. Alignment mode is slightly higher (~1.3x). Continue?',
+      translateStorageHint: 'Each page image is also stored in the DSH attachment library as model input (~0.3 MB per page; this chapter’s {pages} pages ≈ {mb} MB). Nothing deletes them automatically.',
+      translateAiDisclaimer: 'The translation is AI-generated: formula recognition and typesetting may be incomplete — check it against the original before relying on it.',
       translating: 'Translating…',
       translateDone: 'Created',
       translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
       translateBlocksFallback: 'Page(s) {pages} were translated whole-page, so the overlay can only reflow and will not line up; rebuild it by paragraph in the overlay, or re-translate the chapter for block alignment',
+      translateBlocksMissing: '{n} page(s) came back with untranslated blocks (they stay empty in the overlay); use “fill missing pages” or translate those pages again',
       translateTokens: '{n} tokens',
       translateFailed: 'Translation failed',
-      translateHint: 'Translate this chapter into another language (needs a DeepSeek API key)',
+      translateHint: 'Translate this chapter into another language (model chosen in Settings → AI models; formula recognition may be incomplete — check the original)',
       translateFor: 'Translate to:',
       langZh: 'Chinese',
       langEn: 'English',
@@ -1747,6 +1960,14 @@ window.__ModuleLoader__.load({
       envPythonSize: '~25 MB',
       envTex: 'TeX Live (xelatex + ctex)',
       envTexSize: '~5 GB',
+      envEngine: 'Typesetting engine',
+      envEngineTypst: 'Typst {version}',
+      envEngineMissing: 'Typst not installed; LaTeX typesets for now',
+      envEngineForced: 'LaTeX forced by MATH_DESK_ENGINE=latex',
+      envEngineInstall: 'Download Typst (~21 MB)',
+      envEngineInstalling: 'Downloading…',
+      envEngineInstalled: 'Installed; restart DSH to use it',
+      envEngineFailed: 'Install failed: {reason}',
       settingsFeatures: 'Features',
       toolRail: 'Tool rail',
       railLeft: 'Left',
@@ -1757,6 +1978,42 @@ window.__ModuleLoader__.load({
       settingsTabKeys: 'Shortcuts',
       settingsTabEnv: 'Toolchain',
       settingsTabAbout: 'About',
+      settingsTabAi: 'AI models',
+      settingsAiHeading: 'Models',
+      settingsAiDefault: 'Current DSH default',
+      settingsAiNoDefault: 'No default model configured',
+      settingsAiLoading: 'Reading the model catalog…',
+      settingsAiFailed: 'Could not read the model catalog: ',
+      settingsAiComing: 'Read-only: this page never changes the DSH default or the model an existing session uses. Choosing a model for translation and sessions arrives with the wiring.',
+      settingsAiTranslate: 'Chapter translation',
+      settingsAiSession: 'Reader sessions',
+      settingsAiOther: 'Other AI calls',
+      settingsAiFollow: 'Follow the DSH default',
+      settingsAiOn: 'on',
+      settingsAiOff: 'off',
+      settingsAiFollowHint: 'On: use the DSH default as it is right now. Off: use the model picked on the right',
+      settingsAiHint: 'Stored per feature; never written into the DSH default and never applied to other conversations',
+      settingsAiStorage: 'Translation stores every page image in the DSH attachment library (~0.3 MB per page; ~30 MB per 100 pages). Nothing deletes them automatically.',
+      settingsAiDisclaimer: 'Translation is AI-generated and may misrecognise formulas; check important content against the original.',
+      settingsAiProbe: 'Self-check',
+      settingsAiProbeHint: 'Creates a throwaway session with the reader-session choice and checks that the DSH default did not move; the session is archived automatically',
+      settingsAiProbeRun: 'Run self-check',
+      settingsAiProbeOk: 'Created; the default did not move',
+      settingsAiProbeChanged: 'The default moved',
+      settingsAiProbeUnknown: 'The self-check returned an incomplete result; see the log',
+      settingsAiProbeFailed: 'Self-check failed: ',
+      settingsAiPending: 'The session row is not in effect yet: a Host-created session has no DSH workspace membership, which makes the workspace picker reappear and breaks the prefilled prompt. The translation row is wired up.',
+      looseShow: 'Show unrecognized books',
+      looseHide: 'Hide unrecognized books',
+      looseHidden: '{n} unrecognized book(s) are hidden; their files are still readable',
+      looseAllShown: 'Every unrecognized book is shown',
+      looseOnlyEmpty: 'Only unrecognized books are here, and they are hidden',
+      shelfWhole: 'Whole books',
+      shelfLoose: 'Split but hand-named',
+      shelfShown: ': shown',
+      shelfHidden: ': hidden',
+      shelfWholeHint: 'Click to switch whether whole, unsplit PDFs appear in the library',
+      shelfLooseHint: 'Click to switch whether PDFs split into chapters but named by hand appear in the library',
       settingsNotesTitle: 'Notes and backup',
       sharedPrefixClear: 'Clear chapter shared prefix',
       sharedPrefixClearHint: 'Delete extracted text, base-session and branch maps (.pdfdesk/cache). PDFs, notes and existing sessions stay.',
@@ -1787,6 +2044,13 @@ window.__ModuleLoader__.load({
       dataProjcache: 'Include the session projection cache (rebuildable, large)',
       dataSettings: 'Include browser settings (reading width, shortcuts…) as settings.json',
       dataImportTitle: 'Import a backup',
+      dataCacheTitle: 'Translation cache',
+      dataCacheHint: 'Whole-chapter translation caches per-page Markdown and block data for resuming and for rebuilding the overlay; once the translated PDF exists they are dead weight. Translated PDFs (_translated.pdf / _overlay.pdf) are not deleted.',
+      dataCacheClear: 'Clear translation cache',
+      dataCacheConfirm: 'Every per-page cache except a translation that is still running will be deleted. Translated PDFs are not touched. Continue?',
+      dataCacheDone: 'Cleared {n} cache entries',
+      dataCacheRunning: 'skipped {n} running job(s)',
+      dataCacheFailed: 'Clear failed: ',
       dataImportHint: 'Enter the ZIP path on this machine. Merge never overwrites: conflicts become *.imported-<time>.',
       dataPath: 'ZIP path',
       dataInspect: 'Inspect',
@@ -1840,16 +2104,19 @@ window.__ModuleLoader__.load({
       shortcutScrollDown: 'Scroll down',
       shortcutClose: 'Close the reader',
       apiKeyTitle: 'DeepSeek API key (translation)',
+      apiKeyDeprecated: 'Translation now runs through DSH models (Settings → AI models); this key is no longer used and is kept only for older configs.',
       apiKeyConfigured: 'configured',
       apiKeyMissing: 'not configured',
       apiKeySave: 'Save',
       envReady: 'ready: md-to-PDF, translation and export are available',
       envMissing: 'Python / TeX missing: md-to-PDF, translation and export are limited',
-      envImpact: 'Without Python: md-to-PDF, translation and export are unavailable; without TeX: md-to-PDF and translation composition are unavailable; translation also needs an API key.',
+      envImpact: 'Without Python: md-to-PDF, translation and export are unavailable; without TeX: md-to-PDF and translation composition are unavailable; translation also needs an image-capable AI model (Settings → AI models).',
       envPromptTitle: 'Environment required',
       envNeedPython: 'Python 3',
       envNeedTex: 'TeX Live (xelatex, ctex)',
       envNeedKey: 'DeepSeek API key',
+      envNeedTranslateModel: 'an AI model that can read page images',
+      envPromptAiModels: 'Choose an AI model',
       envUseRender: 'Markdown-to-PDF',
       envUseTranslate: 'whole-chapter translation and PDF composition',
       envUseExport: 'exporting a page or chapter',
@@ -1989,7 +2256,8 @@ window.__ModuleLoader__.load({
       libraryAt: 'Library: {dir}',
       skipped: 'Not recognized (not chapter-named): {dir} ({n} PDFs)',
       bookUnparsed: '{title}: {n} PDFs are not chapter-named',
-      partialHint: '{files} PDFs are not chapter-named and were skipped; the list is in the footer',
+      partialHint: '{files} PDFs are not chapter-named; they are included as readable entries — use the two switches above to show or hide them',
+      hintDismiss: 'Click to dismiss',
       problemUnreadable: 'The library could not be read (neither the split folder nor the whole-book folder exists), so no book can be listed. Check that the library is still there (an unplugged drive?), then retry.',
       'kind.preface': 'Front matter',
       'kind.appendix': 'Appendix',
@@ -2881,6 +3149,24 @@ window.__ModuleLoader__.load({
      * @returns {Promise<string>} the new session id.
      */
     async function createSessionId(payload) {
+      // The Host can attach a model at creation, but a Host-created session is
+      // not registered in a DSH workspace, so the workspace picker reappears and
+      // the reader's prefilled prompt has no composer to land in. Keep the
+      // browser path (workspace + prefill) as the default and opt into the Host
+      // path only when that linkage is fixed (`pdfdesk:ai-session-host=1`).
+      if (readHostSessionOptIn()) {
+        try {
+          const created = await request('POST', 'ai-session', {
+            ...(payload === null || payload === undefined ? {} : payload),
+            choice: readAiChoice('session'),
+          })
+          if (created !== null && created !== undefined && typeof created.sessionId === 'string' && created.sessionId !== '') {
+            return created.sessionId
+          }
+        } catch (error) {
+          if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[pdfdesk] model session failed', error)
+        }
+      }
       const sessions = sessionService()
       if (sessions !== null && typeof sessions.create === 'function') {
         return await sessions.create(payload)
@@ -4178,12 +4464,14 @@ window.__ModuleLoader__.load({
     function EnvPrompt(props) {
       const kind = props.kind
       const python = props.envTools === undefined || props.envTools.python !== true
-      const tex = (kind === 'render' || kind === 'translate') && (props.envTools === undefined || props.envTools.tex !== true)
-      const key = kind === 'translate' && (props.envTools === undefined || props.envTools.apiKey !== true)
+      const tex = (kind === 'render' || kind === 'translate' || kind === 'translate-model') && (props.envTools === undefined || props.envTools.tex !== true)
+      // Translation no longer needs the DeepSeek key: page images go through the
+      // Host model channel, so what can be missing is an image-capable model.
+      const model = kind === 'translate-model'
       const needs = [
         python ? format('envNeedPython') : '',
         tex ? format('envNeedTex') : '',
-        key ? format('envNeedKey') : '',
+        model ? format('envNeedTranslateModel') : '',
       ].filter(Boolean)
       const useKey = kind === 'render' ? 'envUseRender' : kind === 'export' ? 'envUseExport' : 'envUseTranslate'
       const open = url => {
@@ -4210,12 +4498,12 @@ window.__ModuleLoader__.load({
             key: 'tex', variant: 'outline',
             onClick: () => open(TEXLIVE_URL),
           }, format('envPromptDownloadTex')) : null,
-          key ? h(KitButton, {
-            key: 'key', variant: 'primary',
+          model ? h(KitButton, {
+            key: 'model', variant: 'primary',
             onClick: () => {
               if (typeof props.onOpenSettings === 'function') props.onOpenSettings()
             },
-          }, format('envPromptKey')) : null,
+          }, format('envPromptAiModels')) : null,
         ],
       })
     }
@@ -4520,6 +4808,58 @@ window.__ModuleLoader__.load({
     })
 
     /**
+     * Typesetting engine status and the on-demand Typst install (DEC-0013).
+     * The install button only shows when Typst is not in charge; the note says a
+     * restart is needed because the Host resolves the engine once at start-up.
+     * @returns {import('react').ReactElement} the settings row.
+     */
+    function EngineStatusRow() {
+      const [info, setInfo] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState('')
+      const [error, setError] = useState('')
+      const load = () => {
+        void request('GET', 'engine')
+          .then(payload => { setError(''); setInfo(payload) })
+          .catch(failure => {
+            // Keep the install button available even when the probe fails: the
+            // POST does not depend on it, and a dead row hides the only fix.
+            setError(String(failure && failure.message ? failure.message : failure))
+            setInfo({ engine: 'latex', source: 'missing', version: '', installed: false })
+          })
+      }
+      useEffect(() => { load() }, [])
+      const engine = info === null ? '' : String(info.engine ?? '')
+      const source = info === null ? '' : String(info.source ?? '')
+      const version = info === null ? '' : String(info.version ?? '')
+      const label = engine === 'typst'
+        ? format('envEngineTypst', { version: version === '' ? '?' : version })
+        : source === 'forced' ? format('envEngineForced') : format('envEngineMissing')
+      return h('div', { className: 'md-settings-row' },
+        h('span', null, `${format('envEngine')}：${label}`),
+        busy
+          ? h('span', { className: 'md-shelf-sub' }, format('envEngineInstalling'))
+          : info === null || engine !== 'typst'
+            ? h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => {
+                setBusy(true)
+                setNote('')
+                void request('POST', 'engine')
+                  .then(() => { setNote(format('envEngineInstalled')); load() })
+                  .catch(failure => setNote(format('envEngineFailed', {
+                    reason: String(failure && failure.message ? failure.message : failure),
+                  })))
+                  .finally(() => setBusy(false))
+              },
+            }, format('envEngineInstall'))
+            : null,
+        note === '' ? null : h('span', { className: 'md-shelf-sub' }, note),
+        error === '' ? null : h('span', { className: 'md-shelf-sub' }, error),
+      )
+    }
+
+    /**
      * Modal adapter: host Modal owns the portal, focus trap, Escape and scrim;
      * the fallback keeps the workbench shell.
      */
@@ -4678,6 +5018,31 @@ window.__ModuleLoader__.load({
           })
           .catch(() => setFont({ installed: false, bytes: 0 }))
       }, [])
+      // The model inventory is read only when the AI tab opens, so the rest of
+      // the dialog stays cheap. The route is read-only by contract.
+      const [aiCatalog, setAiCatalog] = useState(null)
+      const [aiCatalogError, setAiCatalogError] = useState('')
+      useEffect(() => {
+        if (tab !== 'ai' || aiCatalog !== null) return
+        loadAiCatalog()
+          .then(value => setAiCatalog(value))
+          .catch(error => setAiCatalogError(error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)))
+      }, [tab, aiCatalog])
+      // One stored choice per AI feature, plus the last self-check result.
+      const [aiChoices, setAiChoices] = useState(() => ({
+        translate: readAiChoice('translate'),
+        session: readAiChoice('session'),
+        other: readAiChoice('other'),
+      }))
+      const [aiProbe, setAiProbe] = useState(null)
+      const [aiProbeBusy, setAiProbeBusy] = useState(false)
+      const chooseAi = (kind, choice) => {
+        writeAiChoice(kind, choice)
+        setAiChoices(current => ({ ...current, [kind]: choice }))
+        // The reader's translation gate reads the same stored choice; tell the
+        // shell so a pinned model takes effect without a page reload.
+        if (typeof props.onAiChange === 'function') props.onAiChange()
+      }
       const fontAction = async (action, data) => {
         setFontBusy(true)
         setFontNote('')
@@ -4805,6 +5170,28 @@ window.__ModuleLoader__.load({
           setDataBusy('')
         }
       }
+      // The per-page translation caches are only useful while a chapter is being
+      // translated or resumed; the produced PDFs do not need them. One button
+      // beats asking the user to find ~/.dsh/pdfdesk/translation by hand.
+      const [cacheBusy, setCacheBusy] = useState(false)
+      const [cacheNote, setCacheNote] = useState('')
+      const clearTranslationCache = async () => {
+        if (cacheBusy) return
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('dataCacheConfirm'))) return
+        setCacheBusy(true)
+        setCacheNote('')
+        try {
+          const payload = await request('POST', 'clear-translation-cache')
+          const removed = payload !== null && typeof payload === 'object' ? Number(payload.removed) || 0 : 0
+          const skipped = payload !== null && typeof payload === 'object' ? Number(payload.skipped) || 0 : 0
+          setCacheNote(`${format('dataCacheDone', { n: removed })}${skipped > 0 ? `（${format('dataCacheRunning', { n: skipped })}）` : ''}`)
+        } catch (error) {
+          setCacheNote(`${format('dataCacheFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        } finally {
+          setCacheBusy(false)
+        }
+      }
       const [bookPath, setBookPath] = useState('')
       const [bookTarget, setBookTarget] = useState('fragments')
       const [bookSubdir, setBookSubdir] = useState('')
@@ -4914,6 +5301,7 @@ window.__ModuleLoader__.load({
         { id: 'keys', label: format('settingsTabKeys') },
         { id: 'env', label: format('settingsTabEnv') },
         { id: 'data', label: format('settingsTabData') },
+        { id: 'ai', label: format('settingsTabAi') },
         { id: 'about', label: format('settingsTabAbout') },
       ]
       const reading = h(React.Fragment, null,
@@ -5129,11 +5517,13 @@ window.__ModuleLoader__.load({
             h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
             envTools.tex ? null : h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
           ),
+          h(EngineStatusRow),
           h('p', { className: 'md-shelf-sub' }, format('envImpact')),
           h('p', { className: 'md-shelf-sub' }, `${format('apiKeyTitle')}：${envTools.apiKey ? format('apiKeyConfigured') : format('apiKeyMissing')}`)
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('apiKeyDeprecated')),
           h('p', { className: 'md-shelf-sub' }, apiKeyNote),
           h('div', { className: 'md-settings-row' },
             h(KitInput, {
@@ -5262,6 +5652,20 @@ window.__ModuleLoader__.load({
               }))
         ),
         h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('dataCacheTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('dataCacheHint')),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: cacheBusy,
+              onClick: () => { void clearTranslationCache() },
+            }, format('dataCacheClear')),
+            cacheNote === ''
+              ? null
+              : h('span', { className: 'md-settings-note' }, cacheNote)
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataImportTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataImportHint')),
           h('div', { className: 'md-settings-row' },
@@ -5366,6 +5770,123 @@ window.__ModuleLoader__.load({
               }))
         )
       )
+      // One row per AI feature. Each row follows the deployment default or pins
+      // one model from the providers DSH actually has; the choice is stored per
+      // feature, never written back to DSH.
+      const aiRows = [
+        { kind: 'translate', label: format('settingsAiTranslate'), imagesOnly: true },
+        { kind: 'session', label: format('settingsAiSession'), imagesOnly: false },
+        { kind: 'other', label: format('settingsAiOther'), imagesOnly: false },
+      ]
+      const aiValue = (provider, model) => `${provider}|${model}`
+      const aiPane = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('settingsAiHeading')),
+          aiCatalog === null
+            ? h('p', { className: 'md-settings-note' },
+              aiCatalogError === '' ? format('settingsAiLoading') : `${format('settingsAiFailed')}${aiCatalogError}`)
+            : h(React.Fragment, null,
+              h('div', { className: 'md-settings-row' },
+                h('span', null, format('settingsAiDefault')),
+                h('span', { className: 'md-settings-note' },
+                  aiCatalog.default === null
+                    ? format('settingsAiNoDefault')
+                    : `${aiCatalog.default.provider} / ${aiCatalog.default.model}`)
+              ),
+              h('p', { className: 'md-settings-note' }, format('settingsAiHint')),
+              h('p', { className: 'md-settings-note' }, format('settingsAiStorage')),
+              h('p', { className: 'md-settings-note' }, format('settingsAiDisclaimer')),
+              ...aiRows.map(row => {
+                const choice = aiChoices[row.kind]
+                const following = choice.mode !== 'pinned'
+                const current = following ? aiCatalog.default : choice
+                const currentValue = current === null ? '' : aiValue(current.provider, current.model)
+                const groups = aiCatalog.providers.map(provider => ({
+                  provider,
+                  models: provider.models.filter(model => row.imagesOnly !== true
+                    || (Array.isArray(model.modalities) && model.modalities.includes('image'))),
+                })).filter(group => group.models.length > 0)
+                const known = groups.some(group => group.models.some(model => aiValue(group.provider.id, model.id) === currentValue))
+                return h('div', { key: row.kind, className: 'md-settings-row' },
+                  h('span', { title: format('settingsAiHint') }, row.label),
+                  h(KitButton, {
+                    type: 'button', className: 'md-btn md-btn-small',
+                    title: format('settingsAiFollowHint'),
+                    onClick: () => {
+                      if (!following) {
+                        chooseAi(row.kind, { mode: 'follow' })
+                        return
+                      }
+                      if (aiCatalog.default !== null) {
+                        chooseAi(row.kind, {
+                          mode: 'pinned',
+                          provider: aiCatalog.default.provider,
+                          model: aiCatalog.default.model,
+                        })
+                      }
+                    },
+                  }, `${format('settingsAiFollow')}：${following ? format('settingsAiOn') : format('settingsAiOff')}`),
+                  h('select', {
+                    className: 'md-settings-input',
+                    value: currentValue,
+                    'aria-label': row.label,
+                    onChange: event => {
+                      const parts = String(event.target.value).split('|')
+                      if (parts.length !== 2 || parts[0] === '') return
+                      chooseAi(row.kind, { mode: 'pinned', provider: parts[0], model: parts[1] })
+                    },
+                  },
+                    currentValue === '' ? h('option', { value: '' }, format('settingsAiNoDefault')) : null,
+                    currentValue !== '' && !known
+                      ? h('option', { value: currentValue }, `${current.provider} / ${current.model}`)
+                      : null,
+                    groups.map(group => h('optgroup', { key: group.provider.id, label: group.provider.name },
+                      group.models.map(model => h('option', {
+                        key: aiValue(group.provider.id, model.id),
+                        value: aiValue(group.provider.id, model.id),
+                      }, model.name))))
+                  )
+                )
+              }),
+              aiCatalog.failures.length === 0
+                ? null
+                : h('p', { className: 'md-settings-note' },
+                  aiCatalog.failures.map(item => `${item.name === '' ? item.id : item.name}：${item.message}`).join('；')),
+              h('div', { className: 'md-settings-row' },
+                h('span', { title: format('settingsAiProbeHint') }, format('settingsAiProbe')),
+                h(KitButton, {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  disabled: aiProbeBusy === true,
+                  onClick: async () => {
+                    setAiProbeBusy(true)
+                    setAiProbe(null)
+                    try {
+                      const result = await request('POST', 'ai-probe', { choice: aiChoices.session })
+                      const before = result !== null && typeof result === 'object' ? result.before : null
+                      const after = result !== null && typeof result === 'object' ? result.after : null
+                      const route = value => value === null || value === undefined ? '—' : `${value.provider} / ${value.model}`
+                      if (result !== null && typeof result === 'object' && result.same === true) {
+                        setAiProbe({ ok: true, text: `${format('settingsAiProbeOk')}（${route(after)}）` })
+                      } else if (result !== null && typeof result === 'object' && result.same === false) {
+                        setAiProbe({ ok: false, text: `${format('settingsAiProbeChanged')}（${route(before)} → ${route(after)}）` })
+                      } else {
+                        setAiProbe({ ok: false, text: format('settingsAiProbeUnknown') })
+                      }
+                    } catch (error) {
+                      setAiProbe({ ok: false, text: `${format('settingsAiProbeFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}` })
+                    } finally {
+                      setAiProbeBusy(false)
+                    }
+                  },
+                }, format('settingsAiProbeRun')),
+                aiProbe === null
+                  ? null
+                  : h('span', { className: 'md-settings-note', 'data-tone': aiProbe.ok === true ? 'ok' : 'bad' }, aiProbe.text)
+              ),
+              h('p', { className: 'md-settings-note' }, format('settingsAiPending'))
+            )
+        )
+      )
       return h(KitModal, {
         title: format('settings'),
         onClose: props.onClose,
@@ -5389,7 +5910,7 @@ window.__ModuleLoader__.load({
               }, item.label))
             ),
             h('div', { className: 'md-settings-pane' },
-              tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : tab === 'data' ? data : about
+              tab === 'reading' ? reading : tab === 'workflow' ? workflow : tab === 'keys' ? keys : tab === 'env' ? env : tab === 'data' ? data : tab === 'ai' ? aiPane : about
             )
           )
         ),
@@ -5761,15 +6282,55 @@ window.__ModuleLoader__.load({
      * @param {{ books: object[], libraryDir: string, onOpen: Function, registerRef: Function }} props - catalog and opener.
      * @returns {import('react').ReactElement} the shelf.
      */
+    /**
+     * A one-line hint that removes itself. A banner about files already handled
+     * must not sit on the library page forever: it shows for a few seconds,
+     * fades, and unmounts. A changed text (new count) shows it again.
+     * @param {{ text: string, inert?: string }} props - the line and inert state.
+     * @returns {import('react').ReactElement | null} the banner or nothing.
+     */
+    function TransientHint(props) {
+      const [fading, setFading] = useState(false)
+      const [shown, setShown] = useState(true)
+      useEffect(() => {
+        setFading(false)
+        setShown(true)
+        const fade = window.setTimeout(() => setFading(true), 7000)
+        const gone = window.setTimeout(() => setShown(false), 7800)
+        return () => {
+          window.clearTimeout(fade)
+          window.clearTimeout(gone)
+        }
+      }, [props.text])
+      if (!shown) return null
+      return h('div', {
+        className: fading ? 'md-hint md-hint-fading md-hint-dismissable' : 'md-hint md-hint-dismissable',
+        'data-fading': fading ? 'true' : undefined,
+        // The banner is also a dismiss control: one click removes it at once.
+        title: format('hintDismiss'),
+        'aria-label': format('hintDismiss'),
+        onClick: () => setShown(false),
+        inert: props.inert,
+      }, props.text)
+    }
+
     function Shelf(props) {
       const surfaceRef = useRef(null)
       const startRef = useRef(null)
       const boxRef = useRef(null)
       const [box, setBox] = useState(null)
+      // Two independent switches: whole, unsplit books, and books that were split
+      // but named by hand. Both default to shown — a readable PDF must not
+      // vanish from the library because of its file name.
+      const [showWhole, setShowWhole] = useState(() => readShelfFlag(SHOW_WHOLE_KEY))
+      const [showLoose, setShowLoose] = useState(() => readShelfFlag(SHOW_LOOSE_KEY))
       const boundsOf = () => (surfaceRef.current === null ? null : surfaceRef.current.getBoundingClientRect())
       const onPointerDown = event => {
         if (event.button !== 0) return
-        if (event.target.closest('.md-card, .md-collection, .md-btn')) return
+        // Any control inside the shelf must keep its click: host buttons drop the
+        // `md-*` classes, so checking `.md-btn` alone let the marquee surface
+        // capture the pointer and swallow the click.
+        if (event.target.closest('.md-card, .md-collection, .md-btn, button, a, [role="button"], input, select')) return
         const bounds = boundsOf()
         if (bounds === null) return
         startRef.current = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, additive: event.shiftKey }
@@ -5814,6 +6375,13 @@ window.__ModuleLoader__.load({
         props.onSelect(ids, start.additive)
       }
       const empty = props.books.length === 0 && props.collections.length === 0
+      const visibleBooks = props.books.filter(book => {
+        if (book.whole === true) return showWhole
+        if (book.loose === true) return showLoose
+        return true
+      })
+      const wholeTotal = Number(props.wholeTotal) || 0
+      const looseTotal = Number(props.looseTotal) || 0
       return h('div', {
         className: 'md-shelf',
         ref: surfaceRef,
@@ -5821,29 +6389,56 @@ window.__ModuleLoader__.load({
         onPointerMove,
         onPointerUp,
       },
+        wholeTotal === 0 && looseTotal === 0
+          ? null
+          : h('div', { className: 'md-shelf-loose' },
+            wholeTotal === 0 ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('shelfWholeHint'),
+              'aria-pressed': showWhole ? 'true' : 'false',
+              onClick: () => {
+                const next = !showWhole
+                setShowWhole(next)
+                writeShelfFlag(SHOW_WHOLE_KEY, next)
+              },
+            }, `${format('shelfWhole')}${showWhole ? format('shelfShown') : format('shelfHidden')} (${wholeTotal})`),
+            looseTotal === 0 ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              title: format('shelfLooseHint'),
+              'aria-pressed': showLoose ? 'true' : 'false',
+              onClick: () => {
+                const next = !showLoose
+                setShowLoose(next)
+                writeShelfFlag(SHOW_LOOSE_KEY, next)
+              },
+            }, `${format('shelfLoose')}${showLoose ? format('shelfShown') : format('shelfHidden')} (${looseTotal})`)
+          ),
         empty
           ? h('div', { className: 'md-empty' },
             h('div', { className: 'md-empty-title' }, format('shelfEmpty')),
             h('div', { className: 'md-empty-hint' }, format('emptyHint'))
           )
-          : h('div', { className: 'md-grid' },
-            props.collections.map(item => h(CollectionCard, {
-              key: item.id,
-              name: item.name,
-              count: item.count,
-              onOpen: () => props.onOpenGroup(item.id),
-              onDelete: () => props.onDeleteGroup(item.id),
-            })),
-            props.books.map(book => h(BookCard, {
-              key: book.id,
-              book,
-              selected: props.selected.has(book.id),
-              hasCover: props.covers.has(book.id),
-              onSelect: props.onToggle,
-              onOpen: props.onOpen,
-              registerRef: props.registerRef,
-            }))
-          ),
+          : visibleBooks.length === 0 && props.collections.length === 0
+            ? h('div', { className: 'md-empty' },
+              h('div', { className: 'md-empty-title' }, format('looseOnlyEmpty')))
+            : h('div', { className: 'md-grid' },
+              props.collections.map(item => h(CollectionCard, {
+                key: item.id,
+                name: item.name,
+                count: item.count,
+                onOpen: () => props.onOpenGroup(item.id),
+                onDelete: () => props.onDeleteGroup(item.id),
+              })),
+              visibleBooks.map(book => h(BookCard, {
+                key: book.id,
+                book,
+                selected: props.selected.has(book.id),
+                hasCover: props.covers.has(book.id),
+                onSelect: props.onToggle,
+                onOpen: props.onOpen,
+                registerRef: props.registerRef,
+              }))
+            ),
         box === null
           ? null
           : h('div', {
@@ -8821,6 +9416,302 @@ window.__ModuleLoader__.load({
         h(InkMarks, { entries }))
     }
 
+    // The translated overlay is a DOM text layer when the page has a layout
+    // record: the same `box`/`baseline`/`leadingPt` the typesetter measured, so
+    // the text is crisp at any zoom and a frame can never be smaller than the
+    // words it reveals. Pages without a layout keep the bitmap path untouched.
+    // The typesetter prints a serif face (New Computer Modern + a CJK serif); the
+    // layer must wrap with a face of the same proportions, or the browser adds a
+    // line the typesetter never measured and every such block gets shrunk.
+    const OVERLAY_FONT = '"Cambria", "Times New Roman", "Songti SC", "SimSun", serif'
+    const KATEX_BASE = '/pdfdesk/vendor/katex/'
+    const OVERLAY_MATH = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/
+    const OVERLAY_STYLE = /(\*\*[^*]+\*\*|`[^`]+`)/
+    let katexLoading = null
+    let overlayMetricsContext = null
+
+    /** Load the vendored KaTeX build once, only when a page needs a formula. */
+    function loadKatex() {
+      if (typeof window === 'undefined') return Promise.resolve(null)
+      if (window.katex !== undefined && window.katex !== null) return Promise.resolve(window.katex)
+      if (katexLoading !== null) return katexLoading
+      katexLoading = new Promise(resolve => {
+        // The reader's policy allows inline styles but not linked sheets — the
+        // host UI stylesheet is injected the same way — so the KaTeX stylesheet
+        // is fetched and inlined. An inline sheet has no base URL of its own, so
+        // its relative `fonts/…` URLs are made absolute first.
+        void window.fetch(`${KATEX_BASE}katex.min.css`, { credentials: 'same-origin' })
+          .then(response => (response.ok ? response.text() : ''))
+          .then(css => {
+            if (css === '') return
+            const style = document.createElement('style')
+            style.id = 'pdfdesk-katex'
+            style.textContent = css.replace(/url\(fonts\//g, `url(${KATEX_BASE}fonts/`)
+            document.head.appendChild(style)
+          })
+          .catch(() => {})
+        const script = document.createElement('script')
+        script.src = `${KATEX_BASE}katex.min.js`
+        script.async = true
+        script.onload = () => resolve(window.katex ?? null)
+        script.onerror = () => resolve(null)
+        document.head.appendChild(script)
+      })
+      return katexLoading
+    }
+
+    /** Fallback font box when a canvas cannot be measured (tests, SSR). */
+    const OVERLAY_ASCENT = 0.88
+    const OVERLAY_DESCENT = 0.22
+
+    /** CSS line-box ascent/descent for the overlay face at one pixel size. */
+    function overlayFontMetrics(fontPx) {
+      if (typeof document === 'undefined') return { ascent: fontPx * OVERLAY_ASCENT, descent: fontPx * OVERLAY_DESCENT }
+      if (overlayMetricsContext === null) overlayMetricsContext = document.createElement('canvas').getContext('2d')
+      const context = overlayMetricsContext
+      if (context === null) return { ascent: fontPx * OVERLAY_ASCENT, descent: fontPx * OVERLAY_DESCENT }
+      context.font = `${fontPx}px ${OVERLAY_FONT}`
+      const measured = context.measureText('汉Hg国')
+      const ascent = Number(measured.fontBoundingBoxAscent) || Number(measured.actualBoundingBoxAscent) || fontPx * OVERLAY_ASCENT
+      const descent = Number(measured.fontBoundingBoxDescent) || Number(measured.actualBoundingBoxDescent) || fontPx * OVERLAY_DESCENT
+      return { ascent, descent }
+    }
+
+    /**
+     * One block's box in layer pixels. The top is chosen so the first line's
+     * baseline — half-leading plus the font ascent — lands on the baseline the
+     * typesetter printed. Pure, so the geometry is testable without a DOM.
+     */
+    function overlayBlockGeometry(block, layerHeight, pxPerPt, scale) {
+      const fontPx = Math.max(1, Number(block.fontPt) * scale * pxPerPt)
+      const leadingPt = Number(block.leadingPt)
+      const leadingPx = Number.isFinite(leadingPt) && leadingPt > 0 ? leadingPt * scale * pxPerPt : fontPx * 1.3
+      const metrics = overlayFontMetrics(fontPx)
+      const baselinePx = Number(block.baseline) * layerHeight
+      const top = baselinePx - ((leadingPx - (metrics.ascent + metrics.descent)) / 2 + metrics.ascent)
+      return { fontPx, leadingPx, top }
+    }
+
+    /** The alignment CSS value for a layout row's printed alignment. */
+    function overlayTextAlign(align) {
+      if (align === 'center') return 'center'
+      if (align === 'right') return 'right'
+      if (align === 'justify') return 'justify'
+      return 'left'
+    }
+
+    /** One formula: KaTeX when it loaded, the LaTeX source otherwise. */
+    function overlayMathNode(katex, latex, display, key) {
+      if (katex !== null && katex !== undefined && typeof katex.renderToString === 'function') {
+        let html = ''
+        try {
+          html = katex.renderToString(latex, {
+            displayMode: display,
+            throwOnError: false,
+            strict: 'ignore',
+            output: 'html',
+          })
+        } catch {
+          html = ''
+        }
+        if (html !== '') {
+          return h('span', {
+            key,
+            className: display ? 'md-ov-math md-ov-math-display' : 'md-ov-math',
+            dangerouslySetInnerHTML: { __html: html },
+          })
+        }
+      }
+      return h('span', { key, className: 'md-ov-math md-ov-math-source' }, latex)
+    }
+
+    /** A block's translated markdown as React nodes: prose, maths, bold, code. */
+    function overlayBlockContent(block, katex) {
+      const text = String(block.md ?? '').trim()
+      if (text === '') return null
+      const nodes = []
+      const parts = text.split(OVERLAY_MATH)
+      parts.forEach((part, index) => {
+        if (part === '') return
+        if (part.length >= 4 && part.startsWith('$$') && part.endsWith('$$')) {
+          nodes.push(overlayMathNode(katex, part.slice(2, -2).trim(), true, `m${index}`))
+          return
+        }
+        if (part.length >= 2 && part.startsWith('$') && part.endsWith('$')) {
+          nodes.push(overlayMathNode(katex, part.slice(1, -1).trim(), false, `m${index}`))
+          return
+        }
+        const pieces = part.replace(/\s*\n\s*/g, ' ').split(OVERLAY_STYLE)
+        pieces.forEach((piece, position) => {
+          if (piece === '') return
+          if (piece.length >= 4 && piece.startsWith('**') && piece.endsWith('**')) {
+            nodes.push(h('strong', { key: `b${index}-${position}` }, piece.slice(2, -2)))
+          } else if (piece.length >= 2 && piece.startsWith('`') && piece.endsWith('`')) {
+            nodes.push(h('code', { key: `c${index}-${position}` }, piece.slice(1, -1)))
+          } else {
+            nodes.push(piece)
+          }
+        })
+      })
+      return nodes.length === 0 ? null : nodes
+    }
+
+    /**
+     * The translated page as text, positioned by what the typesetter measured.
+     * It is clipped to the current frames: boxes stay the "windows" they always
+     * were, but the words behind them are live DOM, so zooming never blurs them.
+     * @param {{ blocks: object[], page: object, masks: object[] }} props - layout rows, page size in pt, frames.
+     * @returns {import('react').ReactElement} the layer.
+     */
+    function OverlayTextLayer(props) {
+      const root = useRef(null)
+      const nodes = useRef(new Map())
+      const [katex, setKatex] = useState(null)
+      const [size, setSize] = useState({ width: 0, height: 0 })
+      // Font scale per block from the fit pass (1 = the typesetter's size).
+      const [scales, setScales] = useState({})
+      const blocks = props.blocks
+      const clipId = useMemo(() => `md-ov-clip-${Math.random().toString(36).slice(2, 9)}`, [])
+      // KaTeX is the expensive part of a render, and the reader re-renders on
+      // zoom, page turns and frame edits. The signature keeps the typeset nodes
+      // while the blocks themselves are unchanged (a new array each render).
+      const contentKey = blocks.map(block => `${block.id}\u0001${block.md ?? ''}`).join('\u0002')
+      const contents = useMemo(
+        () => blocks.map(block => overlayBlockContent(block, katex)),
+        [contentKey, katex],
+      )
+      useEffect(() => {
+        let alive = true
+        void loadKatex().then(loaded => {
+          if (alive) setKatex(loaded)
+        })
+        return () => {
+          alive = false
+        }
+      }, [])
+      // Formula source is wider than the typeset formula: a fit pass done before
+      // KaTeX arrives must not leave the page permanently shrunk.
+      useEffect(() => {
+        setScales({})
+      }, [katex])
+      useEffect(() => {
+        const node = root.current
+        if (node === null) return undefined
+        const measure = () => setSize({ width: node.clientWidth, height: node.clientHeight })
+        measure()
+        if (typeof ResizeObserver !== 'function') return undefined
+        const observer = new ResizeObserver(measure)
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [])
+      // Fit pass: the browser wraps with its own font, so a block can come out a
+      // line taller than the typesetter measured. Borrowing the empty gap down to
+      // the next block keeps the size the typesetter chose; only when that is not
+      // enough does the block shrink towards the 9 pt floor.
+      useEffect(() => {
+        if (size.height <= 0 || props.page === null) return
+        const tops = new Map()
+        for (const block of blocks) {
+          const node = nodes.current.get(String(block.id))
+          if (node !== undefined) tops.set(String(block.id), node.offsetTop)
+        }
+        let changed = false
+        const next = { ...scales }
+        for (const block of blocks) {
+          const node = nodes.current.get(String(block.id))
+          if (node === undefined) continue
+          const ownTop = tops.get(String(block.id))
+          let nextTop = Infinity
+          for (const other of blocks) {
+            const otherTop = tops.get(String(other.id))
+            if (otherTop !== undefined && otherTop > ownTop + 1 && otherTop < nextTop) nextTop = otherTop
+          }
+          const boxRoom = Number(block.box[3]) * size.height
+          const room = nextTop === Infinity ? boxRoom : Math.max(boxRoom, nextTop - ownTop - 2)
+          const current = scales[String(block.id)] ?? 1
+          if (node.scrollHeight > room + 1 && Number(block.fontPt) * current > 9.05) {
+            next[String(block.id)] = Math.max(9 / Number(block.fontPt), current - 0.03)
+            changed = true
+          }
+        }
+        if (changed) setScales(next)
+      })
+      if (props.page === null || size.height <= 0) {
+        return h('div', { className: 'md-overlay-text', ref: root, 'aria-hidden': true })
+      }
+      const pxPerPt = size.height / Number(props.page.height)
+      const frames = props.masks.filter(mask => mask.w > 0 && mask.h > 0)
+      return h('div', { className: 'md-overlay-text', ref: root, 'aria-hidden': true },
+        h('svg', { className: 'md-overlay-text-defs', width: 0, height: 0, 'aria-hidden': true },
+          h('defs', null,
+            h('clipPath', { id: clipId, clipPathUnits: 'objectBoundingBox' },
+              frames.map((mask, index) => h('rect', {
+                key: index,
+                x: mask.x,
+                y: mask.y,
+                width: mask.w,
+                height: mask.h,
+              }))))),
+        h('div', {
+          className: 'md-overlay-text-body',
+          style: { clipPath: frames.length === 0 ? 'inset(100%)' : `url(#${clipId})` },
+        },
+          blocks.map((block, blockIndex) => {
+            const box = block.box
+            // KaTeX is the expensive part: dragging a frame re-renders this
+            // component many times, so the content is memoised per page (below)
+            // instead of re-typeset on every pointer move.
+            const content = contents[blockIndex]
+            if (content === null || !Array.isArray(box) || box.length !== 4) return null
+            const scale = scales[String(block.id)] ?? 1
+            const geometry = overlayBlockGeometry(block, size.height, pxPerPt, scale)
+            // A display equation is a block in KaTeX, not a line: its baseline is
+            // not exposed the way a text line's is, so the equation is placed by
+            // the ink top the typesetter measured. Everything text-led still uses
+            // the printed baseline.
+            const displayFirst = String(block.md ?? '').trim().startsWith('$$')
+            const top = displayFirst && Array.isArray(block.dst) && block.dst.length === 4
+              ? Number(block.dst[1]) * size.height
+              : geometry.top
+            return h('div', {
+              key: block.id,
+              ref: node => {
+                const key = String(block.id)
+                if (node === null) nodes.current.delete(key)
+                else nodes.current.set(key, node)
+              },
+              className: 'md-overlay-text-block',
+              'data-block-id': block.id,
+              'data-display': displayFirst ? 'true' : undefined,
+              'data-overflow': block.overflow === true ? 'true' : undefined,
+              style: {
+                left: `${Number(box[0]) * 100}%`,
+                top: `${top}px`,
+                width: `${Number(box[2]) * 100}%`,
+                fontFamily: OVERLAY_FONT,
+                fontSize: `${geometry.fontPx}px`,
+                lineHeight: `${geometry.leadingPx}px`,
+                textAlign: overlayTextAlign(block.align),
+              },
+            }, content)
+          })))
+    }
+
+    /**
+     * True when every translated block of a page carries the layout record the
+     * text layer needs. One missing row means the bitmap path stays in charge:
+     * half a page in DOM and half hidden behind no bitmap would lose text.
+     */
+    function overlayTextPageOk(blocks, page) {
+      if (!Array.isArray(blocks) || blocks.length === 0) return false
+      if (page === null || !Number.isFinite(Number(page.width)) || !Number.isFinite(Number(page.height))) return false
+      if (!(Number(page.width) > 0) || !(Number(page.height) > 0)) return false
+      return blocks.every(block => Array.isArray(block.box) && block.box.length === 4
+        && block.box.every(Number.isFinite)
+        && Number.isFinite(Number(block.fontPt)) && Number(block.fontPt) > 0
+        && Number.isFinite(Number(block.baseline)))
+    }
+
     /**
      * Editable translation boxes: drag a box to move it, drag one of its eight
      * handles to resize, right-click to delete (undo puts it back). The frame is
@@ -9451,6 +10342,11 @@ window.__ModuleLoader__.load({
           })))
     }
 
+    // Page heights at scale 1, per document. Continuous mode reserves every
+    // mounted page's box from this, so a page that has not painted yet already
+    // holds its real height instead of the canvas' default 150px.
+    const pageHeightCache = new WeakMap()
+
     /**
      * One page in continuous mode: renders when it comes near the viewport,
      * reports when it becomes the page a reader is looking at.
@@ -9470,16 +10366,31 @@ window.__ModuleLoader__.load({
       const task = useRef(null)
 
       useEffect(() => {
-        // Measure only pages near the viewport: opening a 300-page chapter used
-        // to parse every page just to reserve heights. Far pages keep the
-        // 240px placeholder until they come into the prefetch band.
-        if (props.doc === null || props.doc === undefined || !visible) return undefined
+        // Every mounted page reserves its real height up front, cached per
+        // document. Measuring only the pages near the viewport made each page
+        // grow the first time it was approached, which pushed the column's
+        // content around while scrolling (a visible jump, worst when scrolling
+        // back up). Only the mounted window is measured, so a 300-page chapter
+        // still parses a few dozen pages, not all of them.
+        if (props.doc === null || props.doc === undefined) return undefined
+        let cache = pageHeightCache.get(props.doc)
+        if (cache === undefined) {
+          cache = new Map()
+          pageHeightCache.set(props.doc, cache)
+        }
+        const known = cache.get(props.pageNumber)
+        if (known !== undefined) {
+          setBaseHeight(known)
+          return undefined
+        }
         let cancelled = false
         void props.doc.getPage(props.pageNumber).then(page => {
-          if (!cancelled) setBaseHeight(page.getViewport({ scale: 1 }).height)
+          const height = page.getViewport({ scale: 1 }).height
+          cache.set(props.pageNumber, height)
+          if (!cancelled) setBaseHeight(height)
         }).catch(() => {})
         return () => { cancelled = true }
-      }, [props.doc, props.pageNumber, visible])
+      }, [props.doc, props.pageNumber])
 
       // Render lazily: a long chapter must not paint every page up front.
       useEffect(() => {
@@ -9494,21 +10405,29 @@ window.__ModuleLoader__.load({
             // Leaving the prefetch margin releases the canvas bitmap; scrolling
             // back repaints it. A long chapter therefore keeps only a few pages.
             else setVisible(false)
-            if (entry.intersectionRatio >= 0.5) props.onVisible(props.pageNumber)
+            if (typeof props.onVisible === 'function' && entry.intersectionRatio >= 0.5) props.onVisible(props.pageNumber)
           }
         }, { root: props.rootRef.current, rootMargin: '900px 0px', threshold: [0, 0.5] })
         observer.observe(node)
         return () => observer.disconnect()
       }, [props.onVisible, props.pageNumber, props.rootRef])
 
-      useEffect(() => {
-        if (visible || canvas.current === null) return
-        canvas.current.width = 1
-        canvas.current.height = 1
-      }, [visible])
+      // Keep the bitmaps of the pages on either side of the one being read.
+      // Releasing a page the moment it leaves the prefetch band meant scrolling
+      // back showed a blank page until it repainted — the white flash. Two
+      // pages each way is bounded (five canvases) and matches what the reader
+      // sees at normal zoom.
+      const near = Number.isFinite(props.currentPage) && Math.abs(props.pageNumber - props.currentPage) <= 2
+      const painted = visible || near
 
       useEffect(() => {
-        if (!visible) return undefined
+        if (painted || canvas.current === null) return
+        canvas.current.width = 1
+        canvas.current.height = 1
+      }, [painted])
+
+      useEffect(() => {
+        if (!painted) return undefined
         let cancelled = false
         const paint = async () => {
           try {
@@ -9535,7 +10454,7 @@ window.__ModuleLoader__.load({
             task.current = null
           }
         }
-      }, [props.doc, props.pageNumber, props.scale, props.onError, visible])
+      }, [props.doc, props.pageNumber, props.scale, props.onError, painted])
 
       return h('div', {
         className: 'md-reader-slot',
@@ -9643,6 +10562,9 @@ window.__ModuleLoader__.load({
           onPageNode: props.onPageNode,
           overlay,
           overlayPage: page,
+          // The page the reader is on, so this page can keep its bitmap warm
+          // while it is one of the two neighbours on either side.
+          currentPage: props.overlayPage,
         }))
       }
       if (bottomPad > 0) pages.push(h('div', { key: 'pad-bottom', className: 'md-reader-plane-pad', style: { height: `${bottomPad}px` } }))
@@ -10400,6 +11322,11 @@ window.__ModuleLoader__.load({
       // The editor owns the text while typing; this ref is what gets saved.
       const noteText = useRef('')
       const [translatedImage, setTranslatedImage] = useState('')
+      // The layout record of the page currently shown, for the DOM text layer.
+      // Empty when the page has no layout (old translation) or is still loading.
+      const [overlayBlocks, setOverlayBlocks] = useState([])
+      const [overlayBlocksPage, setOverlayBlocksPage] = useState(null)
+      const [overlayPageSize, setOverlayPageSize] = useState(null)
       const [overlayNote, setOverlayNote] = useState('')
       // The overlay PDF can be a whole-page reflow (a chapter translated page by
       // page). That is what the box reveal cannot line up with, and it is what
@@ -10451,7 +11378,11 @@ window.__ModuleLoader__.load({
         // The overlay can only sit on the original's text when every page came
         // from its block boxes; a page translated whole-page is a reflow.
         const reflow = Array.isArray(state.overlayReflowPages) ? state.overlayReflowPages : []
-        if (reflow.length === 0) return base
+        // Pages that came back block-wise but with empty blocks: the overlay has
+        // holes there, and saying so is better than a clean "done".
+        const holes = Array.isArray(state.blockErrors) ? state.blockErrors : []
+        const tail = holes.length === 0 ? '' : `；${format('translateBlocksMissing', { n: holes.length })}`
+        if (reflow.length === 0) return `${base}${tail}`
         return `${base}；${format('translateBlocksFallback', { n: reflow.length, pages: reflow.join('、') })}`
       }
       const partialKey = `pdfdesk:partial:${reader.bookId}:${reader.code}`
@@ -10625,6 +11556,9 @@ window.__ModuleLoader__.load({
         if (!dual && !overlay) {
           overlaySource.current = ''
           setOverlayNote('')
+          setOverlayBlocks([])
+          setOverlayBlocksPage(null)
+          setOverlayPageSize(null)
           return undefined
         }
         let cancelled = false
@@ -10732,6 +11666,45 @@ window.__ModuleLoader__.load({
       }, [dual, overlay, reader.bookId, reader.code, docRev])
 
 
+      // The layout record belongs to one page, so it is fetched on every turn —
+      // the document-level effect above only checks two-column layout once.
+      useEffect(() => {
+        if (!overlay || reader.bookId === '' || reader.code === '') {
+          setOverlayBlocks([])
+          setOverlayBlocksPage(null)
+          setOverlayPageSize(null)
+          return undefined
+        }
+        let cancelled = false
+        void (async () => {
+          try {
+            const payload = await request('GET',
+              `blocks?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&page=${reader.page}`)
+            if (cancelled) return
+            setOverlayBlocks(Array.isArray(payload.blocks) ? payload.blocks : [])
+            setOverlayBlocksPage(reader.page)
+            setOverlayPageSize(payload.page !== null && payload.page !== undefined ? payload.page : null)
+          } catch {
+            if (cancelled) return
+            setOverlayBlocks([])
+            setOverlayBlocksPage(null)
+            setOverlayPageSize(null)
+          }
+        })()
+        return () => {
+          cancelled = true
+        }
+      }, [overlay, reader.bookId, reader.code, reader.page, docRev])
+
+      // Only the current page's record counts: a page turn must not paint the
+      // previous page's text for a frame.
+      const overlayBlocksCurrent = overlayBlocksPage === reader.page ? overlayBlocks : []
+      const overlayTextBlocks = (Array.isArray(overlayBlocksCurrent) ? overlayBlocksCurrent : [])
+        .filter(block => String(block.md ?? '').trim() !== '')
+      // Text layer only when the whole page has a layout record; otherwise the
+      // bitmap reveal stays in charge, exactly as before this release.
+      const overlayTextReady = overlay && overlayTextPageOk(overlayTextBlocks, overlayPageSize)
+
       // The reader keeps the shared per-chapter facts fresh while it is open;
       // the preview asks for the same facts itself when the reader is not
       // mounted, so neither end depends on the other being alive.
@@ -10747,7 +11720,9 @@ window.__ModuleLoader__.load({
         setMasks(list)
       }, [inkStore, maskKey, remoteAnnotRev])
       useEffect(() => {
-        if (!overlay || dualDoc === null) {
+        // The DOM text layer needs no bitmap: rasterising the typeset page here
+        // would only add a 1400px JPEG the reader never shows.
+        if (!overlay || dualDoc === null || overlayTextReady) {
           setTranslatedImage('')
           setOverlayReflow(false)
           return undefined
@@ -10784,7 +11759,7 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true
         }
-      }, [overlay, dualDoc, reader.page])
+      }, [overlay, dualDoc, reader.page, overlayTextReady])
 
       const pointOf = event => {
         const node = overlayLayer.current
@@ -10828,6 +11803,35 @@ window.__ModuleLoader__.load({
       // page's own text blocks instead, with a little padding for descenders.
       const maskAllBlocks = async () => {
         try {
+          // With a text layer the frames come from the words themselves: the
+          // layer knows each block's real rectangle, so a frame can never cut
+          // the text it reveals (the old dst boxes could, by a line).
+          const layerNode = overlayLayer.current === null ? null : overlayLayer.current.querySelector('.md-overlay-text')
+          if (layerNode !== null) {
+            const layerRect = layerNode.getBoundingClientRect()
+            const next = []
+            if (layerRect.width > 0 && layerRect.height > 0) {
+              for (const node of layerNode.querySelectorAll('[data-block-id]')) {
+                const rect = node.getBoundingClientRect()
+                if (rect.width <= 0 || rect.height <= 0) continue
+                const left = Math.max(0, (rect.left - layerRect.left) / layerRect.width - 0.002)
+                const top = Math.max(0, (rect.top - layerRect.top) / layerRect.height - 0.002)
+                const right = Math.min(1, (rect.right - layerRect.left) / layerRect.width + 0.002)
+                const bottom = Math.min(1, (rect.bottom - layerRect.top) / layerRect.height + 0.004)
+                next.push({ x: left, y: top, w: right - left, h: bottom - top })
+              }
+            }
+            if (next.length > 0) {
+              if (autoBoxes !== null && sameMasks(masksRef.current, autoBoxes)) {
+                setAutoBoxes(null)
+                savePageMasks([])
+                return
+              }
+              setAutoBoxes(next)
+              savePageMasks(next)
+              return
+            }
+          }
           const payload = await request('GET',
             `blocks?book=${encodeURIComponent(reader.bookId)}&code=${encodeURIComponent(reader.code)}&page=${reader.page}`)
           const list = Array.isArray(payload.blocks) ? payload.blocks : []
@@ -10840,6 +11844,20 @@ window.__ModuleLoader__.load({
             const w = Number(block.bbox[2])
             const h = Number(block.bbox[3])
             if (![x, y, w, h].every(Number.isFinite)) continue
+            // When the overlay recorded where the translation actually landed, the
+            // frame follows that rectangle instead of the original paragraph: a
+            // Chinese translation is usually taller than the English it replaced,
+            // and the old "+0.022" guess cut the last line. Older translations have
+            // no record and keep the fallback box.
+            const dst = Array.isArray(block.dst) && block.dst.length === 4 ? block.dst.map(Number) : null
+            if (dst !== null && dst.every(Number.isFinite) && dst[2] > 0.01 && dst[3] > 0.005) {
+              const left = Math.max(0, dst[0] - 0.003)
+              const top = Math.max(0, dst[1] - 0.003)
+              const right = Math.min(1, dst[0] + dst[2] + 0.003)
+              const bottom = Math.min(1, dst[1] + dst[3] + 0.004)
+              next.push({ x: left, y: top, w: right - left, h: bottom - top })
+              continue
+            }
             const left = Math.max(0, x - 0.004)
             const top = Math.max(0, y - 0.004)
             const right = Math.min(1, x + w + 0.004)
@@ -11854,8 +12872,12 @@ window.__ModuleLoader__.load({
         if (!changed || reader.mode !== 'continuous' || reader.phase !== 'ready') return
         scrollToPage(reader.page)
       }, [reader.mode, reader.scale, reader.phase, scrollToPage])
-      // Scroll mode: derive the page from the slot nearest the stage top, so
-      // the page indicator matches what the reader actually sees.
+      // Scroll mode: the page indicator follows the page the viewport's top
+      // edge is in, not the page whose top happens to be nearest to it. With a
+      // page taller than the viewport the old "nearest top" rule turned the
+      // page over while the reader was still looking at the middle of the old
+      // one, so the number (and the question layer that follows it) moved
+      // before the previous page had scrolled out.
       useEffect(() => {
         if (reader.mode !== 'continuous') return undefined
         const stage = props.stageRef.current
@@ -11864,18 +12886,22 @@ window.__ModuleLoader__.load({
         const onScroll = () => {
           if (timer !== null) clearTimeout(timer)
           timer = setTimeout(() => {
-            const stageTop = stage.getBoundingClientRect().top
+            if (switchingMode.current) return
+            // A jump scrolls the column programmatically; pages it crosses on
+            // the way must not be published as "where the reader is".
+            if (Date.now() < jumpingUntil.current) return
+            const edge = stage.getBoundingClientRect().top + 24
             let best = null
-            let bestDistance = Number.POSITIVE_INFINITY
+            let first = null
             slotRefs.current.forEach((node, page) => {
               if (node === null || node === undefined) return
-              const distance = Math.abs(node.getBoundingClientRect().top - stageTop - 24)
-              if (distance < bestDistance) {
-                bestDistance = distance
-                best = page
-              }
+              if (first === null) first = page
+              if (node.getBoundingClientRect().top <= edge) best = best === null ? page : Math.max(best, page)
             })
-            if (best !== null && best !== reader.page) props.onVisible(best)
+            // A drag far past the mounted window leaves no slot above the edge;
+            // fall back to the topmost mounted page so the window can follow.
+            const chosen = best === null ? first : best
+            if (chosen !== null && chosen !== reader.page) props.onVisible(chosen)
           }, 180)
         }
         stage.addEventListener('scroll', onScroll, { passive: true })
@@ -11893,9 +12919,19 @@ window.__ModuleLoader__.load({
         }
         props.onPage(value)
       }
+      /**
+       * Explain why translation cannot start: a missing image-capable model is a
+       * different fix from a missing Python/TeX toolchain.
+       * @returns {void}
+       */
+      const askTranslate = () => {
+        if (typeof props.onEnvRequired !== 'function') return
+        const model = props.translateModel
+        props.onEnvRequired(model === null || model === undefined || model.images !== true ? 'translate-model' : 'translate')
+      }
       const runTranslate = async (resume = false) => {
         if (props.canTranslate !== true) {
-          if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
+          askTranslate()
           return
         }
         if (translating || reader.phase !== 'ready') return
@@ -11914,6 +12950,7 @@ window.__ModuleLoader__.load({
             code,
             target: translateTarget,
             resume,
+            ai: readAiChoice('translate'),
           })
           if (started === null || typeof started.jobId !== 'string') throw new Error('翻译任务没有启动')
           jobId = started.jobId
@@ -11978,7 +13015,7 @@ window.__ModuleLoader__.load({
         if (reader.variant === 'translated') return
         if (!overlay && !hasTranslation) {
           if (props.canTranslate !== true) {
-            if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
+            askTranslate()
             return
           }
           if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -12495,9 +13532,12 @@ window.__ModuleLoader__.load({
           onPointerUp: maskUp,
           onPointerLeave: maskUp,
         },
+          overlayTextReady
+            ? h(OverlayTextLayer, { blocks: overlayTextBlocks, page: overlayPageSize, masks })
+            : null,
           h(MaskBoxes, {
             masks,
-            image: translatedImage,
+            image: overlayTextReady ? '' : translatedImage,
             onChange: (index, mask) => savePageMasks(masksRef.current.map((item, position) => (position === index ? mask : item))),
             onDelete: index => savePageMasks(masksRef.current.filter((item, position) => position !== index)),
           }),
@@ -12706,7 +13746,7 @@ window.__ModuleLoader__.load({
               onClick: () => {
                 if (!hasTranslation) {
                   if (props.canTranslate !== true) {
-                    if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
+                    askTranslate()
                     return
                   }
                   if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -12774,12 +13814,38 @@ window.__ModuleLoader__.load({
               title: format('translateHint'),
               onClick: () => {
                 if (props.canTranslate !== true) {
-                  if (typeof props.onEnvRequired === 'function') props.onEnvRequired('translate')
+                  askTranslate()
+                  // A dead click hides which piece is missing; say it on the page
+                  // so the gap is visible even when the env dialog cannot open.
+                  updateNote(format('envMissing'))
                   return
                 }
-                if (!window.confirm(format('translateCostConfirm'))) return
-                if (hasTranslation && !window.confirm(format('translateOverwriteConfirm'))) return
-                void runTranslate()
+                // Say what the run costs before it starts: tokens on the chosen
+                // model, and the page images this chapter leaves in the DSH
+                // attachment store (nothing deletes them later).
+                const pages = Number(reader.count) > 0 ? Number(reader.count) : 0
+                const storage = format('translateStorageHint', {
+                  pages: pages === 0 ? '~' : String(pages),
+                  mb: pages === 0 ? '?' : String(Math.max(1, Math.round(pages * 0.3))),
+                })
+                const body = `${format('translateCostConfirm')}\n\n${storage}\n\n${format('translateAiDisclaimer')}`
+                const ask = typeof props.onTranslateConfirm === 'function' ? props.onTranslateConfirm : null
+                const start = () => {
+                  if (!hasTranslation) {
+                    void runTranslate()
+                    return
+                  }
+                  if (ask === null) {
+                    if (window.confirm(format('translateOverwriteConfirm'))) void runTranslate()
+                    return
+                  }
+                  ask({ body: format('translateOverwriteConfirm'), run: () => { void runTranslate() } })
+                }
+                if (ask === null) {
+                  if (window.confirm(body)) start()
+                  return
+                }
+                ask({ body, run: start })
               },
             }, translating ? format('translating') : format('translateChapterAction'))
           ),
@@ -12843,7 +13909,7 @@ window.__ModuleLoader__.load({
           : annotTool === 'text' && noteEdit === null
             ? h('div', { className: 'md-reader-note' }, format('annotTextActiveHint'))
             : null,
-        overlay && (overlayNote !== '' || translatedImage === '')
+        overlay && (overlayNote !== '' || (!overlayTextReady && translatedImage === ''))
           ? h('div', { className: 'md-reader-note md-reader-note-overlay', role: 'status' },
             overlayNote === '' ? format('overlayLoading') : overlayNote,
             // The button disappears while the rebuild runs; the note itself
@@ -12965,7 +14031,12 @@ window.__ModuleLoader__.load({
                 showBlocks,
                 bookId: reader.bookId,
                 code: reader.code,
-                onVisible: notifyVisible,
+                // The stage derives its page from the scroll position (below),
+                // not from IntersectionObserver ratios: those are measured
+                // inside the 900px prefetch margin, so they call a page "half
+                // visible" while it is still off screen. The bilingual column
+                // keeps the observer's report.
+                onVisible: null,
                 registerSlot,
                 onError: props.onError,
                 pan: extended ? inkPan : null,
@@ -13727,6 +14798,8 @@ window.__ModuleLoader__.load({
 .md-alert { flex: none; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, var(--dsw-alias-bg-base)); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent); color: var(--dsw-alias-label-primary); font-size: 13px; }
 .md-alert-text { flex: 1; min-width: 0; }
 .md-hint { flex: none; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--dsw-alias-bg-base)); border-left: 3px solid var(--dsw-alias-state-warn-primary); color: var(--dsw-alias-label-secondary); font-size: 12.5px; }
+.md-hint-fading { opacity: 0; transition: opacity .8s ease; }
+.md-hint-dismissable { cursor: pointer; }
 .md-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 0 40px; scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable; }
 .md-body.md-scrolling { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
 .md-body::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -13779,6 +14852,7 @@ window.__ModuleLoader__.load({
 .md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 .md-card-check { position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary-foreground); display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
 .md-shelf { position: relative; display: flex; flex-direction: column; gap: 16px; }
+.md-shelf-loose { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-shelf-head { display: flex; align-items: baseline; gap: 10px; }
 .md-collection-row { display: flex; flex-wrap: wrap; gap: 16px; }
 .md-collection { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; }
@@ -14103,6 +15177,19 @@ window.__ModuleLoader__.load({
 .md-reader-single-page { position: relative; display: inline-block; line-height: 0; }
 .md-overlay-layer { position: absolute; inset: 0; z-index: 4; cursor: crosshair; }
 .md-mask-page-image { display: block; }
+/* The translated page as live text: clipped to the frames, never a bitmap, so
+   it stays sharp at any zoom. The frame borders above it stay interactive. */
+.md-overlay-text { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.md-overlay-text-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.md-overlay-text-body { position: absolute; inset: 0; }
+.md-overlay-text-block { position: absolute; margin: 0; padding: 0; color: #111; white-space: normal; overflow-wrap: break-word; word-break: normal; text-indent: 0; }
+.md-overlay-text-block > strong { font-weight: 650; }
+.md-overlay-text-block > code { font-family: Consolas, "Courier New", monospace; font-size: .92em; }
+.md-ov-math-display { display: block; text-align: center; margin: 0; }
+.md-overlay-text-block .katex-display { margin: 0; text-align: center; }
+.md-ov-math-source { font-family: Consolas, "Courier New", monospace; opacity: .82; }
+.md-overlay-text-block .katex { font-size: 1em; }
+.md-overlay-text-block[data-overflow="true"] { outline: 1px dashed color-mix(in srgb, #c0392b 55%, transparent); outline-offset: 1px; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; overflow: visible; }
 .md-annot-readonly { overflow: visible; }
 .md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); border-radius: 2px; pointer-events: none; }
@@ -14119,7 +15206,7 @@ window.__ModuleLoader__.load({
 /* The mark tool owns the page while it is picked: the layer itself must take
    the pointer, otherwise a drag-to-create can never start on empty paper. */
 .md-questions[data-active="true"] { pointer-events: auto; cursor: crosshair; }
-.md-question { position: absolute; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); border-radius: 2px; pointer-events: none; }
+.md-question { position: absolute; box-sizing: border-box; border: 1.5px solid #2563eb; border-radius: 2px; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
 .md-questions[data-active="true"] .md-question { pointer-events: auto; cursor: move; }
 .md-questions[data-reading="true"] .md-question { pointer-events: auto; touch-action: pan-y; cursor: default; }
 .md-question[data-flash="true"] { border-width: 2px; animation: md-question-flash 1.8s ease-out; }
@@ -14144,7 +15231,7 @@ window.__ModuleLoader__.load({
 .md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
 .md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.md-annot-text.md-annot-selected { outline: none; border-radius: 0; }
+.md-annot-text.md-annot-selected { outline: none; border-radius: 0; border-color: #2563eb; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
 .md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
@@ -14229,7 +15316,10 @@ window.__ModuleLoader__.load({
 .md-annot-width input[type="range"] { width: 68px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
 .md-annot-width-value { min-width: 28px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .md-reader-note-overlay { color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-secondary)); }
-.md-mask { position: absolute; box-sizing: border-box; overflow: visible; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 90%, transparent); }
+/* Frames sit on the PDF page, which stays white in every theme, so they use a
+   page-local colour instead of the chrome tokens (light-tuned tokens vanish on
+   white in dark mode). The white ring keeps them visible over dark scans. */
+.md-mask { position: absolute; box-sizing: border-box; overflow: visible; border: 1.5px dashed #2563eb; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
 /* The image is clipped by the inner wrapper, so the handles on the border are
    not cut off. */
 .md-mask-clip { position: absolute; inset: 0; overflow: hidden; }
@@ -14237,8 +15327,8 @@ window.__ModuleLoader__.load({
 .md-mask-boxes { position: absolute; inset: 0; pointer-events: auto; }
 .md-mask-boxes .md-mask { pointer-events: none; }
 .md-mask-boxes .md-mask-active { border-style: solid; }
-.md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); box-shadow: var(--dsw-elevation-soft); pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
-.md-mask[data-hover='true'] .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; }
+.md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--dsw-alias-bg-base); border: 1px solid #2563eb; box-shadow: var(--dsw-elevation-soft); pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.md-mask[data-hover='true'] .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; pointer-events: auto; }
 .md-mask-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
 .md-mask-handle-n { left: 50%; top: 0; cursor: ns-resize; }
 .md-mask-handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
@@ -14247,10 +15337,12 @@ window.__ModuleLoader__.load({
 .md-mask-handle-s { left: 50%; top: 100%; cursor: ns-resize; }
 .md-mask-handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
 .md-mask-handle-w { left: 0; top: 50%; cursor: ew-resize; }
-/* A drag on the box body draws the next box, so moving has its own grip: it
-   appears on hover and is the only target that starts a move besides Alt+drag. */
-.md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); cursor: move; pointer-events: auto; opacity: 0; transition: opacity .12s ease; }
-.md-mask[data-hover='true'] .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; }
+/* A drag on the box body draws the next box, so moving keeps its own grip: it
+   appears on hover and is the only target that starts a move besides Alt+drag.
+   Like the handles it must not take pointers while hidden, or it would swallow
+   the drag that should draw a frame on top of this one. */
+.md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid #2563eb; color: #2563eb; cursor: move; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.md-mask[data-hover='true'] .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; pointer-events: auto; }
 .md-mask-grip .md-icon { width: 12px; height: 12px; }
 .md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
@@ -14328,7 +15420,7 @@ window.__ModuleLoader__.load({
 .md-side-bar .md-side-count:hover { border-color: var(--dsw-alias-border-l3); }
 .md-side-goto { width: 56px; padding: 3px 5px; font: inherit; font-size: 12px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 6px; outline: none; }
 .md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
-.md-side-more { font-size: 15px; line-height: 1; padding: 2px 9px; }
+.md-side-more { position: relative; z-index: 41; font-size: 15px; line-height: 1; padding: 2px 9px; } /* Above the rail strip (z-index 40): a wrapped toolbar can put this button inside it. */
 /* With the toolbar hidden, the handle fades in on hover and sits in the stage's
    top padding so it never covers the page itself. */
 .md-side-handle { position: absolute; top: 6px; right: 8px; z-index: 7; opacity: 0; transition: opacity .12s ease; font-size: 15px; line-height: 1; padding: 2px 9px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent); }
@@ -15173,6 +16265,42 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return () => { cancelled = true }
       }, [wantMaskImage, maskDoc, page, docRev])
 
+      // The same layout record the reader's text layer uses, fetched for the page
+      // this column shows. Without it the boxes keep revealing the old bitmap.
+      const [overlayBlocks, setOverlayBlocks] = useState([])
+      const [overlayBlocksPage, setOverlayBlocksPage] = useState(null)
+      const [overlayPageSize, setOverlayPageSize] = useState(null)
+      const wantTextLayer = bookId !== '' && code !== '' && shownVariant !== 'translated'
+        && (masks.length > 0 || tool === 'mask')
+      useEffect(() => {
+        if (!wantTextLayer) {
+          setOverlayBlocks([])
+          setOverlayBlocksPage(null)
+          setOverlayPageSize(null)
+          return undefined
+        }
+        let cancelled = false
+        void (async () => {
+          try {
+            const payload = await request('GET',
+              `blocks?book=${encodeURIComponent(bookId)}&code=${encodeURIComponent(code)}&page=${page}`)
+            if (cancelled) return
+            setOverlayBlocks(Array.isArray(payload.blocks) ? payload.blocks : [])
+            setOverlayBlocksPage(page)
+            setOverlayPageSize(payload.page !== null && payload.page !== undefined ? payload.page : null)
+          } catch {
+            if (cancelled) return
+            setOverlayBlocks([])
+            setOverlayBlocksPage(null)
+            setOverlayPageSize(null)
+          }
+        })()
+        return () => { cancelled = true }
+      }, [wantTextLayer, bookId, code, page, docRev])
+      const overlayTextBlocks = (overlayBlocksPage === page ? overlayBlocks : [])
+        .filter(block => String(block.md ?? '').trim() !== '')
+      const overlayTextReady = wantTextLayer && overlayTextPageOk(overlayTextBlocks, overlayPageSize)
+
       // One page fits the column: page 1's width at scale 1 against the stage's
       // content width. Recomputed whenever either side of that ratio changes, so
       // resizing the pane, the window or the dock refits on its own. `stageWidth`
@@ -15482,6 +16610,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const masksLayer = masks.length === 0 || shownVariant === 'translated' || tool === 'mask'
         ? null
         : h('div', { className: 'md-masks-readonly', 'aria-hidden': true },
+          overlayTextReady ? h(OverlayTextLayer, { blocks: overlayTextBlocks, page: overlayPageSize, masks }) : null,
           masks.map((mask, index) => h('div', {
             key: `${mask.x}-${mask.y}-${index}`,
             className: 'md-mask',
@@ -15493,7 +16622,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             },
           },
             h('div', { className: 'md-mask-clip' },
-              maskImage === '' ? null : h('div', {
+              maskImage === '' || overlayTextReady ? null : h('div', {
                 className: 'md-mask-page-image',
                 style: {
                   position: 'absolute',
@@ -15591,11 +16720,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               },
             }),
           // With the box tool picked the boxes move and resize in place, and a
-          // right-click deletes one (undo brings it back).
+          // right-click deletes one (undo brings it back). The text layer is
+          // repeated here so moving a box keeps the revealed words visible.
+          overlayTextReady ? h(OverlayTextLayer, { blocks: overlayTextBlocks, page: overlayPageSize, masks }) : null,
           tool === 'mask'
             ? h(MaskBoxes, {
               masks,
-              image: maskImage,
+              image: overlayTextReady ? '' : maskImage,
               onChange: (index, mask) => commitMasks(masksRef.current.map((item, position) => (position === index ? mask : item))),
               onDelete: index => commitMasks(masksRef.current.filter((item, position) => position !== index)),
             })
@@ -16467,6 +17598,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const activeWorkflow = useWorkflowMode()
       const mathMode = activeWorkflow === 'math'
       const [envPrompt, setEnvPrompt] = useState('')
+      // Web shells that host the plugin in a sandboxed frame drop window.confirm
+      // silently; the translate cost/overwrite questions go through this modal
+      // instead so a click always has a visible answer.
+      const [translateAsk, setTranslateAsk] = useState(null)
       const [workspaces, setWorkspaces] = useState([])
       const [workspacePrompt, setWorkspacePrompt] = useState(null)
       const workspaceTarget = useRef(null)
@@ -16584,6 +17719,22 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [socratic, setSocratic] = useState(() => socraticEnabled())
       const [questionInject, setQuestionInject] = useState(() => questionInjectEnabled())
       const [envTools, setEnvTools] = useState({ python: false, tex: false, apiKey: false })
+      // Translation needs an image-capable model now that page images go through
+      // the Host channel, so the shell reads the read-only inventory once and
+      // re-reads it when the settings page changes a choice.
+      const [aiCatalog, setAiCatalog] = useState(null)
+      useEffect(() => {
+        let live = true
+        loadAiCatalog()
+          .then(value => { if (live) setAiCatalog(value) })
+          .catch(() => { if (live) setAiCatalog(null) })
+        return () => { live = false }
+      }, [])
+      const refreshAiCatalog = () => {
+        loadAiCatalog(true)
+          .then(value => setAiCatalog(value))
+          .catch(() => setAiCatalog(null))
+      }
       useEffect(() => {
         if (!settingsOpen) return undefined
         const onDown = event => {
@@ -17018,13 +18169,77 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setReader(previous => previous === null || previous.scale !== null ? previous : { ...previous, scale })
       }, [])
 
+      // One batch of page-turn landing retries at a time. A new turn, a reader
+      // or mode change, and the user's own scrolling all cancel the rest of the
+      // batch, so a late retry can never pull the page back.
+      const landTimers = useRef([])
+      const landGeneration = useRef(0)
+      const clearLanding = useCallback(() => {
+        landGeneration.current += 1
+        for (const timer of landTimers.current) window.clearTimeout(timer)
+        landTimers.current = []
+      }, [])
+
+      // A single-page turn lands where the reader continues: a forward turn or
+      // a page-number jump starts the new page at its top, while turning back
+      // starts at its bottom when the page is taller than the stage (and at its
+      // top when the page fits). Continuous mode and the bilingual columns move
+      // through their own effects; the pager stops at the first/last page before
+      // it reaches this. The new page paints asynchronously, so the landing is
+      // settled again after its box has replaced the previous page's; a settle
+      // whose batch was replaced does nothing.
+      const landPage = useCallback((page, atBottom) => {
+        clearLanding()
+        const generation = landGeneration.current
+        const settle = () => {
+          if (generation !== landGeneration.current) return
+          const shown = readerRef.current
+          const stage = readerStage.current
+          if (shown === null || stage === null) return
+          if (shown.mode !== 'single' || shown.phase !== 'ready' || shown.page !== page) return
+          const box = stage.querySelector('.md-reader-single-page')
+          const height = box === null ? 0 : box.getBoundingClientRect().height
+          stage.scrollTop = atBottom && height > stage.clientHeight ? stage.scrollHeight : 0
+        }
+        landTimers.current = [80, 240, 600, 1000].map(delay => window.setTimeout(settle, delay))
+      }, [clearLanding])
+
+      // The retries belong to one page turn of the document in the single view.
+      // Leaving that document or that view drops them, and any gesture on the
+      // page drops them too: once the reader starts scrolling, the rest of the
+      // landing must not fight them.
+      const landKey = reader === null
+        ? ''
+        : `${reader.bookId}|${reader.code}|${reader.name}|${reader.variant}|${reader.mode}`
+      useEffect(() => {
+        clearLanding()
+        const shown = readerRef.current
+        if (shown === null || shown.mode !== 'single') return undefined
+        const stop = () => clearLanding()
+        window.addEventListener('wheel', stop, { passive: true, capture: true })
+        window.addEventListener('touchstart', stop, { passive: true, capture: true })
+        window.addEventListener('pointerdown', stop, { capture: true })
+        window.addEventListener('keydown', stop, { capture: true })
+        return () => {
+          window.removeEventListener('wheel', stop, { capture: true })
+          window.removeEventListener('touchstart', stop, { capture: true })
+          window.removeEventListener('pointerdown', stop, { capture: true })
+          window.removeEventListener('keydown', stop, { capture: true })
+          clearLanding()
+        }
+      }, [landKey, clearLanding])
+
       // Every page move of a chapter PDF goes through the chapter's shared
       // page, so the preview, the page box, the annotation keys and the undo
       // keys can never be on different pages. A produced PDF is not a chapter,
-      // so it keeps its page to itself.
-      const readerPage = useCallback(page => {
+      // so it keeps its page to itself. `atBottom` marks the one turn that
+      // lands at the new page's bottom.
+      const readerPage = useCallback((page, atBottom = false) => {
         const shown = readerRef.current
         if (shown === null) return
+        const limit = shown.count > 0 ? shown.count : 1
+        const wanted = Math.max(1, Math.min(limit, Math.round(page)))
+        if (wanted !== shown.page) landPage(wanted, atBottom)
         if (shown.name === '') {
           setChapterPage(shown.bookId, shown.code, 'reader', page, 'navigate')
           return
@@ -17036,12 +18251,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           if (next === previous.page) return previous
           return { ...previous, page: next, jump: (previous.jump ?? 0) + 1 }
         })
-      }, [])
+      }, [landPage])
 
       const readerPrev = useCallback(() => {
         const shown = readerRef.current
         if (shown === null || shown.page <= 1) return
-        readerPage(shown.page - 1)
+        readerPage(shown.page - 1, true)
       }, [readerPage])
 
       const readerNext = useCallback(() => {
@@ -19345,7 +20560,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const unparsedFiles = books.reduce((sum, item) => sum + (Number(item.unparsed) || 0), 0)
       const partialFiles = skippedFiles + unparsedFiles
       const canRender = envTools.python && envTools.tex
-      const canTranslate = canRender && envTools.apiKey === true
+      // The model, not the old DeepSeek key, decides whether a chapter can be
+      // translated: every page image is now sent through the Host channel.
+      const translateModel = resolvedAiModel(aiCatalog, 'translate')
+      const canTranslate = canRender && translateModel !== null && translateModel.images === true
       const canExport = envTools.python
       const activeWorkspace = catalog === null || catalog.target === null || catalog.target === undefined
         || catalog.target.workspaceId === null || catalog.target.workspaceId === undefined || catalog.target.workspaceId === ''
@@ -19475,6 +20693,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         ]
         body = h(Shelf, {
           books: visibleBooks,
+          wholeTotal: books.filter(item => item.whole === true).length,
+          looseTotal: books.filter(item => item.loose === true && item.whole !== true).length,
           covers: catalog.covers,
           group,
           groupName: groupNameForShelf,
@@ -19616,9 +20836,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: reload }, format('retry'))
           ),
           notice === '' ? null : h('div', { className: 'md-notice', role: 'status', inert: covered ? '' : undefined }, notice),
-          catalog === null || blockingError !== '' || partialFiles === 0 ? null : h('div', { className: 'md-hint', inert: covered ? '' : undefined },
-            format('partialHint', { files: partialFiles })
-          ),
+          catalog === null || blockingError !== '' || partialFiles === 0
+            ? null
+            : h(TransientHint, {
+              text: format('partialHint', { files: partialFiles }),
+              inert: covered ? '' : undefined,
+            }),
           h('div', { className: 'md-content' },
             h('div', {
               className: 'md-body',
@@ -19764,6 +20987,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               return next
             }),
             onClose: () => setSettingsOpen(false),
+            onAiChange: refreshAiCatalog,
           })
           : null,
         shelfName === null
@@ -19785,7 +21009,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             canExport,
             mathMode,
             onEnvRequired: setEnvPrompt,
+            onTranslateConfirm: setTranslateAsk,
             onGeneralSession: openGeneralSession,
+            translateModel,
             doc: readerDoc.current,
             busy: creatingKey !== '',
             forceNew: readerForceNew,
@@ -19828,9 +21054,30 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onClose: () => setEnvPrompt(''),
             onOpenSettings: () => {
               setEnvPrompt('')
-              setSettingsTab('env')
+              setSettingsTab(envPrompt === 'translate-model' ? 'ai' : 'env')
               setSettingsOpen(true)
             },
+          }),
+        translateAsk === null
+          ? null
+          : h(KitModal, {
+            title: format('translateChapterAction'),
+            onClose: () => setTranslateAsk(null),
+            children: h('p', { className: 'md-env-body', style: { whiteSpace: 'pre-line' } }, translateAsk.body),
+            footer: [
+              h(KitButton, {
+                key: 'cancel', variant: 'outline',
+                onClick: () => setTranslateAsk(null),
+              }, format('close')),
+              h(KitButton, {
+                key: 'go', variant: 'primary',
+                onClick: () => {
+                  const run = translateAsk.run
+                  setTranslateAsk(null)
+                  run()
+                },
+              }, format('translateChapterAction')),
+            ],
           }),
         workspacePrompt === null
           ? null

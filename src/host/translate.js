@@ -1,13 +1,16 @@
 /**
- * Translate one rendered PDF page with the DeepSeek vision API.
+ * Translate one rendered PDF page through the Host model channel.
  *
- * The page is sent as a JPEG data URL; the model returns Markdown with LaTeX
- * formulas preserved. The caller renders that Markdown with `md2tex.py`.
+ * The caller owns the model: it stores the page image once with
+ * `ctx.attachments`, picks the provider/model from the user's "whole-chapter
+ * translation" choice, and passes a `chat` function here. This module only keeps
+ * the prompt and the post-processing, so switching models never changes how a
+ * page is described or how its Markdown is repaired.
+ *
+ * The model returns Markdown with LaTeX formulas preserved; the caller renders
+ * that Markdown with `md2tex.py`.
  * @module dsh-pdf-workbench/translate
  */
-
-const API_URL = 'https://api.deepseek.com/chat/completions'
-const MODEL = 'deepseek-flash'
 
 function promptFor(target) {
   const direction = target === 'zh' ? 'Simplified Chinese' : 'English'
@@ -29,8 +32,8 @@ function promptFor(target) {
  */
 function balanceMath(markdown) {
   let text = markdown
-    .replace(/\\\[/g, '$$')
-    .replace(/\\\]/g, '$$')
+    .replace(/\\\[/g, () => '$$')
+    .replace(/\\\]/g, () => '$$')
     .replace(/\\\(/g, '$')
     .replace(/\\\)/g, '$')
   // Split on display delimiters: odd chunks are inside `$$...$$`, so their
@@ -45,50 +48,21 @@ function balanceMath(markdown) {
 }
 
 /**
- * @param {{ apiKey: string, image: string, target: 'zh'|'en', signal?: AbortSignal }} options - key, JPEG data URL, target language.
+ * @param {{ chat: Function, image: object, target: 'zh'|'en', signal?: AbortSignal, onUsage?: Function }} options - the Host channel, the stored page image, and the target language.
  * @returns {Promise<string>} Markdown produced by the model.
  */
 export async function translatePage(options) {
-  if (typeof options.apiKey !== 'string' || options.apiKey === '') {
-    throw new Error('缺少 DeepSeek API Key：请在插件配置里设置 deepseekApiKey，或设置环境变量 DEEPSEEK_API_KEY')
+  if (typeof options.chat !== 'function') {
+    throw new Error('翻译通道不可用：请在 设置 → AI 模型 选择翻译模型')
   }
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${options.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptFor(options.target) },
-            { type: 'image_url', image_url: { url: options.image } },
-          ],
-        },
-      ],
-    }),
+  const content = await options.chat({
+    prompt: promptFor(options.target),
+    image: options.image,
     signal: options.signal,
+    onUsage: options.onUsage,
   })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`DeepSeek API ${response.status}: ${detail.slice(0, 300)}`)
-  }
-  const data = await response.json()
-  if (typeof options.onUsage === 'function' && data !== null && typeof data === 'object' && data.usage) {
-    const usage = data.usage
-    options.onUsage({
-      input: Number(usage.prompt_tokens) || 0,
-      output: Number(usage.completion_tokens) || 0,
-      total: Number(usage.total_tokens) || 0,
-    })
-  }
-  const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string' || content.trim() === '') {
-    throw new Error('DeepSeek API 返回了空内容')
+    throw new Error('模型返回了空内容')
   }
   return balanceMath(content.trim())
 }

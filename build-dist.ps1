@@ -39,10 +39,13 @@ $neutralPatch = @"
 [IO.File]::WriteAllText((Join-Path $pkg 'cordis.patch.yml'), $neutralPatch, [Text.UTF8Encoding]::new($false))
 
 # The py.cmd/node.cmd wrappers point at this machine's runtime; never ship them.
-foreach ($wrapper in @('py.cmd', 'node.cmd')) {
-    $path = Join-Path $pkg "tools\$wrapper"
+# tools\typst is a local Typst install (52 MB), not part of the package.
+foreach ($wrapper in @('tools\py.cmd', 'tools\node.cmd')) {
+    $path = Join-Path $pkg $wrapper
     if (Test-Path $path) { Remove-Item $path -Force }
 }
+$localTypst = Join-Path $pkg 'tools\typst'
+if (Test-Path $localTypst) { Remove-Item $localTypst -Recurse -Force }
 
 $leaks = Get-ChildItem $pkg -Recurse -File -Include *.md, *.yml, *.yaml, *.json, *.js, *.mjs, *.py, *.cmd |
     Select-String -Pattern 'C:\\Users\\' -ErrorAction SilentlyContinue

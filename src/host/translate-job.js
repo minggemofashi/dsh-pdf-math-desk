@@ -70,10 +70,19 @@ function fontClassOf(fontPt) {
 
 /**
  * Start a chapter translation; resolves nothing, writes progress to `jobPath`.
- * @param {{ rasterScript: string, md2texScript: string, apiKey: string, source: string, outPath: string, jobPath: string, target: 'zh'|'en', book: string, code: string }} options - job inputs.
+ * @param {{ rasterScript: string, md2texScript: string, ai: object, source: string, outPath: string, jobPath: string, target: 'zh'|'en', book: string, code: string }} options - job inputs.
  * @returns {Promise<string>} the job id.
  */
 export async function startChapterJob(options) {
+  if (options.ai === null || options.ai === undefined || typeof options.ai.chat !== 'function' || typeof options.ai.image !== 'function') {
+    throw new Error('没有可用的翻译模型：请在 设置 → AI 模型 选择')
+  }
+  // The engine (v1.5 D) chooses its overlay script and hands Typst's location to
+  // the Python child; the defaults keep the LaTeX kernels for old callers/tests.
+  const overlayScript = typeof options.overlayScript === 'string' && options.overlayScript !== ''
+    ? options.overlayScript
+    : join(options.toolsDir, 'md2overlay.py')
+  const typstEnv = options.typstEnv !== null && typeof options.typstEnv === 'object' ? options.typstEnv : {}
   const jobId = `tr-${Date.now().toString(36)}`
   const state = {
     id: jobId,
@@ -81,6 +90,7 @@ export async function startChapterJob(options) {
     book: options.book,
     code: options.code,
     target: options.target,
+    model: options.ai.label,
     total: 0,
     done: 0,
     failed: 0,
@@ -136,7 +146,9 @@ export async function startChapterJob(options) {
               // no cached page: translate it below
             }
           }
-          const image = `data:image/png;base64,${(await readFile(join(temporary, files[index]))).toString('base64')}`
+          // One image per page: the block call and the whole-page fallback share
+          // the same stored attachment, so a retry costs no extra storage.
+          const image = await options.ai.image(await readFile(join(temporary, files[index])))
           let pageMarkdown = ''
           let blockError = ''
           if (typeof options.cacheDir === 'string' && typeof options.toolsDir === 'string') {
@@ -145,13 +157,19 @@ export async function startChapterJob(options) {
               const blocks = JSON.parse(raw)
               if (Array.isArray(blocks) && blocks.length > 0) {
                 const translated = await translatePageBlocks({
-                  apiKey: options.apiKey,
+                  chat: options.ai.chat,
                   image,
                   blocks,
                   target: options.target,
                   onUsage: addUsage,
                 })
                 const name = `page-${String(index + 1).padStart(3, '0')}.blocks.json`
+                // A page that came back with holes is not a success: the overlay
+                // would show an empty box and the note would stay silent.
+                const missingBlocks = translated.filter(block => block.missing === true).length
+                if (missingBlocks > 0) {
+                  blockError = `第 ${index + 1} 页有 ${missingBlocks} 个块没有返回译文`
+                }
                 pageMarkdown = translated.map(block => block.md).filter(part => part !== '').join('\n\n')
                 if (pageMarkdown.trim() !== '') {
                   await writeFile(join(options.cacheDir, name), JSON.stringify(translated), 'utf8').catch(() => {})
@@ -175,10 +193,12 @@ export async function startChapterJob(options) {
           }
           if (pageMarkdown.trim() === '') {
             try {
-              pageMarkdown = await translatePage({ apiKey: options.apiKey, image, target: options.target, onUsage: addUsage })
-            } catch {
+              pageMarkdown = await translatePage({ chat: options.ai.chat, image, target: options.target, onUsage: addUsage })
+            } catch (error) {
               // One page failing must not throw away the pages that worked: keep
-              // the page empty, remember it, and let the chapter finish.
+              // the page empty, remember why, and let the chapter finish.
+              const message = String(error !== null && error !== undefined && error.message ? error.message : error)
+              state.blockErrors = Array.from(new Set([...(state.blockErrors ?? []), `第 ${index + 1} 页：整页翻译失败：${message}`]))
               pageMarkdown = ''
             }
           }
@@ -193,7 +213,10 @@ export async function startChapterJob(options) {
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => worker()))
       if (chunks.every(chunk => chunk.trim() === '')) {
-        throw new Error('所有页面都没有返回译文，请检查 API Key 与网络')
+        // "All pages empty" alone told the user nothing; carry the first real
+        // reason (provider error, missing session header, auth, …) into the job.
+        const first = Array.isArray(state.blockErrors) && state.blockErrors.length > 0 ? String(state.blockErrors[0]) : ''
+        throw new Error(`所有页面都没有返回译文（${options.ai.label}）${first === '' ? '' : `：${first.slice(0, 300)}`}`)
       }
       if (typeof options.cacheDir === 'string' && options.cacheDir !== '') {
         await mkdir(options.cacheDir, { recursive: true })
@@ -227,13 +250,13 @@ export async function startChapterJob(options) {
             if (typeof options.cacheDir === 'string' && options.cacheDir !== '') {
               try {
                 const blocksFile = join(options.cacheDir, `page-${String(index + 1).padStart(3, '0')}.blocks.json`)
-                await capture(join(options.toolsDir, 'md2overlay.py'), [
+                await capture(overlayScript, [
                   blocksFile,
                   miniPdf,
                   String(size[0]),
                   String(size[1]),
                   fontClass,
-                ])
+                ], typstEnv)
                 positioned = true
               } catch {
                 positioned = false
@@ -243,6 +266,7 @@ export async function startChapterJob(options) {
               reflowPages.push(index + 1)
               await writeFile(miniMd, chunks[index], 'utf8')
               await renderMarkdown(options.md2texScript, miniMd, miniPdf, {
+                ...typstEnv,
                 MATH_DESK_NO_TITLE: '1',
                 MATH_DESK_PAPER: `${size[0] / 72},${size[1] / 72}`,
                 MATH_DESK_FONTSIZE: fontClass,
@@ -255,8 +279,10 @@ export async function startChapterJob(options) {
           // The overlay is only positionally aligned when every page came from
           // its block boxes. Say so instead of letting the boxes look broken.
           if (reflowPages.length > 0) state.overlayReflowPages = reflowPages
-        } catch {
+        } catch (error) {
           // The overlay PDF is optional; the natural reading PDF still exists.
+          // Say why it is missing instead of silently falling back next time.
+          state.overlayError = String(error !== null && error !== undefined && error.message ? error.message : error).slice(0, 400)
         }
       }
       const title = basename(options.outPath, '.pdf').replace(/_translated$/i, '')
@@ -286,6 +312,7 @@ export async function startChapterJob(options) {
           markdownPath,
           options.outPath,
           {
+            ...typstEnv,
             // The translated pages keep the book's headings; a generated one
             // would print the chapter's file name on top of page 1.
             MATH_DESK_NO_TITLE: '1',

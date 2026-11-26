@@ -28,7 +28,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path'
 
 import { chapterArtifactDir, countArtifacts, listArtifacts, readArtifact, resolveChapter } from './artifacts.js'
@@ -45,6 +45,7 @@ import { importBookArchive } from './book-import.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
 import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
+import { installTypst, installed, TYPST_VERSION } from './typst-install.js'
 import { loadCatalog } from './index-source.js'
 import { readPageBlocks } from './blocks.js'
 import { translatePage } from './translate.js'
@@ -72,6 +73,12 @@ function vendorContentType(name) {
   if (name === 'fonts/zhhand/OFL.txt') return 'text/plain; charset=utf-8'
   if (/^rough\/[^/]+\.mjs$/.test(name)) return 'text/javascript; charset=utf-8'
   if (name === 'rough/LICENSE') return 'text/plain; charset=utf-8'
+  // KaTeX renders the overlay text layer's formulas; only the browser build and
+  // the woff2 subsets are vendored (the .woff/.ttf fallbacks are not served).
+  if (name === 'katex/katex.min.js') return 'text/javascript; charset=utf-8'
+  if (name === 'katex/katex.min.css') return 'text/css; charset=utf-8'
+  if (/^katex\/fonts\/[A-Za-z0-9._-]+\.woff2$/.test(name)) return 'font/woff2'
+  if (name === 'katex/LICENSE') return 'text/plain; charset=utf-8'
   if (name === 'host-ui.cjs') return 'text/javascript; charset=utf-8'
   if (name === 'host-ui.css') return 'text/css; charset=utf-8'
   return null
@@ -124,9 +131,27 @@ async function mutationBody(request, response) {
 }
 
 /**
+ * The bytes behind one `data:image/...;base64,` URL.
+ * @param {string} value - the data URL the browser rasterized.
+ * @returns {{ data: Buffer, mediaType: string } | null} the bytes and media type, or null when unusable.
+ */
+function imageBytesOf(value) {
+  const comma = value.indexOf(',')
+  if (comma < 0) return null
+  const match = /^data:(image\/(?:png|jpeg|webp));base64$/i.exec(value.slice(0, comma))
+  if (match === null) return null
+  try {
+    const data = Buffer.from(value.slice(comma + 1), 'base64')
+    return data.length === 0 ? null : { data, mediaType: match[1].toLowerCase() }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Build the prefix handler for the plugin's routes.
  * @param {{ libraryDir: string, fragmentDir: string, artifactDir: string, coverDir: string, indexPath: string, statePath: string, resumeRatio?: number, toolsDir?: string }} config - resolved paths and behavior (the profile's library is the fallback).
- * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object> }} [options] - host capabilities the routes expose.
+ * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object>, aiTranslate?: (choice: object) => Promise<object> }} [options] - host capabilities the routes expose.
  * @returns {(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<void>} the handler.
  */
 export function createHandler(config, options = {}) {
@@ -152,7 +177,7 @@ export function createHandler(config, options = {}) {
  * @param {string} code - chapter code.
  * @returns {Promise<string|null>} absolute path, or null when missing.
  */
-function runTool(script, args) {
+function runTool(script, args, env = {}) {
   const pythons = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
   return new Promise((resolve, reject) => {
     const next = index => {
@@ -160,7 +185,7 @@ function runTool(script, args) {
         reject(new Error('没有可用的 Python'))
         return
       }
-      execFile(pythons[index], [script, ...args], { timeout: 240000, windowsHide: true }, error => {
+      execFile(pythons[index], [script, ...args], { timeout: 240000, windowsHide: true, env: { ...process.env, ...env } }, error => {
         if (error === null) resolve()
         else next(index + 1)
       })
@@ -170,12 +195,30 @@ function runTool(script, args) {
 }
 
 /**
+ * Environment for a tool that renders through the overlay kernel: the Typst
+ * location plus the overlay script name, so rebuild/realign follow the same
+ * engine the Host resolved at start-up.
+ * @param {object} options - the handler options.
+ * @returns {Record<string, string>} extra environment variables.
+ */
+function engineToolEnv(options) {
+  const env = {}
+  if (options !== null && options !== undefined && options.typstEnv !== null && typeof options.typstEnv === 'object') {
+    Object.assign(env, options.typstEnv)
+  }
+  if (options !== null && options !== undefined && typeof options.overlayName === 'string' && options.overlayName !== '') {
+    env.MATH_DESK_OVERLAY_SCRIPT = options.overlayName
+  }
+  return env
+}
+
+/**
  * Run one bundled tool and return its stdout (PDF sizes, font sizes, blocks).
  * @param {string} script - absolute tool path.
  * @param {string[]} args - tool arguments.
  * @returns {Promise<string>} the tool's stdout.
  */
-function toolOutput(script, args) {
+function toolOutput(script, args, env = {}) {
   const pythons = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
   return new Promise((resolve, reject) => {
     const next = index => {
@@ -186,7 +229,7 @@ function toolOutput(script, args) {
       execFile(
         pythons[index],
         [script, ...args],
-        { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+        { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } },
         (error, stdout) => {
           if (error === null) resolve(stdout)
           else next(index + 1)
@@ -218,6 +261,40 @@ async function deepseekKey() {
   } catch {
     return ''
   }
+}
+
+/**
+ * The Host model channel one translation call uses. The client sends its stored
+ * choice; the Host resolves `follow` to the live deployment default, so the
+ * plugin never writes a model anywhere.
+ * @param {object | undefined} choice - the client's stored choice.
+ * @returns {Promise<object>} the channel (`label`, `image(bytes)`, `chat(request)`).
+ */
+async function aiFor(choice) {
+  if (typeof options.aiTranslate !== 'function') {
+    throw Object.assign(new Error('宿主没有可用的模型服务'), { code: 'no-llm' })
+  }
+  return await options.aiTranslate(choice)
+}
+
+/**
+ * Answer one model-resolution failure with the code the client can act on.
+ * @param {import('node:http').ServerResponse} response - outbound response.
+ * @param {unknown} error - the thrown value.
+ * @returns {boolean} whether the failure was answered here.
+ */
+function answerAiFailure(response, error) {
+  const code = error !== null && error !== undefined && typeof error.code === 'string' ? error.code : ''
+  const message = String(error && error.message ? error.message : error)
+  if (code === 'model-cannot-read-image') {
+    fail(response, 422, code, message)
+    return true
+  }
+  if (code === 'no-model' || code === 'no-llm' || code === 'model-missing') {
+    fail(response, 503, code, message)
+    return true
+  }
+  return false
 }
 
 async function activeLibrary() {
@@ -312,12 +389,17 @@ async function activeLibrary() {
         || path === `${PREFIX}/deepseek-key`
         || path.startsWith(`${PREFIX}/vendor/`)
         || path === `${PREFIX}/font`
+        || path === `${PREFIX}/engine`
         || path === `${PREFIX}/font/file`
         || path === `${PREFIX}/backup/settings`
         || path === `${PREFIX}/state`
         || path === `${PREFIX}/pending`
         || path === `${PREFIX}/pending/remove`
         || path === `${PREFIX}/context`
+        || path === `${PREFIX}/ai-catalog`
+        || path === `${PREFIX}/ai-session`
+        || path === `${PREFIX}/ai-probe`
+        || path === `${PREFIX}/clear-translation-cache`
         || path === `${PREFIX}/purge`
       if (!libraryFree && (libraries === undefined || (await libraries.active()) === null)) {
         fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
@@ -477,6 +559,38 @@ async function activeLibrary() {
           sendJson(response, 200, { ok: true, report })
         } catch (error) {
           fail(response, 500, 'library-import-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/engine`) {
+        const typeset = options.typeset ?? {}
+        if (request.method === 'GET') {
+          sendJson(response, 200, {
+            ok: true,
+            engine: typeof typeset.engine === 'string' ? typeset.engine : 'latex',
+            typst: typeof typeset.typst === 'string' ? typeset.typst : '',
+            version: typeof typeset.version === 'string' ? typeset.version : '',
+            source: typeof typeset.source === 'string' ? typeset.source : 'missing',
+            installed: installed(),
+            pinnedVersion: TYPST_VERSION,
+            platform: process.platform,
+          })
+          return
+        }
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET 或 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        try {
+          sendJson(response, 200, { ok: true, ...(await installTypst()) })
+        } catch (error) {
+          const code = error !== null && error !== undefined && error.code ? String(error.code) : 'install-failed'
+          fail(response, code === 'unsupported' ? 400 : 502, code, String(error && error.message ? error.message : error))
         }
         return
       }
@@ -700,7 +814,7 @@ async function activeLibrary() {
             return
           }
           const out = `${source.slice(0, source.length - 3)}.pdf`
-          await renderMarkdown(options.md2texScript, source, out)
+          await renderMarkdown(options.md2texScript, source, out, engineToolEnv(options))
           sendJson(response, 200, { ok: true, path: out })
         } catch (error) {
           fail(response, 503, 'render-failed', String(error && error.message ? error.message : error))
@@ -783,7 +897,43 @@ async function activeLibrary() {
             source,
             pageIndex: page,
           })
-          sendJson(response, 200, { ok: true, blocks })
+          // The overlay records where each translated block actually landed; the
+          // reader's "框选整页" boxes are cut from that record when it exists, so
+          // a frame never has to guess the translation's size. Older translations
+          // have no layout and keep the original-box fallback.
+          let pageSize = null
+          try {
+            const layout = JSON.parse(await readFile(
+              join(config.dataDir, 'translation', String(book), code, `page-${String(page).padStart(3, '0')}.layout.json`),
+              'utf8'))
+            const rows = layout !== null && typeof layout === 'object' && Array.isArray(layout.blocks) ? layout.blocks : []
+            if (layout !== null && typeof layout === 'object' && layout.page !== null && typeof layout.page === 'object'
+              && Number.isFinite(Number(layout.page.width)) && Number.isFinite(Number(layout.page.height))) {
+              pageSize = { width: Number(layout.page.width), height: Number(layout.page.height) }
+            }
+            const byId = new Map(rows.map(row => [String(row.id), row]))
+            for (const block of blocks) {
+              const row = byId.get(String(block.id))
+              if (row === undefined || !Array.isArray(row.dst) || row.dst.length !== 4) continue
+              const dst = row.dst.map(Number)
+              if (!dst.every(Number.isFinite)) continue
+              block.dst = dst
+              if (Number.isFinite(Number(row.fontPt))) block.fontPt = Number(row.fontPt)
+              // What a DOM text layer needs to put the same text on the same
+              // printed baseline; absent in sidecars written before v1.5.
+              if (Array.isArray(row.box) && row.box.length === 4) {
+                const box = row.box.map(Number)
+                if (box.every(Number.isFinite)) block.box = box
+              }
+              if (Number.isFinite(Number(row.baseline))) block.baseline = Number(row.baseline)
+              if (Number.isFinite(Number(row.leadingPt))) block.leadingPt = Number(row.leadingPt)
+              if (typeof row.align === 'string') block.align = row.align
+              if (typeof row.overflow === 'boolean') block.overflow = row.overflow
+            }
+          } catch {
+            // No layout for this page yet.
+          }
+          sendJson(response, 200, { ok: true, blocks, page: pageSize })
         } catch (error) {
           fail(response, 500, 'blocks-failed', String(error && error.message ? error.message : error))
         }
@@ -912,6 +1062,46 @@ async function activeLibrary() {
         return
       }
 
+      // The per-page Markdown/block caches only matter while a chapter is being
+      // translated or resumed; once the PDF is produced they are dead weight.
+      // Settings → 数据 offers one button instead of asking the user to find the
+      // folder. Running jobs own their state file and are left alone.
+      if (path === `${PREFIX}/clear-translation-cache`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          let removed = 0
+          let skipped = 0
+          for (const root of [join(config.dataDir, 'translation'), join(config.dataDir, 'translate-jobs')]) {
+            const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+            for (const entry of entries) {
+              const target = join(root, entry.name)
+              if (entry.isFile() && entry.name.endsWith('.json')) {
+                let running = false
+                try {
+                  const state = JSON.parse(await readFile(target, 'utf8'))
+                  running = state !== null && typeof state === 'object' && state.status === 'running'
+                } catch {
+                  running = false
+                }
+                if (running) {
+                  skipped += 1
+                  continue
+                }
+              }
+              await rm(target, { recursive: true, force: true })
+              removed += 1
+            }
+          }
+          sendJson(response, 200, { ok: true, removed, skipped })
+        } catch (error) {
+          fail(response, 500, 'clear-cache-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
       if (path === `${PREFIX}/translate-chapter`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
@@ -930,6 +1120,16 @@ async function activeLibrary() {
             return
           }
           const outPath = join(dirname(source), `${basename(source, '.pdf')}_translated.pdf`)
+          // Resolve the model before the job starts: a model that cannot read
+          // images (or a missing one) is a 4xx the user can act on, not a job
+          // that runs to the end with zero translated pages.
+          let ai
+          try {
+            ai = await aiFor(body.ai)
+          } catch (error) {
+            if (answerAiFailure(response, error)) return
+            throw error
+          }
           const jobId = await startChapterJob({
             jobDir: join(config.dataDir, 'translate-jobs'),
             cacheDir: join(config.dataDir, 'translation', body.book, body.code),
@@ -937,7 +1137,9 @@ async function activeLibrary() {
             overlayPath: join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`),
             rasterScript: join(config.toolsDir, 'pdf_raster.py'),
             md2texScript: options.md2texScript,
-            apiKey: await deepseekKey(),
+            overlayScript: options.overlayScript,
+            typstEnv: options.typstEnv,
+            ai,
             source,
             outPath,
             target,
@@ -1406,7 +1608,8 @@ async function activeLibrary() {
           }
           const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
           const outPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
-          await runTool(join(config.toolsDir, 'rebuild_overlay.py'), [source, cacheDir, outPath, config.toolsDir])
+          await runTool(join(config.toolsDir, 'rebuild_overlay.py'), [source, cacheDir, outPath, config.toolsDir],
+            engineToolEnv(options))
           sendJson(response, 200, { ok: true, pdf: basename(outPath) })
         } catch (error) {
           fail(response, 500, 'rebuild-overlay-failed', String(error && error.message ? error.message : error))
@@ -1442,7 +1645,8 @@ async function activeLibrary() {
           // This is an approximation built from cached text, so the overlay it
           // replaces stays next to it as `.bak` instead of just vanishing.
           await copyFile(outPath, `${outPath}.bak`).catch(() => {})
-          await runTool(join(config.toolsDir, 'realign_overlay.py'), [source, cacheDir, outPath, config.toolsDir])
+          await runTool(join(config.toolsDir, 'realign_overlay.py'), [source, cacheDir, outPath, config.toolsDir],
+            engineToolEnv(options))
           sendJson(response, 200, { ok: true, pdf: basename(outPath) })
         } catch (error) {
           fail(response, 500, 'realign-overlay-failed', String(error && error.message ? error.message : error))
@@ -1475,8 +1679,9 @@ async function activeLibrary() {
             return
           }
           const outPath = join(dirname(source), `${basename(source, '.pdf')}_translated.pdf`)
-          // Re-render only when the renderer changed: the marker keeps re-opening
-          // bilingual mode from spending seconds in XeLaTeX every time.
+          // Re-render only when the renderer (or its engine) changed: the marker
+          // keeps re-opening bilingual mode from spending seconds in a compiler.
+          const renderTag = `${PLUGIN_VERSION}-${typeof options.overlayName === 'string' && options.overlayName.includes('typst') ? 'typst' : 'latex'}`
           const marker = join(cacheDir, '.render-version')
           let rendered = ''
           try {
@@ -1484,7 +1689,7 @@ async function activeLibrary() {
           } catch {
             rendered = ''
           }
-          if (rendered === PLUGIN_VERSION) {
+          if (rendered === renderTag) {
             sendJson(response, 200, { ok: true, skipped: true, pdf: basename(outPath) })
             return
           }
@@ -1500,7 +1705,7 @@ async function activeLibrary() {
           } catch {
             paper = ''
           }
-          const draft = join(cacheDir, `.render-${PLUGIN_VERSION}.md`)
+          const draft = join(cacheDir, `.render-${renderTag}.md`)
           await writeFile(draft, chunks.join('\n\n\\newpage\n\n'), 'utf8')
           try {
             await renderMarkdown(
@@ -1508,6 +1713,7 @@ async function activeLibrary() {
               draft,
               outPath,
               {
+                ...engineToolEnv(options),
                 // No generated heading: the pages carry the book's own one.
                 MATH_DESK_NO_TITLE: '1',
                 ...(paper === '' ? {} : { MATH_DESK_PAPER: paper }),
@@ -1516,7 +1722,7 @@ async function activeLibrary() {
           } finally {
             await unlink(draft).catch(() => {})
           }
-          await writeFile(marker, PLUGIN_VERSION, 'utf8').catch(() => {})
+          await writeFile(marker, renderTag, 'utf8').catch(() => {})
           sendJson(response, 200, { ok: true, pdf: basename(outPath) })
         } catch (error) {
           fail(response, 500, 'rebuild-translated-failed', String(error && error.message ? error.message : error))
@@ -1540,6 +1746,11 @@ async function activeLibrary() {
             fail(response, 413, 'image-too-large', '页面图片过大，请降低渲染倍率')
             return
           }
+          const decoded = imageBytesOf(image)
+          if (decoded === null) {
+            fail(response, 400, 'bad-image', '页面图片格式不支持（需要 PNG/JPEG/WebP）')
+            return
+          }
           const target = body.target === 'zh' ? 'zh' : 'en'
           const library = await activeLibrary()
           const source = await chapterPdf(library, body.book, body.code)
@@ -1549,7 +1760,15 @@ async function activeLibrary() {
           }
           const dir = dirname(source)
           const name = basename(source)
-          const markdown = await translatePage({ apiKey: await deepseekKey(), image, target })
+          let ai
+          try {
+            ai = await aiFor(body.ai)
+          } catch (error) {
+            if (answerAiFailure(response, error)) return
+            throw error
+          }
+          const imageRef = await ai.image(decoded.data, decoded.mediaType)
+          const markdown = await translatePage({ chat: ai.chat, image: imageRef, target })
           if (body.mdOnly === true) {
             sendJson(response, 200, { ok: true, md: markdown })
             return
@@ -1560,7 +1779,7 @@ async function activeLibrary() {
           try {
             // The translated page keeps the book's own chapter heading; a
             // generated one would print the temp file name above it.
-            await renderMarkdown(options.md2texScript, mdPath, out, { MATH_DESK_NO_TITLE: '1' })
+            await renderMarkdown(options.md2texScript, mdPath, out, { ...engineToolEnv(options), MATH_DESK_NO_TITLE: '1' })
           } finally {
             await unlink(mdPath).catch(() => {})
           }
@@ -1595,7 +1814,7 @@ async function activeLibrary() {
           await writeFile(mdPath, markdown, 'utf8')
           const out = join(dir, `${name.slice(0, name.length - 4)}_translated.pdf`)
           try {
-            await renderMarkdown(options.md2texScript, mdPath, out, { MATH_DESK_NO_TITLE: '1' })
+            await renderMarkdown(options.md2texScript, mdPath, out, { ...engineToolEnv(options), MATH_DESK_NO_TITLE: '1' })
           } finally {
             await unlink(mdPath).catch(() => {})
           }
@@ -1817,7 +2036,7 @@ async function activeLibrary() {
         await writeFile(temporary, Buffer.concat(chunks))
         const target = await unique()
         try {
-          await renderMarkdown(options.md2texScript, temporary, target)
+          await renderMarkdown(options.md2texScript, temporary, target, engineToolEnv(options))
         } catch (error) {
           fail(response, 503, 'render-failed', `渲染失败：${String(error && error.message ? error.message : error).slice(-400)}`)
           return
@@ -2227,6 +2446,65 @@ async function activeLibrary() {
           }
         }
         fail(response, 404, 'no-cover', '这本书没有自定义封面')
+        return
+      }
+
+      // The model inventory this deployment can route, for the settings page.
+      // Read-only: it never selects a model and never writes the default.
+      if (path === `${PREFIX}/ai-catalog`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const catalog = typeof options.aiCatalog === 'function' ? await options.aiCatalog() : null
+        sendJson(response, 200, {
+          ok: true,
+          providers: catalog === null || catalog === undefined ? [] : catalog.providers,
+          default: catalog === null || catalog === undefined ? null : catalog.default,
+          failures: catalog === null || catalog === undefined ? [] : catalog.failures,
+        })
+        return
+      }
+
+      // Create one reader session with an explicit model. The model is creation
+      // options only; the deployment default is never written.
+      if (path === `${PREFIX}/ai-session`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const created = typeof options.aiSession === 'function' ? await options.aiSession(body) : null
+          if (created === null) {
+            fail(response, 409, 'ai-unavailable', '宿主没有提供模型会话')
+            return
+          }
+          sendJson(response, 200, { ok: true, sessionId: created.sessionId, selection: created.selection })
+        } catch (error) {
+          fail(response, 400, 'ai-session-failed', String(error !== null && error !== undefined && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // One-click isolation probe: build a throwaway session with the chosen
+      // model and report whether the deployment default moved.
+      if (path === `${PREFIX}/ai-probe`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        try {
+          const body = await readJson(request)
+          const result = typeof options.aiProbe === 'function' ? await options.aiProbe(body) : null
+          if (result === null) {
+            fail(response, 409, 'ai-unavailable', '宿主没有提供模型会话')
+            return
+          }
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 400, 'ai-probe-failed', String(error !== null && error !== undefined && error.message ? error.message : error))
+        }
         return
       }
 

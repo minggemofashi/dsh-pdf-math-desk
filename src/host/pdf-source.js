@@ -56,8 +56,12 @@ export function chapterPdfPath(config, book, chapter) {
     if (typeof book.id !== 'string' || !isSegment(book.id) || !isSegment(chapter.file)) {
       return { ok: false, reason: 'bad-name' }
     }
-    const wholeAt = chapter.wholeAt === 'root' ? '' : '整本'
-    const base = wholeAt === '' ? config.libraryDir : join(config.libraryDir, wholeAt)
+    const wholeAt = chapter.wholeAt === 'root'
+      ? config.libraryDir
+      : chapter.wholeAt === 'fragment'
+        ? config.fragmentDir
+        : join(config.libraryDir, '整本')
+    const base = wholeAt
     const target = resolve(base, `${chapter.file}.pdf`)
     if (!isInside(base, target)) return { ok: false, reason: 'bad-name' }
     return { ok: true, path: target }

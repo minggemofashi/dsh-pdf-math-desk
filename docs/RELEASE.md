@@ -266,3 +266,11 @@ tarball: https://registry.npmjs.org/dsh-pdf-workbench/-/dsh-pdf-workbench-X.Y.Z.
 - 不从脏工作目录直接发布 npm；
 - 不把 2FA 码、密码、token 发到对话或写入仓库；
 - 不在用户没说“发版”时升版本、tag、push、Release、npm。
+
+
+## 7. Typst 不进包（v1.5）
+
+- `typst.exe`（约 52 MB）不打进分发 zip：`build-dist.ps1` 会剔除 `tools\typst`，打包后请确认包里没有这个目录。
+- 用户首次启用时，设置 → 环境 →「排版引擎」可按需下载（v0.15.1，SHA256 校验，装到 `%LOCALAPPDATA%\dsh-pdf-workbench\typst\`）；也可自行安装到 PATH。
+- 没有 Typst 时自动回退 LaTeX（需要 TeX Live）；`MATH_DESK_ENGINE=latex` 可强制回退。
+- 发布说明要写清「Typst 可选、LaTeX 回退」，不要让用户以为装完插件就有 Typst。

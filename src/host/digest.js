@@ -14,6 +14,7 @@
  * @module dsh-pdf-workbench/digest
  */
 import { mkdir, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
 /** Characters of transcript sent to the model; longer chapters are cut. */
@@ -126,6 +127,9 @@ export async function summarize(selection, stream, input) {
     system: SYSTEM,
     messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
     maxTokens: 2400,
+    // Same routing key the translation channel carries: OpenCode requires its
+    // `x-opencode-session` header and DSH fills it from this field only.
+    sessionId: `session-pdfdesk-digest-${randomUUID()}`,
   })
   for await (const chunk of chunks) {
     if (chunk === null || typeof chunk !== 'object') continue
