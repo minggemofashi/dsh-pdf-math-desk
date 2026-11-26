@@ -844,27 +844,30 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------------- copy -- */
 
     const zh = {
-      title: 'PDF 阅读 · 随时问答',
-      subtitle: '{books} 本书 · {chapters} 章',
+      title: 'PDF 阅读',
+      subtitle: '书籍、章节与阅读进度',
       shelf: '书架',
       libraries: '书库',
       librariesTitle: '书库',
       librariesHint: '单击切换书库，双击进入书架。库根里按「分片 / 整本」放 PDF 即可。',
       heroEyebrow: 'PDF 阅读 · 随时问答',
-      heroTitle: '欢迎使用阅读器',
+      heroTitle: '让数学书库，清晰又好读',
       heroLead: '按章阅读、随手标注、随时提问。书库与阅读进度都在本地，打开就能接着读。',
       heroMeta: '{n} 个书库 · 数据在本地',
       heroEmpty: '还没有书库？导入一个包含「分片」或「整本」的目录即可开始。',
-      homeTools: '工具箱',
-      homeToolsHint: '左右滑动，全部工具都在这里',
+      homeTools: '书库工具',
+      homeToolsHint: '导入文件、整理章节或查看运行环境。',
       addPathPlaceholder: '书库根目录，例如 D:\\数学书库',
-      addNamePlaceholder: '名称（可选）',
+      addNamePlaceholder: '书库名称',
       libraryActive: '当前',
       libraryUse: '切换',
       libraryRemove: '移除',
       libraryRemoveConfirm: '再点一次移除',
+      libraryEnter: '进入书库',
+      libraryFolder: '打开书库目录',
+      libraryRevealFailed: '打开书库目录失败',
       libraryAddTitle: '添加书库',
-      libraryAddHint: '选库根目录：里面要有 分片\\ 或 整本\\（可以都有）',
+      libraryAddHint: '选择包含「分片」或「整本」的目录',
       libraryName: '名称',
       libraryPath: '目录',
       libraryPick: '选择目录…',
@@ -872,7 +875,9 @@ window.__ModuleLoader__.load({
       libraryBusy: '处理中…',
       libraryFailed: '书库操作失败，检查目录权限后重试',
       libraryBooks: '{n} 本',
-      modeMath: '数学',
+      modeMath: '数学模式',
+      modePillMath: '数学模式',
+      modePillGeneral: '通用模式',
       manualTitle: '书库说明书',
       manualSummary: '结构 · 命名 · 环境 · 来源',
       manualLead: '书库就是一个文件夹。把 PDF 按章放好，工作台负责书架、会话、标注和导出。',
@@ -900,8 +905,17 @@ window.__ModuleLoader__.load({
       aiPromptText: '给我一份报告，用 markdown 格式，数学公式行内用 $ 格式，行间用 $$ 格式，不要出现 \\[ 和 \\( 格式',
       aiPromptCopy: '复制提示词',
       aiPromptCopied: '提示词已复制',
-      splitStart: '拆分工具：开一个会话',
-      splitHint: '把工具复制到 工具\\，并新建一个带预设提示词的会话',
+      splitToolStart: '打开拆分会话',
+      splitToolCardHint: '在当前书库中创建拆分会话，按命名规则整理章节。',
+      splitPdfTitle: '按页拆分整本 PDF',
+      wholePdfCardTitle: '整本 PDF',
+      wholePdfCardHint: '导入整本 PDF，或放进书库的「整本」目录。',
+      splitPdfHint: '选一本整本书，在缩略图上点页与页之间的剪刀，按范围切开写进 分片\\<书id>\\',
+      splitPdfPick: '要拆的书',
+      splitPdfNone: '书库里还没有整本 PDF：先导入一个，或把 PDF 放进 整本\\',
+      splitPdfStart: '打开拆分面板',
+      splitPdfImport: '导入 PDF 并拆分',
+      splitPdfImportHint: '导入到 整本\\ 后直接打开拆分面板',
       splitReopened: '已打开这个书库的拆分会话',
       splitWorkspace: '工作区',
       workspaceNotChosen: '未选择工作区',
@@ -909,8 +923,25 @@ window.__ModuleLoader__.load({
       workspaceChange: '更改',
       importStart: '导入文件',
       importBusy: '导入中…',
-      importFilesHint: '导入 md/txt/pdf：md/txt 渲染成 PDF 放进 整本\\，PDF 直接放进去',
-      importFilesDone: '已导入 {n} 个文件到 库根\\整本\\',
+      importFilesHint: '导入 PDF、Markdown 或纯文本；md/txt 会先渲染成 PDF。',
+      importFilesDone: '导入完成：新增 {imported}（其中改名 {renamed}），重复跳过 {duplicates}，拒绝 {rejected}',
+      importTileTitle: '导入 PDF',
+      importTileHint: '放进 整本\\，可顺便按页拆分',
+      importPdfDone: '已导入 PDF：{name}',
+      importPdfFailed: '导入失败：{reason}',
+      importDuplicate: '这个文件已在书库里，没有重复写入：{name}',
+      importRejected: '文件被拒绝',
+      bigFileTitle: '文件较大',
+      bigFileStep1: '{name} 有 {mb} MB。整本 PDF 会整本进入会话：翻译和提问时上下文很容易塞满，花费也高。建议先导入，再用「拆分为章节」按页拆开。',
+      bigFileStep2: '再确认一次：不拆分的话，这一整本的页图会反复进入会话，上下文很容易塞满。确定仍然导入整本吗？',
+      bigFileContinue: '仍然导入',
+      bigFileConfirm: '确认导入（不拆分）',
+      bigFileCancel: '取消',
+      bigFileCancelled: '已取消（文件较大，未导入）',
+      importSplitAskTitle: '要顺便拆分吗？',
+      importSplitAsk: '《{title}》已导入 整本\\。现在按页拆分成章节吗？',
+      importSplitNow: '现在拆分',
+      importSplitLater: '以后再说',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
       splitFailed: '拆分工具没启动：确认库目录可写后重试',
       librariesTitleHint: '双击标题回到书库',
@@ -1042,12 +1073,13 @@ window.__ModuleLoader__.load({
       annotEraseHint: '点或划过笔画即可删除',
       annotClearHint: '清空本页手写标注',
       annotText: '文本框',
-      annotTextHint: '点页面写字；Enter 保存，Shift+Enter 换行',
+      annotTextHint: '拖出范围写字；单击选中，双击改字',
       annotTextPrompt: '批注内容',
       annotTextPlaceholder: '写下批注…',
       annotTextEditorHint: 'Enter 保存 · Shift+Enter 换行 · Esc 取消',
       annotTextEditHint: '双击编辑；清空内容再保存即删除',
-      annotTextActiveHint: '文本框：点页面任意位置写字，Enter 保存，Esc 取消',
+      annotTextActiveHint: '文本框：拖出一个框写字；单击已有框选中，Esc 取消',
+      annotMoveHint: '拖动移动',
       annotDualHint: '两栏各自独立：原文栏记在本页公共笔记上，译文栏自己保存一份；两栏可以停在不同页',
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
@@ -1110,6 +1142,31 @@ window.__ModuleLoader__.load({
       translateOverwriteConfirm: '这一章已经有译文，重新翻译会覆盖它。继续吗？',
       translateCostConfirm: '翻译会调用你在「设置 → AI 模型」里为整章翻译选的模型，按页计费：整章通常消耗数万到数十万 token，费用记在对应供应商的账户上。对齐模式还会略高（约 1.3 倍）。继续吗？',
       translateAiDisclaimer: '译文由 AI 生成：数学公式的识别与排版可能不完整，请对照原文核对后再使用。',
+      translatePrefsTitle: '翻译偏好',
+      translatePrefsHint: '只影响本机，用来减少重复点击。',
+      translatePrefsSkipAsk: '翻译前不再询问成本与附件占用',
+      translatePrefsAutoOverlay: '翻译完成后自动打开叠加',
+      translateAskSkip: '以后不再询问',
+      translateAskSkipHint: '可在 设置 → 数据 → 翻译偏好 里恢复',
+      splitButton: '拆分为章节',
+      splitHint: '在这个整本 PDF 上按页切开，输出到 分片/<书id>/',
+      splitTitle: '拆分',
+      splitLoading: '正在载入缩略图…',
+      splitNoPdf: '这本书没有整本 PDF',
+      splitRanges: '拆分结果',
+      splitNeedCuts: '点页与页之间的剪刀加一个拆点',
+      splitOutput: '输出到',
+      splitFragmentDir: '分片/<书id>/',
+      splitUntitled: '未命名',
+      splitCutHint: '在这里切开',
+      splitUncutHint: '取消这个拆点',
+      splitCutMarked: '已切开',
+      splitRestored: '已恢复上次的 {n} 个拆点',
+      splitForget: '清除记录',
+      splitStart: '开始拆分',
+      splitBusy: '正在拆分…',
+      splitDone: '已拆成 {files} 份',
+      splitFailed: '拆分失败',
       translateStorageHint: '另外，每一页的图会存进 DSH 附件库作为模型输入（约 0.3 MB/页；本章 {pages} 页约 {mb} MB），目前不会自动清理。',
       translating: '翻译中…',
       translateDone: '已生成',
@@ -1185,6 +1242,8 @@ window.__ModuleLoader__.load({
       renameDone: '已重命名',
       renameFailed: '重命名失败',
       cleanup: '清理空会话',
+      cleanupSection: '空白会话',
+      cleanupNone: '没有需要清理的空白会话',
       updateCheck: '检查更新',
       previewPdf: '右侧预览',
       previewOn: '开',
@@ -1214,7 +1273,7 @@ window.__ModuleLoader__.load({
       tipsLeftClick: '左键：书卡单击选中/取消，双击打开；章节名单击展开/收起。',
       tipsRightClick: '右键：产物可转 PDF/删除，会话可归档；书卡与章节没有右键菜单。',
       tipsTitle: '使用提示',
-      splitToolTitle: '拆分工具',
+      splitToolTitle: '分片工具',
       importToolTitle: '导入文件',
       toolbarTitle: '工具栏',
       diagnosticsTitle: '目录来源与路径',
@@ -1238,6 +1297,9 @@ window.__ModuleLoader__.load({
       railLeft: '左',
       railRight: '右',
       sketchRoughness: '手绘强度',
+      readCacheLimit: '页面位图缓存',
+      readCacheLimitHint: '阅读器最多同时保留几页清晰位图：调大翻页更顺但更占内存，调小省内存但翻回来要重绘。默认 5 页。',
+      readCacheOption: '{n} 页',
       settingsTabReading: '阅读',
       settingsTabWorkflow: '模式',
       settingsTabKeys: '快捷键',
@@ -1245,6 +1307,17 @@ window.__ModuleLoader__.load({
       settingsTabAbout: '关于',
       settingsTabAi: 'AI 模型',
       settingsAiHeading: '模型',
+      aiModeHeading: '思考模式',
+      aiModeHint: '两种模式都会读整章，区别在回答风格与思考深度。只影响之后新建的会话，已有会话保持原样。',
+      aiModeDaily: '日常模式',
+      aiModeQuality: '高质模式',
+      aiModeDailyHint: '像网页端聊天：回答先给结论、3–5 句内说清，需要时再补要点，不写长篇推导。思考深度仍由你在 DSH 里选的模型决定（插件不覆盖）。',
+      aiModeQualityHint: '高质模式：可以充分展开推导与证明、写长答案。想更深的思考就在 DSH 里选带思考的模型或调高其思考档位。',
+      aiStyleHeading: '风格提示词（可改）',
+      aiStyleHint: '这两句会写进新会话的开头，决定模型怎么答。改完点别处即保存；清空并「恢复默认」可回到原句。只影响之后新建的会话。',
+      aiStyleDaily: '日常模式的风格要求',
+      aiStyleQuality: '高质模式的风格要求',
+      aiStyleReset: '恢复默认',
       settingsAiDefault: '当前 DSH 默认',
       settingsAiNoDefault: '尚未配置默认模型',
       settingsAiLoading: '正在读取模型列表…',
@@ -1301,10 +1374,112 @@ window.__ModuleLoader__.load({
       fontFailed: '字体操作失败',
       settingsTabData: '数据',
       dataTitle: '整机数据迁移',
+      dataSizeHint: '打包体积主要来自 DSH 会话记录（约 {sessions}）；勾选「字体」会再加约 {fonts}，会话缓存另计。会话记录是聊天历史，不勾选迁移包会小很多。',
+      dataLocationsTitle: '数据位置',
+      dataLocationsHint: '这些位置由 profile 配置决定：这里只读显示，不能在设置里修改。',
+      dataLocationLibrary: '书库目录',
+      dataLocationPlugin: '插件数据目录',
+      dataLocationNone: '（还没有）',
+      dataLocationsReadOnly: '书库里的「分片 / 整本」放 PDF；「产物 / 封面 / .pdfdesk / 回收站 / 工具 / 索引.json」是插件数据。目录名不要手动改，改了会破坏书库与索引。',
+      storageTitle: '存储占用',
+      storageHint: '插件自己产生的缓存与打包文件。书籍 PDF、标注和产物不在这里统计，也不会被这里的按钮删除；译文缓存用下方「清除翻译缓存」。',
+      storageSessions: 'DSH 会话记录（迁移包的大头）',
+      storageFonts: '字体',
+      storageProjcache: '会话缓存',
+      storageTotal: '合计',
+      storageTranslation: '译文缓存（书库内 .pdfdesk）',
+      storageLegacy: '旧版译文缓存遗留',
+      storageJobs: '翻译任务状态',
+      storageTmp: '上传与导出临时文件',
+      storageStaging: '未完成的打包中间目录',
+      storagePreImport: '导入前快照（回滚用）',
+      storagePackages: '打包文件（你自己的包）',
+      storageTrash: '回收站（删除的书与产物）',
+      storageEmpty: '没有占用空间',
+      storageRefresh: '刷新',
+      storageClean: '清理可重建缓存',
+      storageCleanConfirm: '清理上传/导出临时文件、过期的导入暂存包，以及未完成的打包中间目录？译文缓存、打包文件和回收站不受影响。',
+      storageCleanNothing: '没有可清理的临时文件',
+      storageCleanDone: '已清理 {n} 项，释放 {mb} MB',
+      storageEmptyTrash: '清空回收站',
+      storageEmptyTrashConfirm: '清空当前书库的回收站？里面删除的书与产物会被永久删除，无法恢复。',
+      storageTrashEmpty: '回收站是空的',
+      storageTrashDone: '回收站已清空：{n} 项，{mb} MB',
+      storageFailed: '读取存储占用失败：',
+      storageRetention: '保留期',
+      storageRetentionHint: '超过保留期的东西不会自动删除；两个按钮按保留期清理，点之前会再次确认。',
+      storageDayOption: '{n} 天',
+      storagePruneTrash: '清理 {days} 天前的回收站',
+      storagePruneTrashConfirm: '删除回收站里 {days} 天没动过的东西？删除的书与产物无法恢复。',
+      storagePruneCache: '清理 {days} 天未用的译文缓存',
+      storagePruneCacheConfirm: '删除 {days} 天没动过的逐页译文缓存？重新翻译可再生成，产物 PDF 与标注不受影响。',
+      storagePruneNone: '{label}：没有超过保留期的条目',
+      storagePruneDone: '{label}：已清理 {n} 项，{mb} MB',
+      storageBusy: '正在处理…',
+      duplicatesTitle: '重复 PDF',
+      duplicatesHint: '按大小 + SHA-256 比较书库里的 PDF（整本/ 与 分片/）；只报告，不删除任何文件。',
+      duplicatesScan: '扫描重复文件',
+      duplicatesScanning: '正在扫描…',
+      duplicatesNone: '没有发现内容相同的 PDF',
+      duplicatesSummary: '发现 {n} 组重复，多占 {mb} MB',
+      duplicatesGroup: '{count} 份 · 每份 {mb} MB',
+      duplicatesFailed: '扫描失败：',
+      libraryExportTitle: '导出书库包',
+      libraryExportHint: '打包索引、标注/疑问/附件与可选产物；不含书籍 PDF（版权）。PDF 请自己压缩 分片/ 与 整本/ 带走。',
+      libraryExportArtifacts: '包含产物（译文 / 读版 / 叠加 PDF，可能较大）',
+      libraryExportStart: '开始打包',
+      exportHistoryTitle: '打包记录',
+      exportHistoryHint: '本机生成过的整机迁移包与书库包；文件被移走或删除后，这条记录会自动消失。打包记录不随迁移包迁移。',
+      exportHistoryEmpty: '还没有打包记录',
+      exportHistoryDownload: '下载',
+      exportHistoryOpen: '打开文件位置',
+      exportHistoryDelete: '删除',
+      exportHistoryDeleteConfirm: '删除打包文件「{name}」？只从磁盘移除这一个文件，不影响书库与笔记。',
+      exportHistoryDeleteFailed: '删除失败：',
+      exportKindBackup: '整机迁移包',
+      exportKindLibrary: '书库包',
+      exportKindPdf: 'PDF 包',
+      pdfExportTitle: '导出 PDF 包',
+      pdfExportHint: '只打包 分片/整本 里的书籍 PDF（含整本），不含标注、笔记等插件数据；与「书库包」「整机迁移包」分开，便于单独拷贝或测试。',
+      pdfExportScope: '范围',
+      pdfExportFragments: '只要分片',
+      pdfExportWhole: '只要整本',
+      pdfExportBoth: '分片 + 整本',
+      pdfExportStart: '开始打包 PDF',
+      exportPackRunning: '正在打包…可以离开这个面板，完成后会出现在记录里',
+      exportPackFailed: '打包失败：',
+      bookWizardTitle: '导入书籍包',
+      bookWizardPdf: '选择 PDF 包',
+      bookWizardStepPdf: '① PDF 包（必选）',
+      bookWizardStepNotes: '② 笔记包（可选）',
+      bookWizardStepBooks: '③ 要导入的书',
+      bookWizardChoose: '选择文件…',
+      bookWizardRechoose: '重新选择',
+      bookWizardDropHere: '把 ZIP 拖到这里，或点左边的按钮',
+      bookWizardPdfHint: '选择一个 ZIP：有拆分的按子目录（一个目录一本书），散装的整本 PDF 也可以。',
+      bookWizardNotes: '选择笔记包（可选）',
+      bookWizardNotesHint: '支持「导出书库包」或整机迁移包；不选则只导入 PDF。',
+      bookWizardNotesChosen: '已选笔记包',
+      bookWizardReading: '正在读取…',
+      bookWizardBooks: '共 {n} 本书',
+      bookWizardHasNotes: '已带笔记包',
+      bookWizardNoNotes: '未选笔记包',
+      bookWizardSplit: '分片 · {n} 章',
+      bookWizardWhole: '整本',
+      bookWizardExisting: '书库已有，PDF 不重复导入',
+      bookWizardMerge: '笔记：合并',
+      bookWizardOverwrite: '笔记：覆盖',
+      bookWizardSkip: '笔记：跳过',
+      bookWizardWarnings: '提醒：',
+      bookWizardStart: '开始导入',
+      bookWizardProgress: '正在导入…',
+      bookWizardCancel: '取消',
+      bookWizardDone: '完成',
+      bookWizardFailed: '导入失败：',
+      bookWizardReport: '导入完成：新增 {imported} 个文件，重复 {duplicates}，已有书跳过 PDF {skipped} 本',
       dataHint: '打包会话、工作区登记、插件状态与书库内 .pdfdesk（笔记/疑问/缓存/附件）；书籍 PDF 与密钥永不打包',
       dataBackup: '打包数据',
       dataBackupCreated: '已生成 {name}（{files} 个文件，{mb} MB）',
-      dataDownload: '下载迁移包',
       dataFonts: '包含手写字体（约 22 MB）',
       dataProjcache: '包含会话投影缓存（可重建，体积大）',
       dataSettings: '包含浏览器设置（阅读宽度/快捷键等，导出为 settings.json）',
@@ -1316,9 +1491,9 @@ window.__ModuleLoader__.load({
       dataCacheRunning: '跳过 {n} 个正在进行的任务',
       dataCacheFailed: '清除失败：',
       dataImportTitle: '导入迁移包',
-      dataImportHint: '填写本机 ZIP 路径；合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
-      dataPath: 'ZIP 路径',
-      dataInspect: '检查',
+      dataImportHint: '选择本机 ZIP 迁移包；上传后先校验 manifest 与校验和。合并策略不会覆盖已有文件，冲突项会改名为 *.imported-时间',
+      dataChoose: '选择迁移包…',
+      dataChosen: '已选择：{name}',
       dataImport: '开始导入',
       dataStrategy: '冲突处理',
       dataMerge: '合并（不覆盖）',
@@ -1332,16 +1507,10 @@ window.__ModuleLoader__.load({
       dataApplied: '已应用 {n} 项设置；刷新页面后生效',
       dataNoSettings: '没有导入的浏览器设置',
       dataBookTitle: '导入书籍包',
-      dataBookHint: '选择本机 PDF 压缩包；解压到书库的分片/整本目录，同名按上面的冲突策略处理',
+      dataBookHint: '打开导入向导：选 PDF 包（ZIP）+ 可选笔记包（书库包或迁移包），逐本勾选要导入的书；已有相同 PDF 的书不会重复导入，笔记按每本选择合并/覆盖/跳过。',
       dataBookTarget: '目标',
-      dataBookFragments: '分片',
-      dataBookWhole: '整本',
-      dataBookSubdir: '子目录（可选）',
-      dataBookSubdirPh: '例如：新书',
       dataBookImport: '导入书籍包',
       dataOverwriteConfirm: '覆盖策略会替换同名文件（Host 会先做 pre-import 快照），继续？',
-      bookOverwriteConfirm: '覆盖策略会替换目标目录里的同名 PDF，继续？',
-      dataBookReport: '书籍包：导入 {imported}，改名 {renamed}，跳过 {skipped}，提醒 {warnings}',
       attachAdd: '添加',
       attachEmpty: '暂无附件',
       attachHint: '支持 PDF、图片与 PPT（自动转 PDF），单个不超过 50 MB；会复制到本章的附件目录',
@@ -1381,6 +1550,20 @@ window.__ModuleLoader__.load({
       envNeedTex: 'TeX Live（xelatex、ctex）',
       envNeedKey: 'DeepSeek API Key',
       envNeedTranslateModel: '支持图片输入的 AI 模型',
+      aiModels: 'AI 模型',
+      envGuideTitle: '开始前检查',
+      envGuideIntro: '这几项决定翻译与导出能不能用；缺的会标 ✗，可一键去装。',
+      envGuideOk: '知道了',
+      envGuideSettings: '打开设置',
+      envInlineMissing: '翻译不可用：缺 Python / TeX 或可读图的模型',
+      envGuideWhyPython: '用来把 PDF 转文字、整理块、生成读版/叠加 PDF',
+      envGuideWhyTex: '没有 Typst 时用它排版；导出与旧缓存回退也要它',
+      envGuideWhyTypst: '默认排版引擎：叠加与读版 PDF，比 TeX 快约 9 倍',
+      envGuideWhyModel: '整章翻译要读页面图，必须选一个支持图片输入的模型',
+      envGuideNever: '不再提示',
+      envGuideAlways: '同一类缺项只自动提醒一次；点「不再提示」后不再自动出现；可在 设置 → 环境 重新打开',
+      envGuideReopen: '重新打开「开始前检查」',
+      envGuideReopenHint: '同一类缺项只自动提醒一次；点过「知道了」或「不再提示」后不再自动出现，想再看一次就点这里',
       envPromptAiModels: '选择 AI 模型',
       envUseRender: 'Markdown 转 PDF',
       envUseTranslate: '整章翻译与译文合成',
@@ -1505,8 +1688,8 @@ window.__ModuleLoader__.load({
       sampleLoading: '正在读取示例书…',
       sampleEmpty: '插件没有附带示例书',
       sampleMeta: '{chapters} 章 · 共 {size}',
-      sampleHint: '内置小册子，已按章拆好，用来快速试用',
-      sampleLoad: '加载示例书',
+      sampleHint: '阅读示例文件，快速了解书库与阅读器。',
+      sampleLoad: '载入示例书',
       sampleBusy: '正在复制…',
       sampleLoaded: '示例书已加入当前书库（{n} 个文件）',
       loading: '正在读取书目…',
@@ -1579,27 +1762,30 @@ window.__ModuleLoader__.load({
     }
 
     const en = {
-      title: 'PDF reading · ask as you read',
-      subtitle: '{books} books · {chapters} chapters',
+      title: 'PDF reading',
+      subtitle: 'Books, chapters and reading progress',
       shelf: 'Books',
       libraries: 'Libraries',
       librariesTitle: 'Libraries',
       librariesHint: 'Click to switch libraries, double-click to open the shelf. Keep PDFs under 分片/ or 整本/.',
       heroEyebrow: 'PDF reading · ask as you read',
-      heroTitle: 'Welcome to your reader',
+      heroTitle: 'Your math library, clear and readable',
       heroLead: 'Read chapter by chapter, mark the page, ask whenever you need. Libraries and progress stay local.',
       heroMeta: '{n} libraries · data stays local',
       heroEmpty: 'No library yet. Import a folder that contains 分片/ or 整本/ to start.',
-      homeTools: 'Toolbox',
-      homeToolsHint: 'Swipe sideways; every tool lives here',
+      homeTools: 'Library tools',
+      homeToolsHint: 'Import files, arrange chapters or check the toolchain.',
       addPathPlaceholder: 'Library root, e.g. D:\\数学书库',
-      addNamePlaceholder: 'Name (optional)',
+      addNamePlaceholder: 'Library name',
       libraryActive: 'Active',
       libraryUse: 'Switch',
       libraryRemove: 'Remove',
       libraryRemoveConfirm: 'Click again to remove',
+      libraryEnter: 'Open library',
+      libraryFolder: 'Open library folder',
+      libraryRevealFailed: 'Could not open the library folder',
       libraryAddTitle: 'Add a library',
-      libraryAddHint: 'Pick the library root (it should contain 分片\\ or 整本\\; both may exist).',
+      libraryAddHint: 'Pick a folder that contains 分片/ or 整本/.',
       libraryName: 'Name',
       libraryPath: 'Directory',
       libraryPick: 'Choose…',
@@ -1607,7 +1793,9 @@ window.__ModuleLoader__.load({
       libraryBusy: 'Working…',
       libraryFailed: 'Library operation failed — check the folder permissions and retry',
       libraryBooks: '{n} books',
-      modeMath: 'Math',
+      modeMath: 'Math mode',
+      modePillMath: 'Math mode',
+      modePillGeneral: 'General mode',
       manualTitle: 'Library manual',
       manualSummary: 'Structure · naming · export · source',
       manualLead: 'A library is just a folder. Put the PDFs in chapter order; the workbench handles the shelf, conversations, annotations and export.',
@@ -1634,8 +1822,17 @@ window.__ModuleLoader__.load({
       aiPromptText: 'Give me a report in markdown; inline math with $...$, display math with $$...$$, never use \\[ or \\( forms.',
       aiPromptCopy: 'Copy prompt',
       aiPromptCopied: 'Prompt copied',
-      splitStart: 'Split a book (opens a conversation)',
-      splitHint: 'Copy the toolkit into 工具\\ of the active library and open a conversation with a prepared prompt.',
+      splitToolStart: 'Open the split conversation',
+      splitToolCardHint: 'Start a split conversation in this library and arrange chapters by the naming rule.',
+      splitPdfTitle: 'Split a whole PDF by page',
+      wholePdfCardTitle: 'Whole PDF',
+      wholePdfCardHint: 'Import a whole PDF, or drop it into the 整本/ folder of the library.',
+      splitPdfHint: 'Pick a whole-book PDF and click the scissors between pages; the ranges are written into 分片\\<book id>\\',
+      splitPdfPick: 'Book to split',
+      splitPdfNone: 'No whole-book PDF in this library yet — import one, or drop a PDF into 整本\\',
+      splitPdfStart: 'Open split panel',
+      splitPdfImport: 'Import a PDF and split',
+      splitPdfImportHint: 'Imports into 整本\\ and opens the split panel right away',
       splitReopened: 'Opened this library\'s split conversation',
       splitWorkspace: 'Workspace',
       workspaceNotChosen: 'No workspace selected',
@@ -1643,8 +1840,25 @@ window.__ModuleLoader__.load({
       workspaceChange: 'Change',
       importStart: 'Import files',
       importBusy: 'Importing…',
-      importFilesHint: 'Import md/txt/pdf: md/txt are rendered to PDF in this library\'s 整本\\ as a whole book; PDFs go there directly.',
-      importFilesDone: 'Imported {n} file(s) into the library\'s 整本\\ folder',
+      importFilesHint: 'Import PDF, Markdown or plain text; md/txt is rendered to PDF first.',
+      importFilesDone: 'Done: {imported} new ({renamed} renamed), {duplicates} duplicates skipped, {rejected} rejected',
+      importTileTitle: 'Import PDF',
+      importTileHint: 'Goes into 整本\\; split it by page right away',
+      importPdfDone: 'Imported PDF: {name}',
+      importPdfFailed: 'Import failed: {reason}',
+      importDuplicate: 'Already in the library, not written again: {name}',
+      importRejected: 'The file was rejected',
+      bigFileTitle: 'Large file',
+      bigFileStep1: '{name} is {mb} MB. A whole-book PDF enters conversations as a whole: translation and questions fill the context fast and cost more. Import it first, then use “Split into chapters” to cut it by page.',
+      bigFileStep2: 'One more time: without splitting, this whole book’s pages keep entering conversations and the context fills quickly. Import the whole book anyway?',
+      bigFileContinue: 'Import anyway',
+      bigFileConfirm: 'Import without splitting',
+      bigFileCancel: 'Cancel',
+      bigFileCancelled: 'cancelled (large file, not imported)',
+      importSplitAskTitle: 'Split it now?',
+      importSplitAsk: '《{title}》 was imported into 整本\\. Split it into chapters by page now?',
+      importSplitNow: 'Split now',
+      importSplitLater: 'Not now',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
       splitFailed: 'The split conversation did not start — check that the library folder is writable',
       librariesTitleHint: 'Double-click the title for the libraries',
@@ -1776,12 +1990,13 @@ window.__ModuleLoader__.load({
       annotEraseHint: 'Click or drag across a stroke to delete it',
       annotClearHint: 'Remove every freehand stroke on this page',
       annotText: 'Text box',
-      annotTextHint: 'Click the page to type; Enter saves, Shift+Enter breaks the line',
+      annotTextHint: 'Drag out a box to write; click to select, double-click to edit',
       annotTextPrompt: 'Note text',
       annotTextPlaceholder: 'Write a note…',
       annotTextEditorHint: 'Enter saves · Shift+Enter newline · Esc cancels',
       annotTextEditHint: 'Double-click to edit; save it empty to delete',
-      annotTextActiveHint: 'Text box: click anywhere on the page and type; Enter saves, Esc cancels',
+      annotTextActiveHint: 'Text box: drag out a box to write; click an existing box to select; Esc cancels',
+      annotMoveHint: 'Drag to move',
       annotDualHint: 'Each column keeps its own notes: the original column writes the page\'s shared notes, the translated column saves its own; they may sit on different pages',
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
@@ -1845,6 +2060,31 @@ window.__ModuleLoader__.load({
       translateCostConfirm: 'Translation calls the model you chose for whole-chapter translation in Settings → AI models, page by page: a whole chapter usually costs tens of thousands to hundreds of thousands of tokens, billed to that provider. Alignment mode is slightly higher (~1.3x). Continue?',
       translateStorageHint: 'Each page image is also stored in the DSH attachment library as model input (~0.3 MB per page; this chapter’s {pages} pages ≈ {mb} MB). Nothing deletes them automatically.',
       translateAiDisclaimer: 'The translation is AI-generated: formula recognition and typesetting may be incomplete — check it against the original before relying on it.',
+      translatePrefsTitle: 'Translation preferences',
+      translatePrefsHint: 'Stored on this machine; they exist to cut repeated clicks.',
+      translatePrefsSkipAsk: 'Do not ask about cost and attachments before translating',
+      translatePrefsAutoOverlay: 'Open the overlay automatically when translation finishes',
+      translateAskSkip: 'Do not ask again',
+      translateAskSkipHint: 'Restore it in Settings → Data → Translation preferences',
+      splitButton: 'Split into chapters',
+      splitHint: 'Cut this whole PDF by page into 分片/<book id>/',
+      splitTitle: 'Split',
+      splitLoading: 'Loading thumbnails…',
+      splitNoPdf: 'This book has no whole PDF',
+      splitRanges: 'Ranges',
+      splitNeedCuts: 'Click the scissors between pages to add a cut',
+      splitOutput: 'Output',
+      splitFragmentDir: '分片/<book id>/',
+      splitUntitled: 'Untitled',
+      splitCutHint: 'Cut here',
+      splitUncutHint: 'Remove this cut',
+      splitCutMarked: 'Cut added',
+      splitRestored: 'Restored {n} saved cut(s)',
+      splitForget: 'Clear saved cuts',
+      splitStart: 'Start splitting',
+      splitBusy: 'Splitting…',
+      splitDone: 'Split into {files} files',
+      splitFailed: 'Splitting failed',
       translating: 'Translating…',
       translateDone: 'Created',
       translateDonePartial: 'Translation finished, but {n} page(s) returned nothing (pages {pages}); {tokens} tokens used — use "Fill missing pages" to translate just those',
@@ -1919,6 +2159,8 @@ window.__ModuleLoader__.load({
       renameDone: 'Renamed',
       renameFailed: 'Could not rename',
       cleanup: 'Clean unused',
+      cleanupSection: 'Blank sessions',
+      cleanupNone: 'No blank sessions to clean',
       updateCheck: 'Check for updates',
       previewPdf: 'Side preview',
       previewOn: 'on',
@@ -1973,6 +2215,9 @@ window.__ModuleLoader__.load({
       railLeft: 'Left',
       railRight: 'Right',
       sketchRoughness: 'Sketch strength',
+      readCacheLimit: 'Page bitmaps kept',
+      readCacheLimitHint: 'How many rendered page bitmaps the reader keeps: more is smoother when flipping back, less uses less memory. Default 5.',
+      readCacheOption: '{n} pages',
       settingsTabReading: 'Reading',
       settingsTabWorkflow: 'Modes',
       settingsTabKeys: 'Shortcuts',
@@ -1980,6 +2225,17 @@ window.__ModuleLoader__.load({
       settingsTabAbout: 'About',
       settingsTabAi: 'AI models',
       settingsAiHeading: 'Models',
+      aiModeHeading: 'Thinking mode',
+      aiModeHint: 'Both modes read the whole chapter; the difference is answer style and how deep the model is asked to go. Only new sessions follow it.',
+      aiModeDaily: 'Daily',
+      aiModeQuality: 'Quality',
+      aiModeDailyHint: 'Like a web chat: lead with the answer, keep it to 3–5 sentences, add points only if needed, no long derivations. Thinking depth still comes from the model you picked in DSH.',
+      aiModeQualityHint: 'Quality: full derivations and proofs, long answers welcome. Pick a reasoning model (or raise its thinking level) in DSH for even deeper work.',
+      aiStyleHeading: 'Style prompts (editable)',
+      aiStyleHint: 'These lines go into the start of every new session and decide how the model answers. Edits save when the box loses focus; "Reset" restores the built-in text. New sessions only.',
+      aiStyleDaily: 'Daily style',
+      aiStyleQuality: 'Quality style',
+      aiStyleReset: 'Reset',
       settingsAiDefault: 'Current DSH default',
       settingsAiNoDefault: 'No default model configured',
       settingsAiLoading: 'Reading the model catalog…',
@@ -2036,10 +2292,112 @@ window.__ModuleLoader__.load({
       fontFailed: 'Font action failed',
       settingsTabData: 'Data',
       dataTitle: 'Machine migration',
+      dataSizeHint: 'Most of the size is DSH conversation logs (~{sessions}); ticking "fonts" adds ~{fonts}, session cache on top. The logs are chat history — dropping them makes the package far smaller.',
+      dataLocationsTitle: 'Data locations',
+      dataLocationsHint: 'These paths come from the profile configuration; this page only shows them and cannot change them.',
+      dataLocationLibrary: 'Library folder',
+      dataLocationPlugin: 'Plugin data folder',
+      dataLocationNone: '(none yet)',
+      dataLocationsReadOnly: 'PDFs live in 分片 / 整本; 产物 / 封面 / .pdfdesk / 回收站 / 工具 / 索引.json are plugin data. Do not rename these folders by hand — the library and index rely on them.',
+      storageTitle: 'Storage used',
+      storageHint: 'Caches and packages the plugin produced. Book PDFs, bookmarks and artifacts are not counted here and are never deleted by these buttons; clear translation caches with the button below.',
+      storageSessions: 'DSH conversation logs (the bulk of a package)',
+      storageFonts: 'Fonts',
+      storageProjcache: 'Session cache',
+      storageTotal: 'Total',
+      storageTranslation: 'Translation cache (inside the library, .pdfdesk)',
+      storageLegacy: 'Leftover cache from the old version',
+      storageJobs: 'Translation job state',
+      storageTmp: 'Upload and page-export temp files',
+      storageStaging: 'Unfinished packing folder',
+      storagePreImport: 'Pre-import snapshot (for rollback)',
+      storagePackages: 'Packages you created',
+      storageTrash: '回收站 (deleted books and artifacts)',
+      storageEmpty: 'Nothing is using space',
+      storageRefresh: 'Refresh',
+      storageClean: 'Clean rebuildable caches',
+      storageCleanConfirm: 'Remove upload/page-export temp files, expired import stage packages and unfinished packing folders? Translation caches, packages and 回收站 are left alone.',
+      storageCleanNothing: 'No temporary files to clean',
+      storageCleanDone: 'Cleaned {n} item(s), freed {mb} MB',
+      storageEmptyTrash: 'Empty 回收站',
+      storageEmptyTrashConfirm: 'Empty the current library\'s 回收站? The deleted books and artifacts in it are gone for good.',
+      storageTrashEmpty: '回收站 is already empty',
+      storageTrashDone: '回收站 emptied: {n} item(s), {mb} MB',
+      storageFailed: 'Could not read storage usage: ',
+      storageRetention: 'Retention',
+      storageRetentionHint: 'Nothing is deleted automatically when it ages out; the two buttons apply the window, and each asks again.',
+      storageDayOption: '{n} days',
+      storagePruneTrash: 'Remove 回收站 items older than {days} days',
+      storagePruneTrashConfirm: 'Delete the 回收站 items untouched for {days} days? The deleted books and artifacts cannot be recovered.',
+      storagePruneCache: 'Remove translation caches unused for {days} days',
+      storagePruneCacheConfirm: 'Delete the per-page translation caches untouched for {days} days? Translating again rebuilds them; artifacts and bookmarks are untouched.',
+      storagePruneNone: '{label}: nothing is older than the window',
+      storagePruneDone: '{label}: removed {n} item(s), {mb} MB',
+      storageBusy: 'Working…',
+      duplicatesTitle: 'Duplicate PDFs',
+      duplicatesHint: 'Compares the PDFs in 整本/ and 分片/ by size + SHA-256. Report only — nothing is deleted.',
+      duplicatesScan: 'Scan for duplicates',
+      duplicatesScanning: 'Scanning…',
+      duplicatesNone: 'No identical PDFs found',
+      duplicatesSummary: '{n} duplicate group(s), {mb} MB extra',
+      duplicatesGroup: '{count} copies · {mb} MB each',
+      duplicatesFailed: 'Scan failed: ',
+      libraryExportTitle: 'Export library package',
+      libraryExportHint: 'Packs the index, annotations/questions/attachments and optional products. It never contains book PDFs (copyright) — compress 分片/ and 整本/ yourself to carry those.',
+      libraryExportArtifacts: 'Include produced PDFs (translated / reading / overlay; can be large)',
+      libraryExportStart: 'Build package',
+      exportHistoryTitle: 'Packaging history',
+      exportHistoryHint: 'Migration and library packages created on this machine. A moved or deleted file disappears from the list; these records never travel inside a migration package.',
+      exportHistoryEmpty: 'No packages yet',
+      exportHistoryDownload: 'Download',
+      exportHistoryOpen: 'Show in folder',
+      exportHistoryDelete: 'Delete',
+      exportHistoryDeleteConfirm: 'Delete the package "{name}"? Only this file is removed from disk; the library and notes are untouched.',
+      exportHistoryDeleteFailed: 'Delete failed: ',
+      exportKindBackup: 'Migration package',
+      exportKindLibrary: 'Library package',
+      exportKindPdf: 'PDF package',
+      pdfExportTitle: 'Export PDF package',
+      pdfExportHint: 'Packs only the book PDFs in 分片/整本 (whole books included), with no annotations or notes. It stays separate from the library package and the migration package so you can copy or test it alone.',
+      pdfExportScope: 'Scope',
+      pdfExportFragments: 'Fragments only',
+      pdfExportWhole: 'Whole books only',
+      pdfExportBoth: 'Fragments + whole',
+      pdfExportStart: 'Build PDF package',
+      exportPackRunning: 'Packing… you can leave this panel; it will appear in the list when done',
+      exportPackFailed: 'Packing failed: ',
+      bookWizardTitle: 'Import a book package',
+      bookWizardPdf: 'Choose PDF package',
+      bookWizardStepPdf: '1 · PDF package (required)',
+      bookWizardStepNotes: '2 · Notes package (optional)',
+      bookWizardStepBooks: '3 · Books to import',
+      bookWizardChoose: 'Choose file…',
+      bookWizardRechoose: 'Choose another',
+      bookWizardDropHere: 'Drop a ZIP here, or use the button',
+      bookWizardPdfHint: 'Pick a ZIP: split books are one folder per book; loose whole-book PDFs work too.',
+      bookWizardNotes: 'Choose notes package (optional)',
+      bookWizardNotesHint: 'A library export or a migration package; without it only the PDFs are imported.',
+      bookWizardNotesChosen: 'Notes package',
+      bookWizardReading: 'Reading…',
+      bookWizardBooks: '{n} books',
+      bookWizardHasNotes: 'notes package attached',
+      bookWizardNoNotes: 'no notes package',
+      bookWizardSplit: 'chapters · {n}',
+      bookWizardWhole: 'whole book',
+      bookWizardExisting: 'already in the library; PDF not imported again',
+      bookWizardMerge: 'Notes: merge',
+      bookWizardOverwrite: 'Notes: overwrite',
+      bookWizardSkip: 'Notes: skip',
+      bookWizardWarnings: 'Warnings: ',
+      bookWizardStart: 'Start import',
+      bookWizardProgress: 'Importing…',
+      bookWizardCancel: 'Cancel',
+      bookWizardDone: 'Done',
+      bookWizardFailed: 'Import failed: ',
+      bookWizardReport: 'Done: {imported} files imported, {duplicates} duplicates, {skipped} existing books kept their PDF',
       dataHint: 'Packs sessions, workspace registry, plugin state and each library’s .pdfdesk (notes, questions, cache, attachments). Book PDFs and keys are never included.',
       dataBackup: 'Create backup',
       dataBackupCreated: 'Created {name} ({files} files, {mb} MB)',
-      dataDownload: 'Download backup',
       dataFonts: 'Include the handwriting font (~22 MB)',
       dataProjcache: 'Include the session projection cache (rebuildable, large)',
       dataSettings: 'Include browser settings (reading width, shortcuts…) as settings.json',
@@ -2051,9 +2409,9 @@ window.__ModuleLoader__.load({
       dataCacheDone: 'Cleared {n} cache entries',
       dataCacheRunning: 'skipped {n} running job(s)',
       dataCacheFailed: 'Clear failed: ',
-      dataImportHint: 'Enter the ZIP path on this machine. Merge never overwrites: conflicts become *.imported-<time>.',
-      dataPath: 'ZIP path',
-      dataInspect: 'Inspect',
+      dataImportHint: 'Choose a local ZIP package; its manifest and checksums are verified after upload. Merge never overwrites: conflicts become *.imported-<time>.',
+      dataChoose: 'Choose package…',
+      dataChosen: 'Selected: {name}',
       dataImport: 'Import',
       dataStrategy: 'Conflicts',
       dataMerge: 'Merge (keep existing)',
@@ -2067,16 +2425,10 @@ window.__ModuleLoader__.load({
       dataApplied: 'Applied {n} settings; refresh the page to use them',
       dataNoSettings: 'No imported browser settings found',
       dataBookTitle: 'Import a book archive',
-      dataBookHint: 'Pick a local PDF ZIP; it is unpacked into 分片/整本. Name clashes follow the conflict policy above.',
+      dataBookHint: 'Opens the import wizard: pick a PDF package (ZIP) plus an optional notes package (library export or migration package) and tick the books to import. A book already in the library keeps its PDF; notes are merged, overwritten or skipped per book.',
       dataBookTarget: 'Target',
-      dataBookFragments: 'Fragments',
-      dataBookWhole: 'Whole book',
-      dataBookSubdir: 'Subfolder (optional)',
-      dataBookSubdirPh: 'e.g. New book',
       dataBookImport: 'Import book archive',
       dataOverwriteConfirm: 'Overwrite replaces files with the same name (a pre-import snapshot is taken first). Continue?',
-      bookOverwriteConfirm: 'Overwrite replaces same-named PDFs in the target folder. Continue?',
-      dataBookReport: 'Book archive: imported {imported}, renamed {renamed}, skipped {skipped}, warnings {warnings}',
       attachAdd: 'Add',
       attachEmpty: 'No attachments',
       attachHint: 'PDFs, images and PPT (converted to PDF) up to 50 MB; copied into this chapter’s attachment folder',
@@ -2116,6 +2468,20 @@ window.__ModuleLoader__.load({
       envNeedTex: 'TeX Live (xelatex, ctex)',
       envNeedKey: 'DeepSeek API key',
       envNeedTranslateModel: 'an AI model that can read page images',
+      aiModels: 'AI model',
+      envGuideTitle: 'Before you start',
+      envGuideIntro: 'These decide whether translation and export work; missing items show ✗ and can be installed in one click.',
+      envGuideOk: 'Got it',
+      envGuideSettings: 'Open settings',
+      envInlineMissing: 'Translation unavailable: Python / TeX or an image-capable model is missing',
+      envGuideWhyPython: 'Turns PDFs into text, keeps block geometry, and builds the reading/overlay PDFs',
+      envGuideWhyTex: 'Typesets when Typst is absent; export and older caches still need it',
+      envGuideWhyTypst: 'Default typesetter for the overlay and reading PDFs, about 9× faster than TeX',
+      envGuideWhyModel: 'Chapter translation reads page images, so the model must accept images',
+      envGuideNever: 'Do not show again',
+      envGuideAlways: 'Reminds once per kind of missing item; “Do not show again” stops the reminder; reopen it in Settings → 环境',
+      envGuideReopen: 'Show the “Before you start” checklist',
+      envGuideReopenHint: 'It reminds once per kind of missing item and stays quiet after “Got it” or “Do not show again”; click here to see it again',
       envPromptAiModels: 'Choose an AI model',
       envUseRender: 'Markdown-to-PDF',
       envUseTranslate: 'whole-chapter translation and PDF composition',
@@ -2240,7 +2606,7 @@ window.__ModuleLoader__.load({
       sampleLoading: 'Reading the sample…',
       sampleEmpty: 'This package ships no sample book',
       sampleMeta: '{chapters} chapters · {size} total',
-      sampleHint: 'A small built-in booklet, already split by chapter, for a quick try',
+      sampleHint: 'A small sample book to try the library and reader.',
       sampleLoad: 'Load sample book',
       sampleBusy: 'Copying…',
       sampleLoaded: 'Sample book added to the active library ({n} files)',
@@ -4808,6 +5174,65 @@ window.__ModuleLoader__.load({
     })
 
     /**
+     * First-run environment guide (A): one checklist of what the plugin needs,
+     * with the state of each item and a jump to the fix. Shown once per kind of
+     * missing capability; the settings page can bring it back.
+     * @param {{ envTools: object, onClose: Function, onOpenSettings: Function }} props - environment and actions.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function EnvGuide(props) {
+      const [engine, setEngine] = useState(null)
+      useEffect(() => {
+        void request('GET', 'engine').then(setEngine).catch(() => setEngine({ engine: '', source: 'missing' }))
+      }, [])
+      const row = (label, ok, hint, action) => h('div', { className: 'md-settings-row' },
+        h('span', null, `${ok ? '✓' : '✗'} ${label}`),
+        h('span', { className: 'md-shelf-sub' }, hint),
+        action === null ? null : action)
+      const openLink = url => {
+        try {
+          window.open(url, '_blank', 'noopener')
+        } catch {
+          // popup blocked
+        }
+      }
+      return h(KitModal, {
+        title: format('envGuideTitle'),
+        onClose: props.onClose,
+        children: h('div', { className: 'md-env-guide' },
+          h('p', { className: 'md-shelf-sub' }, format('envGuideIntro')),
+          row(format('envPython'), props.envTools.python === true,
+            `${format('envPythonSize')} · ${format('envGuideWhyPython')}`,
+            props.envTools.python === true ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => openLink('https://www.python.org/downloads/windows/'),
+            }, format('envDownload'))),
+          row(format('envTex'), props.envTools.tex === true,
+            `${format('envTexSize')} · ${format('envGuideWhyTex')}`,
+            props.envTools.tex === true ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => openLink(TEXLIVE_URL),
+            }, format('envDownload'))),
+          row(format('envEngine'), engine !== null && engine.engine === 'typst',
+            `${engine === null ? '…' : engine.engine === 'typst'
+              ? format('envEngineTypst', { version: engine.version === '' ? '?' : engine.version })
+              : format('envEngineMissing')} · ${format('envGuideWhyTypst')}`,
+            null),
+          row(format('aiModels'), props.modelOk === true,
+            `${props.modelLabel} · ${format('envGuideWhyModel')}`,
+            props.modelOk === true ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onOpenSettings,
+            }, format('envGuideSettings'))),
+          h('p', { className: 'md-shelf-sub' }, format('envGuideAlways'))),
+        footer: [
+          h(KitButton, { key: 'never', variant: 'outline', onClick: props.onNever }, format('envGuideNever')),
+          h(KitButton, { key: 'ok', variant: 'primary', onClick: props.onClose }, format('envGuideOk')),
+        ],
+      })
+    }
+
+    /**
      * Typesetting engine status and the on-demand Typst install (DEC-0013).
      * The install button only shows when Typst is not in charge; the note says a
      * restart is needed because the Host resolves the engine once at start-up.
@@ -4857,6 +5282,516 @@ window.__ModuleLoader__.load({
         note === '' ? null : h('span', { className: 'md-shelf-sub' }, note),
         error === '' ? null : h('span', { className: 'md-shelf-sub' }, error),
       )
+    }
+
+    /**
+     * One page thumbnail: paints on demand when it scrolls near the viewport.
+     * The bitmap is sized in device pixels (CSS width × device pixel ratio) so a
+     * 620px-wide page stays sharp on a HiDPI screen instead of being a 132px
+     * bitmap stretched over the cell — the blur the user hit while picking cuts.
+     * @param {object} page - pdf.js page.
+     * @param {HTMLCanvasElement} canvas - target canvas.
+     * @returns {Promise<void>} when painted.
+     */
+    async function paintSplitThumb(page, canvas) {
+      const base = page.getViewport({ scale: 1 })
+      const cssWidth = Math.max(120, Math.min(760, Math.round(canvas.clientWidth || 220)))
+      const ratio = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1))
+      const viewport = page.getViewport({ scale: (cssWidth * ratio) / base.width })
+      canvas.width = Math.round(viewport.width)
+      canvas.height = Math.round(viewport.height)
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+    }
+
+    /**
+     * 书库「+」与 设置 → 数据 共用的导入向导：选 PDF 包（ZIP）与可选笔记包，
+     * Host 解析成逐本书；已有相同 PDF 的书自动勾选并置灰（PDF 不重复导入），
+     * 笔记按每本选择合并/覆盖/跳过，只导入勾选项。
+     * @param {{ initialPdf?: File | null, onClose: Function, onImported: Function }} props - entry file and callbacks.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function BookImportWizard(props) {
+      const initial = props.initialPdf === undefined ? null : props.initialPdf
+      const [pdfFile, setPdfFile] = useState(initial)
+      const [notesFile, setNotesFile] = useState(null)
+      const [pdfToken, setPdfToken] = useState('')
+      const [notesToken, setNotesToken] = useState('')
+      const [inspection, setInspection] = useState(null)
+      const [selection, setSelection] = useState({})
+      const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
+      const [report, setReport] = useState(null)
+      const pdfInput = useRef(null)
+      const notesInput = useRef(null)
+      const alive = useRef(true)
+      useEffect(() => () => { alive.current = false }, [])
+
+      const stage = async file => {
+        const response = await fetch(`${ENDPOINT}imports/stage?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || payload === null || payload.ok !== true) {
+          throw new Error(payload !== null && payload.error !== undefined ? payload.error.message : `HTTP ${response.status}`)
+        }
+        return String(payload.token ?? '')
+      }
+
+      const inspect = async (nextPdf, nextNotes) => {
+        if (nextPdf === '') return
+        setBusy('inspect')
+        setError('')
+        try {
+          const payload = await request('POST', 'book-import/inspect', {
+            pdf: nextPdf,
+            ...(nextNotes === '' ? {} : { notes: nextNotes }),
+          })
+          if (!alive.current) return
+          const books = Array.isArray(payload.books) ? payload.books : []
+          setInspection({ books, warnings: Array.isArray(payload.warnings) ? payload.warnings : [], notes: payload.notes === true })
+          setSelection(Object.fromEntries(books.map(book => [book.id, { include: true, notes: 'merge' }])))
+        } catch (reason) {
+          if (alive.current) setError(String(reason && reason.message ? reason.message : reason))
+        } finally {
+          if (alive.current) setBusy('')
+        }
+      }
+
+      const load = async (file, kind) => {
+        if (file === undefined || file === null) return
+        setBusy('stage')
+        setError('')
+        try {
+          const token = await stage(file)
+          if (!alive.current) return
+          if (kind === 'pdf') {
+            setPdfFile(file)
+            setPdfToken(token)
+            await inspect(token, notesToken)
+          } else {
+            setNotesFile(file)
+            setNotesToken(token)
+            await inspect(pdfToken, token)
+          }
+        } catch (reason) {
+          if (!alive.current) return
+          setError(String(reason && reason.message ? reason.message : reason))
+          setBusy('')
+        }
+      }
+
+      useEffect(() => {
+        if (initial !== null) void load(initial, 'pdf')
+        // The initial file is consumed once, when the dialog opens.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [])
+
+      const startImport = async () => {
+        if (pdfToken === '') return
+        setBusy('apply')
+        setError('')
+        try {
+          const books = Object.entries(selection)
+            .filter(([, value]) => value.include)
+            .map(([id, value]) => ({ id, include: true, notes: value.notes }))
+          const payload = await request('POST', 'book-import/apply', {
+            pdf: pdfToken,
+            ...(notesToken === '' ? {} : { notes: notesToken }),
+            books,
+          })
+          setReport(payload)
+          setPdfToken('')
+          setNotesToken('')
+          props.onImported()
+        } catch (reason) {
+          setError(String(reason && reason.message ? reason.message : reason))
+        } finally {
+          if (alive.current) setBusy('')
+        }
+      }
+
+      const books = inspection === null ? [] : inspection.books
+      const chosen = Object.values(selection).filter(value => value.include).length
+      return h('div', {
+        className: 'md-wizard-backdrop',
+        role: 'presentation',
+        onMouseDown: event => { if (event.target === event.currentTarget) props.onClose() },
+      },
+        h('div', {
+          className: 'md-wizard-panel',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': format('bookWizardTitle'),
+        },
+          h('div', { className: 'md-wizard-head' },
+            h('h3', { className: 'md-env-title' }, format('bookWizardTitle')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              'aria-label': format('modalClose'), title: format('modalClose'),
+              onClick: props.onClose,
+            }, '×')),
+          h('div', { className: 'md-wizard-body' },
+            h('div', { className: 'md-wizard' },
+          h('input', {
+            type: 'file', accept: '.zip,application/zip', style: { display: 'none' }, ref: pdfInput,
+            onChange: event => {
+              const file = Array.from(event.target.files ?? [])[0]
+              event.target.value = ''
+              void load(file, 'pdf')
+            },
+          }),
+          h('input', {
+            type: 'file', accept: '.zip,application/zip', style: { display: 'none' }, ref: notesInput,
+            onChange: event => {
+              const file = Array.from(event.target.files ?? [])[0]
+              event.target.value = ''
+              void load(file, 'notes')
+            },
+          }),
+          busy === 'stage' || busy === 'inspect'
+            ? h('p', { className: 'md-shelf-sub', role: 'status' }, format('bookWizardReading'))
+            : null,
+          h('div', { className: 'md-wizard-step' },
+            h('div', { className: 'md-wizard-step-title' }, format('bookWizardStepPdf')),
+            h('p', { className: 'md-shelf-sub' }, format('bookWizardPdfHint')),
+            h('div', {
+              className: pdfFile === null ? 'md-wizard-drop' : 'md-wizard-drop md-wizard-drop-filled',
+              onDragOver: event => { event.preventDefault() },
+              onDrop: event => {
+                event.preventDefault()
+                void load(Array.from(event.dataTransfer?.files ?? [])[0], 'pdf')
+              },
+            },
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: busy !== '',
+                onClick: () => { if (pdfInput.current !== null) pdfInput.current.click() },
+              }, pdfFile === null ? format('bookWizardChoose') : format('bookWizardRechoose')),
+              pdfFile === null
+                ? h('span', { className: 'md-wizard-file' }, format('bookWizardDropHere'))
+                : h('span', { className: 'md-wizard-file' }, `${pdfFile.name} · ${(Number(pdfFile.size) / 1048576).toFixed(1)} MB`))),
+          h('div', { className: 'md-wizard-step' },
+            h('div', { className: 'md-wizard-step-title' }, format('bookWizardStepNotes')),
+            h('p', { className: 'md-shelf-sub' }, format('bookWizardNotesHint')),
+            h('div', {
+              className: notesFile === null ? 'md-wizard-drop' : 'md-wizard-drop md-wizard-drop-filled',
+              onDragOver: event => { event.preventDefault() },
+              onDrop: event => {
+                event.preventDefault()
+                void load(Array.from(event.dataTransfer?.files ?? [])[0], 'notes')
+              },
+            },
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: busy !== '' || pdfToken === '',
+                onClick: () => { if (notesInput.current !== null) notesInput.current.click() },
+              }, notesFile === null ? format('bookWizardChoose') : format('bookWizardRechoose')),
+              notesFile === null
+                ? h('span', { className: 'md-wizard-file' }, format('bookWizardDropHere'))
+                : h('span', { className: 'md-wizard-file' }, `${notesFile.name} · ${(Number(notesFile.size) / 1048576).toFixed(1)} MB`))),
+          error === '' ? null : h('p', { className: 'md-settings-note', role: 'alert' }, `${format('bookWizardFailed')}${error}`),
+          report !== null
+            ? h('p', { className: 'md-settings-note', role: 'status' }, format('bookWizardReport', {
+              imported: report.books.reduce((sum, row) => sum + (Array.isArray(row.imported) ? row.imported.length : 0), 0),
+              duplicates: report.books.reduce((sum, row) => sum + (Array.isArray(row.duplicates) ? row.duplicates.length : 0), 0),
+              skipped: report.books.filter(row => row.skipped === true).length,
+            }))
+            : null,
+          report === null && inspection !== null
+            ? h('div', { className: 'md-wizard-step' },
+              h('div', { className: 'md-wizard-step-title' }, format('bookWizardStepBooks')),
+              h('p', { className: 'md-shelf-sub' },
+                `${format('bookWizardBooks', { n: books.length })} · ${inspection.notes ? format('bookWizardHasNotes') : format('bookWizardNoNotes')}`),
+              Array.isArray(inspection.warnings) && inspection.warnings.length > 0
+                ? h('p', { className: 'md-settings-note' }, `${format('bookWizardWarnings')}${inspection.warnings.slice(0, 3).join('；')}`)
+                : null,
+              h('div', { className: 'md-wizard-books' },
+                books.map(book => h('div', { className: 'md-settings-row', key: book.id },
+                h('label', null,
+                  h('input', {
+                    type: 'checkbox',
+                    checked: selection[book.id]?.include === true,
+                    disabled: book.existing === true,
+                    onChange: event => setSelection(current => ({
+                      ...current,
+                      [book.id]: { ...(current[book.id] ?? { notes: 'merge' }), include: event.target.checked },
+                    })),
+                  }),
+                  ` ${book.id} · ${book.kind === 'split'
+                    ? format('bookWizardSplit', { n: book.files.length })
+                    : format('bookWizardWhole')} · ${(Number(book.totalBytes) / 1048576).toFixed(1)} MB${book.existing ? ` · ${format('bookWizardExisting')}` : ''}`),
+                book.notes !== null && Number(book.notes.files) > 0
+                  ? h('select', {
+                    className: 'md-settings-input',
+                    value: selection[book.id]?.notes ?? 'merge',
+                    disabled: selection[book.id]?.include !== true,
+                    onChange: event => setSelection(current => ({
+                      ...current,
+                      [book.id]: { ...(current[book.id] ?? { include: true }), notes: event.target.value },
+                    })),
+                  },
+                    h('option', { value: 'merge' }, format('bookWizardMerge')),
+                    h('option', { value: 'overwrite' }, format('bookWizardOverwrite')),
+                    h('option', { value: 'skip' }, format('bookWizardSkip')))
+                  : null
+                )))
+            )
+            : null
+            )),
+          h('div', { className: 'md-wizard-foot' },
+            h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: props.onClose }, format(report === null ? 'bookWizardCancel' : 'bookWizardDone')),
+            report === null
+              ? h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-primary',
+                disabled: busy !== '' || pdfToken === '' || chosen === 0,
+                onClick: startImport,
+              }, busy === 'apply' ? format('bookWizardProgress') : format('bookWizardStart'))
+              : null)
+        ))
+    }
+
+    /**
+     * 拆分面板（类 WPS）：整本 PDF 的缩略图网格，点页与页之间的剪刀加拆点，
+     * 右侧实时给出版本范围与输出预览，一次性拆成多份并写进 `分片/<书id>/`。
+     * @param {{ book: object, onClose: Function }} props - the whole book to split.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function SplitDialog(props) {
+      const book = props.book
+      const chapters = Array.isArray(book.chapters) ? book.chapters : []
+      const chapter = chapters.find(item => item.whole === true) ?? chapters[0]
+      const [doc, setDoc] = useState(null)
+      const [count, setCount] = useState(0)
+      const [cuts, setCuts] = useState(() => new Set())
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState('')
+      // The cut plan is remembered per book: closing the panel by accident (or a
+      // crash) must not throw away a plan the user built up page by page.
+      const [restored, setRestored] = useState(0)
+      const restoredOnce = useRef(false)
+      const splitPlanKey = `pdfdesk:split-cuts:${book.id}`
+      const readSplitPlan = () => {
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(splitPlanKey) ?? '[]')
+          return Array.isArray(parsed)
+            ? parsed.map(value => Math.round(Number(value))).filter(value => Number.isFinite(value) && value > 0)
+            : []
+        } catch {
+          return []
+        }
+      }
+      const saveSplitCuts = next => {
+        try {
+          window.localStorage.setItem(splitPlanKey, JSON.stringify([...next].sort((left, right) => left - right)))
+        } catch {
+          // storage unavailable: the plan just is not remembered
+        }
+      }
+      const restoreSplitCuts = total => {
+        const stored = readSplitPlan().filter(number => number < total)
+        if (stored.length === 0) return
+        setCuts(new Set(stored))
+        setRestored(stored.length)
+      }
+      const forgetSplitPlan = () => {
+        try {
+          window.localStorage.removeItem(splitPlanKey)
+        } catch {
+          // storage unavailable
+        }
+        setCuts(new Set())
+        setRestored(0)
+      }
+      const scroller = useRef(null)
+      const attach = useRef(new Map())
+
+      useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        const onKey = event => { if (event.key === 'Escape') props.onClose() }
+        window.addEventListener('keydown', onKey, true)
+        return () => window.removeEventListener('keydown', onKey, true)
+      }, [])
+
+      useEffect(() => {
+        let alive = true
+        void (async () => {
+          try {
+            if (chapter === undefined) throw new Error(format('splitNoPdf'))
+            const lib = await loadPdfjs()
+            const url = chapterPdfUrl(book.id, chapter.code, {})
+            const loaded = await lib.getDocument({ url, isEvalSupported: false, ...pdfAssetUrls() }).promise
+            if (!alive) return
+            setDoc(loaded)
+            setCount(loaded.numPages)
+          } catch (error) {
+            if (alive) setNote(String(error && error.message ? error.message : error))
+          }
+        })()
+        return () => { alive = false }
+      }, [])
+
+      // One canvas per page, painted once when it comes near the viewport. The
+      // ref callback is cached per page number: a fresh closure on every render
+      // made React detach and re-attach every canvas, and each re-attach built
+      // another IntersectionObserver that re-rasterised the visible column on
+      // every cut toggle — that was "thumbnails load too slowly".
+      const refCache = useRef(new Map())
+      const observerRef = useRef(null)
+      const canvasRef = number => {
+        let callback = refCache.current.get(number)
+        if (callback === undefined) {
+          callback = node => {
+            if (node === null) {
+              attach.current.delete(number)
+              return
+            }
+            attach.current.set(number, node)
+            node.dataset.page = String(number)
+            if (observerRef.current !== null) observerRef.current.observe(node)
+          }
+          refCache.current.set(number, callback)
+        }
+        return callback
+      }
+      useEffect(() => {
+        if (doc === null || typeof IntersectionObserver !== 'function') return undefined
+        const observer = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue
+            const node = entry.target
+            if (node.dataset.painted === '1') continue
+            node.dataset.painted = '1'
+            observer.unobserve(node)
+            void doc.getPage(Number(node.dataset.page))
+              .then(page => paintSplitThumb(page, node))
+              .catch(() => { node.dataset.painted = '0' })
+          }
+        }, { root: scroller.current, rootMargin: '600px' })
+        observerRef.current = observer
+        for (const node of attach.current.values()) observer.observe(node)
+        return () => {
+          observer.disconnect()
+          observerRef.current = null
+        }
+      }, [doc])
+
+      const sorted = [...cuts].sort((first, second) => first - second)
+      const ranges = []
+      let start = 1
+      for (const cut of sorted) {
+        if (cut >= start && cut < count) {
+          ranges.push([start, cut])
+          start = cut + 1
+        }
+      }
+      if (start <= count) ranges.push([start, count])
+      const spec = ranges.map(([from, to]) => (from === to ? String(from) : `${from}-${to}`)).join(',')
+      const preview = ranges.slice(0, 6).map(([from, to], index) => `${book.id}_c${String(index).padStart(2, '0')}_${format('splitUntitled')}_p${String(from).padStart(3, '0')}-${String(to).padStart(3, '0')}.pdf`)
+
+      const toggleCut = index => {
+        const next = new Set(cuts)
+        if (next.has(index)) next.delete(index)
+        else next.add(index)
+        saveSplitCuts(next)
+        setCuts(next)
+        setRestored(0)
+      }
+
+      useEffect(() => {
+        if (count === 0 || restoredOnce.current) return
+        restoredOnce.current = true
+        restoreSplitCuts(count)
+      }, [count])
+
+      const startSplit = async () => {
+        if (ranges.length === 0 || busy) return
+        setBusy(true)
+        setNote('')
+        try {
+          const result = await request('POST', 'split', { book: book.id, ranges: spec }, 300000)
+          setNote(format('splitDone', { files: ranges.length }))
+          if (typeof props.onDone === 'function') props.onDone(result)
+        } catch (error) {
+          setNote(`${format('splitFailed')}：${String(error && error.message ? error.message : error)}`)
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      // A dedicated overlay instead of KitModal: the split panel needs the whole
+      // window (thumbnail grid + range column), and the host modal's default
+      // width left it too small to aim the scissors at.
+      return h('div', {
+        className: 'md-split-backdrop',
+        role: 'presentation',
+        onMouseDown: event => {
+          if (event.target === event.currentTarget) props.onClose()
+        },
+      },
+        h('div', {
+          className: 'md-split-panel',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': `${format('splitTitle')}：${book.title ?? book.id}`,
+        },
+          h('div', { className: 'md-split-head' },
+            h('h3', { className: 'md-env-title' }, `${format('splitTitle')}：${book.title ?? book.id}`),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              'aria-label': format('modalClose'), title: format('modalClose'),
+              onClick: props.onClose,
+            }, '×')),
+          h('div', { className: 'md-split-body' },
+            h('div', { className: 'md-split' },
+              h('div', { className: 'md-split-pages', ref: scroller },
+                count === 0
+                  ? h('p', { className: 'md-shelf-sub' }, format('splitLoading'))
+                  : Array.from({ length: count }, (_, index) => {
+                    const number = index + 1
+                    const cut = cuts.has(number)
+                    return h('div', { key: number, className: 'md-split-item' },
+                      h('div', { className: 'md-split-page' },
+                        h('canvas', { ref: canvasRef(number) }),
+                        h('span', { className: cut ? 'md-split-num md-split-num-on' : 'md-split-num' }, number)),
+                      number < count
+                        ? h('button', {
+                          type: 'button',
+                          className: cut ? 'md-split-cut md-split-cut-on' : 'md-split-cut',
+                          title: cut ? format('splitUncutHint') : format('splitCutHint'),
+                          'aria-pressed': cut ? 'true' : 'false',
+                          'aria-label': `${format('splitCutHint')}（${number}）`,
+                          onClick: () => toggleCut(number),
+                        },
+                        h('span', { className: 'md-split-cut-line' }),
+                        h('span', { className: 'md-split-cut-btn' }, '✂'))
+                        : null)
+                  })),
+              h('div', { className: 'md-split-side' },
+            h('h4', { className: 'md-settings-heading' }, format('splitRanges')),
+            h('p', { className: 'md-shelf-sub' }, ranges.length === 0
+              ? format('splitNeedCuts')
+              : ranges.map(([from, to]) => (from === to ? `${from}` : `${from}-${to}`)).join('  ')),
+            restored > 0
+              ? h('p', { className: 'md-settings-note' }, format('splitRestored', { n: restored }))
+              : null,
+            cuts.size > 0
+              ? h('div', { className: 'md-settings-row' },
+                h(KitButton, {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  onClick: forgetSplitPlan,
+                }, format('splitForget')))
+              : null,
+            h('h4', { className: 'md-settings-heading' }, format('splitOutput')),
+            h('p', { className: 'md-shelf-sub' }, `${book.id} / ${format('splitFragmentDir')}`),
+            preview.length === 0
+              ? null
+              : h('ul', { className: 'md-split-preview' }, preview.map((name, index) => h('li', { key: index }, name))),
+            note === '' ? null : h('p', { className: 'md-settings-note' }, note),
+            h('div', { className: 'md-settings-row' },
+              h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: props.onClose }, format('close')),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-primary',
+                disabled: busy || ranges.length === 0,
+                onClick: () => { void startSplit() },
+              }, busy ? format('splitBusy') : format('splitStart'))))))))
     }
 
     /**
@@ -4993,12 +5928,90 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The catalog's whole-book PDFs: the only books the split panel can cut.
+     * @param {object[]} books - catalog books.
+     * @returns {object[]} books that are one unsplit PDF.
+     */
+    function wholeBooksOf(books) {
+      return (Array.isArray(books) ? books : []).filter(book => book.whole === true)
+    }
+
+    /**
+     * The whole book a just-imported PDF became. The import route renames on a
+     * collision (`书-2.pdf`), so the stem to match is the one the route returned,
+     * never the name the user picked.
+     * @param {object[]} books - catalog books.
+     * @param {string} stem - the imported PDF's file name without `.pdf`.
+     * @returns {object | null} the book, or null when the catalog has not listed it.
+     */
+    function wholeBookByFileStem(books, stem) {
+      if (typeof stem !== 'string' || stem === '' || !Array.isArray(books)) return null
+      // A whole book carries its file on the synthetic `c00` chapter, not on the
+      // book object itself.
+      return books.find(book => book.whole === true && Array.isArray(book.chapters)
+        && book.chapters.some(chapter => String(chapter.file ?? '') === stem)) ?? null
+    }
+
+    /**
+     * The shared "split a whole PDF by page" entry: pick a whole-book PDF and open
+     * the split panel, plus an optional "import a PDF and split it" shortcut. The
+     * library page and Settings → Data render this same block, so the two entries
+     * cannot drift apart.
+     * @param {{ books: object[], busy?: boolean, importBusy?: boolean, onStart: Function, onImport?: Function }} props - catalog books and handlers.
+     * @returns {import('react').ReactElement} the picker.
+     */
+    function SplitStart(props) {
+      const books = wholeBooksOf(props.books)
+      const [picked, setPicked] = useState(() => (books.length === 0 ? '' : books[0].id))
+      // A catalog reload can drop the picked book; fall back instead of leaving a
+      // select that points at nothing.
+      const selected = books.find(book => book.id === picked) ?? books[0] ?? null
+      const busy = props.busy === true || props.importBusy === true
+      return h(React.Fragment, null,
+        books.length === 0
+          ? h('p', { className: 'md-shelf-sub' }, format('splitPdfNone'))
+          : h('div', { className: 'md-library-tools' },
+            h('span', { className: 'md-shelf-sub' }, format('splitPdfPick')),
+            h('select', {
+              className: 'md-settings-input',
+              'aria-label': format('splitPdfPick'),
+              value: selected === null ? '' : selected.id,
+              onChange: event => setPicked(event.target.value),
+            }, books.map(book => h('option', { key: book.id, value: book.id }, book.title))),
+            h(KitButton, {
+              type: 'button', className: 'md-btn',
+              disabled: busy || selected === null,
+              onClick: () => {
+                if (selected !== null) props.onStart(selected)
+              },
+            }, format('splitPdfStart'))
+          ),
+        props.onImport === undefined
+          ? null
+          : h('div', { className: 'md-library-tools' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: busy,
+              onClick: props.onImport,
+            }, format('splitPdfImport')),
+            h('span', { className: 'md-shelf-sub' }, format('splitPdfImportHint'))
+          )
+      )
+    }
+
     function SettingsDialog(props) {
       const hostUi = useHostUi()
       const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       // The dialog is paged: reading switches, the keyboard table, the toolchain
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
       const [tab, setTab] = useState(props.initialTab ?? 'reading')
+      const [pageCacheLimit, setPageCacheLimit] = useState(() => readPageCacheLimit())
+      // Reading/AI mode: daily (short answers) or quality (expanded), plus the
+      // editable style instruction each mode puts into a new session's seed.
+      const [aiMode, setAiMode] = useState(() => readAiMode())
+      const [styleDaily, setStyleDaily] = useState(() => readStylePrompt('daily'))
+      const [styleQuality, setStyleQuality] = useState(() => readStylePrompt('quality'))
       const [apiKey, setApiKey] = useState('')
       const [apiKeyNote, setApiKeyNote] = useState('')
       const [bindings, setBindingsState] = useState(() => readShortcutBindings())
@@ -5089,62 +6102,159 @@ window.__ModuleLoader__.load({
           window.alert(`${format('fontFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
         }
       }
-      // Data migration: pack on this machine, inspect/import a local ZIP path.
+      // Data migration: pack on this machine, then choose a ZIP to upload. The
+      // upload response carries the Host's verified manifest and a temp path, so
+      // the ordinary JSON import below never has to trust a hand-typed path.
       const [dataBusy, setDataBusy] = useState('')
-      const [dataBackup, setDataBackup] = useState(null)
       const [dataPath, setDataPath] = useState('')
+      const [dataFileName, setDataFileName] = useState('')
       const [dataInfo, setDataInfo] = useState(null)
       const [dataRoots, setDataRoots] = useState({})
       const [dataStrategy, setDataStrategy] = useState('merge')
       const [dataReport, setDataReport] = useState(null)
+      const [cleanupBusy, setCleanupBusy] = useState(false)
+      const [cleanupNote, setCleanupNote] = useState('')
+      // Blank-session cleanup moved here from the page header, so the header only
+      // keeps actions that apply to every screen. The count is reported in place.
+      const runCleanup = async () => {
+        setCleanupBusy(true)
+        setCleanupNote('')
+        try {
+          const n = typeof props.onCleanupBlanks === 'function'
+            ? Number(await props.onCleanupBlanks()) || 0
+            : 0
+          setCleanupNote(n > 0 ? format('cleanupNotice', { n }) : format('cleanupNone'))
+        } catch (error) {
+          setCleanupNote(errorText(error))
+        } finally {
+          setCleanupBusy(false)
+        }
+      }
       const [backupFonts, setBackupFonts] = useState(false)
+      const [exportArtifacts, setExportArtifacts] = useState(false)
+      const [pdfExportScope, setPdfExportScope] = useState('both')
+      // Packaging runs as a Host job: a real profile's sessions make a
+      // synchronous request long enough to be cut by the transport, so a click
+      // returns a job id and the finished archives are listed from the backup
+      // folder (a deleted/moved archive simply disappears from the list).
+      const [exportItems, setExportItems] = useState([])
+      const [exportJob, setExportJob] = useState(null)
+      const exportBusy = exportJob !== null && exportJob.status === 'running'
+      // Translation workflow preferences (fewer repeated clicks per chapter).
+      const [skipAsk, setSkipAsk] = useState(() => readPrefBool(TRANSLATE_SKIP_ASK, false))
+      const [autoOverlay, setAutoOverlay] = useState(() => readPrefBool(TRANSLATE_AUTO_OVERLAY, true))
       const [backupProjcache, setBackupProjcache] = useState(false)
       const [backupSettings, setBackupSettings] = useState(false)
       const dataFail = error => {
         window.alert(`${format('dataFailed')} (${error !== null && error !== undefined && error.message ? error.message : String(error)})`)
       }
-      const createDataBackup = async () => {
-        setDataBusy('create')
-        setDataReport(null)
+      const refreshExports = useCallback(async () => {
         try {
-          const settings = {}
-          if (backupSettings) {
-            try {
-              for (let index = 0; index < window.localStorage.length; index += 1) {
-                const key = window.localStorage.key(index)
-                if (typeof key === 'string' && key.startsWith('pdfdesk:')) {
-                  settings[key] = window.localStorage.getItem(key) ?? ''
-                }
-              }
-            } catch {
-              // storage unavailable: the backup still covers the Host data
-            }
-          }
-          const payload = await request('POST', 'backup', {
-            action: 'create',
-            include: { fonts: backupFonts, projcache: backupProjcache, settings: backupSettings },
-            settings,
+          const payload = await request('GET', 'exports')
+          setExportItems(Array.isArray(payload.items) ? payload.items : [])
+          const jobs = Array.isArray(payload.jobs) ? payload.jobs : []
+          setExportJob(current => {
+            if (current === null) return current
+            const found = jobs.find(job => job.id === current.id)
+            return found === undefined ? current : found
           })
-          setDataBackup(payload)
+        } catch {
+          // The list is informational; a failed read keeps the last copy.
+        }
+      }, [])
+      useEffect(() => { void refreshExports() }, [refreshExports])
+      useEffect(() => {
+        if (!exportBusy) return undefined
+        const timer = setInterval(() => { void refreshExports() }, 1500)
+        return () => clearInterval(timer)
+      }, [exportBusy, refreshExports])
+      const startPackJob = async (path, body) => {
+        try {
+          const payload = await request('POST', path, body)
+          if (payload !== null && payload.job !== null && typeof payload.job === 'object') setExportJob(payload.job)
         } catch (error) {
-          dataFail(error)
-        } finally {
-          setDataBusy('')
+          window.alert(`${format('exportPackFailed')}${error !== null && error !== undefined && error.message ? error.message : String(error)}`)
         }
       }
-      const inspectDataBackup = async () => {
+      const createDataBackup = async () => {
+        setDataReport(null)
+        const settings = {}
+        if (backupSettings) {
+          try {
+            for (let index = 0; index < window.localStorage.length; index += 1) {
+              const key = window.localStorage.key(index)
+              if (typeof key === 'string' && isPortableSetting(key)) {
+                settings[key] = window.localStorage.getItem(key) ?? ''
+              }
+            }
+          } catch {
+            // storage unavailable: the backup still covers the Host data
+          }
+        }
+        await startPackJob('backup', {
+          action: 'create-async',
+          include: { fonts: backupFonts, projcache: backupProjcache, settings: backupSettings },
+          settings,
+        })
+      }
+      // 「导出书库包」: the library's own data, never its book PDFs.
+      const runLibraryExport = async () => {
+        await startPackJob('library-export', { includeArtifacts: exportArtifacts, async: true })
+      }
+      // 只打 PDF 区，和「书库包」「整机迁移包」分开：测试与搬书都方便。
+      const runPdfExport = async () => {
+        await startPackJob('pdf-export', { scope: pdfExportScope, async: true })
+      }
+      const openExportLocation = async name => {
+        try {
+          await request('POST', 'reveal', { name })
+        } catch (error) {
+          dataFail(error)
+        }
+      }
+      // A package is one file in `backup/`; removing it takes the history entry
+      // with it, because the history is a folder scan rather than a side file.
+      const deleteExportPackage = async name => {
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('exportHistoryDeleteConfirm', { name }))) return
+        try {
+          await request('POST', 'exports/delete', { name })
+          await refreshExports()
+        } catch (error) {
+          window.alert(`${format('exportHistoryDeleteFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        }
+      }
+      const inspectDataBackup = async event => {
+        const file = Array.from(event.target.files ?? [])[0]
+        event.target.value = ''
+        if (file === undefined) return
         setDataBusy('inspect')
         setDataInfo(null)
         setDataReport(null)
         try {
-          const payload = await request('POST', 'backup', { action: 'inspect', path: dataPath.trim() })
-          const manifest = payload !== null && payload !== undefined ? payload.manifest : null
+          const response = await fetch(`${ENDPOINT}imports?kind=migration&name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
+          const payload = await response.json().catch(() => null)
+          if (!response.ok || payload === null || payload.ok !== true) {
+            const reason = payload !== null && payload.error !== undefined ? payload.error.message : `HTTP ${response.status}`
+            throw new Error(reason)
+          }
+          const manifest = payload.manifest !== undefined ? payload.manifest : null
+          setDataFileName(file.name)
+          setDataPath(String(payload.path ?? ''))
           setDataInfo(manifest)
+          // Pre-fill only libraries this machine already has under the same id
+          // (same-machine restore). A different id gets no guess, because writing
+          // another library's annotations into an unrelated root is not reversible.
           const roots = {}
-          const libraries = manifest !== null && manifest.paths !== null && typeof manifest.paths === 'object'
-            ? manifest.paths.libraries ?? {}
+          const libraries = props.libraries ?? []
+          const recorded = manifest !== null && manifest.paths !== null && typeof manifest.paths === 'object'
+            && manifest.paths.libraries !== null && typeof manifest.paths.libraries === 'object'
+            ? manifest.paths.libraries
             : {}
-          for (const id of Object.keys(libraries)) roots[id] = ''
+          for (const id of Object.keys(recorded)) {
+            const match = libraries.find(item => item.id === id)
+            roots[id] = match !== undefined ? match.libraryDir : ''
+          }
           setDataRoots(roots)
         } catch (error) {
           dataFail(error)
@@ -5153,6 +6263,7 @@ window.__ModuleLoader__.load({
         }
       }
       const runDataImport = async () => {
+        if (dataPath === '') return
         if (dataStrategy === 'overwrite' && typeof window !== 'undefined' && typeof window.confirm === 'function'
           && !window.confirm(format('dataOverwriteConfirm'))) return
         setDataBusy('import')
@@ -5162,7 +6273,7 @@ window.__ModuleLoader__.load({
             path: dataPath.trim(),
             strategy: dataStrategy,
             libraryRoots: dataRoots,
-          })
+          }, 180000)
           setDataReport(payload !== null && payload !== undefined ? payload.report : null)
         } catch (error) {
           dataFail(error)
@@ -5192,36 +6303,143 @@ window.__ModuleLoader__.load({
           setCacheBusy(false)
         }
       }
-      const [bookPath, setBookPath] = useState('')
-      const [bookTarget, setBookTarget] = useState('fragments')
-      const [bookSubdir, setBookSubdir] = useState('')
-      const [bookReport, setBookReport] = useState(null)
-      const runBookImport = async () => {
-        if (dataStrategy === 'overwrite' && typeof window !== 'undefined' && typeof window.confirm === 'function'
-          && !window.confirm(format('bookOverwriteConfirm'))) return
-        setDataBusy('book')
-        setBookReport(null)
+      // Where the disk went, and the two deletions that are safe to offer.
+      // Measured on demand when the 数据 tab opens: walking the folders at
+      // startup would slow every load down for a panel most sessions never open.
+      const [storage, setStorage] = useState(null)
+      const [storageBusy, setStorageBusy] = useState(false)
+      const [storageNote, setStorageNote] = useState('')
+      // Retention window for the two prune buttons; nothing deletes on its own.
+      const storageDaysKey = 'pdfdesk:storage-keep-days'
+      const storageDayChoices = [30, 90, 180]
+      const [storageDays, setStorageDaysState] = useState(() => {
         try {
-          const payload = await request('POST', 'library-import', {
-            path: bookPath.trim(),
-            target: bookTarget,
-            subdir: bookSubdir.trim(),
-            strategy: dataStrategy,
-          })
-          setBookReport(payload !== null && payload !== undefined ? payload.report : null)
-        } catch (error) {
-          dataFail(error)
-        } finally {
-          setDataBusy('')
+          const stored = Number(window.localStorage.getItem(storageDaysKey))
+          return storageDayChoices.includes(stored) ? stored : 90
+        } catch {
+          return 90
+        }
+      })
+      const setStorageDays = value => {
+        setStorageDaysState(value)
+        try {
+          window.localStorage.setItem(storageDaysKey, String(value))
+        } catch {
+          // storage unavailable
         }
       }
+      const refreshStorage = useCallback(async () => {
+        try {
+          const payload = await request('GET', 'storage')
+          const total = payload !== null && typeof payload === 'object' && payload.total !== null && typeof payload.total === 'object'
+            ? { bytes: Number(payload.total.bytes) || 0, files: Number(payload.total.files) || 0 }
+            : { bytes: 0, files: 0 }
+          setStorage({
+            total,
+            areas: payload !== null && typeof payload === 'object' && Array.isArray(payload.areas) ? payload.areas : [],
+          })
+          setStorageNote('')
+        } catch (error) {
+          setStorageNote(`${format('storageFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        }
+      }, [])
+      useEffect(() => {
+        if (tab !== 'data' || storage !== null) return
+        void refreshStorage()
+      }, [tab, storage, refreshStorage])
+      const cleanStorage = async () => {
+        if (storageBusy) return
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('storageCleanConfirm'))) return
+        setStorageBusy(true)
+        setStorageNote('')
+        try {
+          const payload = await request('POST', 'storage/clean')
+          const removed = payload !== null && typeof payload === 'object' ? Number(payload.removed) || 0 : 0
+          const bytes = payload !== null && typeof payload === 'object' ? Number(payload.bytes) || 0 : 0
+          setStorageNote(removed === 0
+            ? format('storageCleanNothing')
+            : format('storageCleanDone', { n: removed, mb: (bytes / 1048576).toFixed(1) }))
+          await refreshStorage()
+        } catch (error) {
+          setStorageNote(`${format('storageFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        } finally {
+          setStorageBusy(false)
+        }
+      }
+      const emptyTrashNow = async () => {
+        if (storageBusy) return
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format('storageEmptyTrashConfirm'))) return
+        setStorageBusy(true)
+        setStorageNote('')
+        try {
+          const payload = await request('POST', 'trash/empty')
+          const removed = payload !== null && typeof payload === 'object' ? Number(payload.removed) || 0 : 0
+          const bytes = payload !== null && typeof payload === 'object' ? Number(payload.bytes) || 0 : 0
+          setStorageNote(removed === 0
+            ? format('storageTrashEmpty')
+            : format('storageTrashDone', { n: removed, mb: (bytes / 1048576).toFixed(1) }))
+          await refreshStorage()
+        } catch (error) {
+          setStorageNote(`${format('storageFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        } finally {
+          setStorageBusy(false)
+        }
+      }
+      // Retention pruning: both targets are rebuildable or already-deleted data,
+      // and each one needs its own confirmation.
+      const pruneStorage = async target => {
+        if (storageBusy) return
+        const isTrash = target === 'trash'
+        const label = format(isTrash ? 'storagePruneTrash' : 'storagePruneCache', { days: storageDays })
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          && !window.confirm(format(isTrash ? 'storagePruneTrashConfirm' : 'storagePruneCacheConfirm', { days: storageDays }))) return
+        setStorageBusy(true)
+        setStorageNote('')
+        try {
+          const payload = await request('POST', 'storage/prune', { target, days: storageDays })
+          const removed = payload !== null && typeof payload === 'object' ? Number(payload.removed) || 0 : 0
+          const bytes = payload !== null && typeof payload === 'object' ? Number(payload.bytes) || 0 : 0
+          setStorageNote(removed === 0
+            ? format('storagePruneNone', { label })
+            : format('storagePruneDone', { label, n: removed, mb: (bytes / 1048576).toFixed(1) }))
+          await refreshStorage()
+        } catch (error) {
+          setStorageNote(`${format('storageFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        } finally {
+          setStorageBusy(false)
+        }
+      }
+      // Content-duplicate report; scanning hashes every PDF, so it only runs when
+      // the user asks and it never deletes anything.
+      const [duplicates, setDuplicates] = useState(null)
+      const [dupBusy, setDupBusy] = useState(false)
+      const scanLibraryDuplicates = async () => {
+        if (dupBusy) return
+        setDupBusy(true)
+        try {
+          const payload = await request('GET', 'duplicates', undefined, 180000)
+          setDuplicates({
+            groups: payload !== null && typeof payload === 'object' && Array.isArray(payload.groups) ? payload.groups : [],
+            wasted: payload !== null && typeof payload === 'object' ? Number(payload.wasted) || 0 : 0,
+            scanned: payload !== null && typeof payload === 'object' ? Number(payload.scanned) || 0 : 0,
+          })
+        } catch (error) {
+          setDuplicates(null)
+          window.alert(`${format('duplicatesFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
+        } finally {
+          setDupBusy(false)
+        }
+      }
+      const dataPackageInput = useRef(null)
       const applyImportedSettings = async () => {
         try {
           const payload = await request('GET', 'backup/settings')
           const settings = payload !== null && payload !== undefined && payload.settings !== null && typeof payload.settings === 'object'
             ? payload.settings
             : {}
-          const keys = Object.keys(settings).filter(key => key.startsWith('pdfdesk:'))
+          const keys = Object.keys(settings).filter(key => isPortableSetting(key))
           if (keys.length === 0) {
             window.alert(format('dataNoSettings'))
             return
@@ -5336,6 +6554,17 @@ window.__ModuleLoader__.load({
               onClick: props.onRailSide,
             }, props.railSide === 'left' ? format('railLeft') : format('railRight'))
           ),
+          h('div', { className: 'md-settings-row' },
+            h('span', { title: format('readCacheLimitHint') }, format('readCacheLimit')),
+            h('select', {
+              className: 'md-settings-input',
+              value: pageCacheLimit,
+              'aria-label': format('readCacheLimit'),
+              onChange: event => setPageCacheLimit(writePageCacheLimit(Number(event.target.value))),
+            },
+              [2, 3, 5, 8].map(option => h('option', { key: option, value: option }, format('readCacheOption', { n: option }))))
+          ),
+          h('p', { className: 'md-shelf-sub' }, format('readCacheLimitHint')),
           h('div', { className: 'md-settings-row' },
             h('span', null, format('sketchRoughness')),
             h('input', {
@@ -5519,20 +6748,12 @@ window.__ModuleLoader__.load({
           ),
           h(EngineStatusRow),
           h('p', { className: 'md-shelf-sub' }, format('envImpact')),
-          h('p', { className: 'md-shelf-sub' }, `${format('apiKeyTitle')}：${envTools.apiKey ? format('apiKeyConfigured') : format('apiKeyMissing')}`)
-        ),
-        h('div', { className: 'md-settings-section' },
-          h('h4', { className: 'md-settings-heading' }, format('apiKeyTitle')),
-          h('p', { className: 'md-shelf-sub' }, format('apiKeyDeprecated')),
-          h('p', { className: 'md-shelf-sub' }, apiKeyNote),
           h('div', { className: 'md-settings-row' },
-            h(KitInput, {
-              className: 'md-settings-input', type: 'password',
-              value: apiKey, placeholder: 'sk-...',
-              onChange: value => setApiKey(value),
-            }),
-            h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => { void saveApiKey() } }, format('apiKeySave'))
-          )
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: props.onOpenEnvGuide,
+            }, format('envGuideReopen'))),
+          h('p', { className: 'md-shelf-sub' }, format('envGuideReopenHint'))
         )
       )
       // A prefilled GitHub issue: version + system only, never files or local
@@ -5597,7 +6818,122 @@ window.__ModuleLoader__.load({
           : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message),
         h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
       )
+      // Which measured folder each row stands for; the Host only sends keys.
+      const storageLabel = {
+        sessions: 'storageSessions',
+        fonts: 'storageFonts',
+        projcache: 'storageProjcache',
+        translation: 'storageTranslation',
+        legacy: 'storageLegacy',
+        jobs: 'storageJobs',
+        tmp: 'storageTmp',
+        staging: 'storageStaging',
+        preImport: 'storagePreImport',
+        packages: 'storagePackages',
+        trash: 'storageTrash',
+      }
       const data = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('dataLocationsTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('dataLocationsHint')),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('dataLocationLibrary')),
+            h('code', { className: 'md-path' },
+              props.libraryDir === undefined || props.libraryDir === '' ? format('dataLocationNone') : props.libraryDir)),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('dataLocationPlugin')),
+            h('code', { className: 'md-path' },
+              props.dataDir === undefined || props.dataDir === '' ? format('dataLocationNone') : props.dataDir)),
+          h('p', { className: 'md-settings-note' }, format('dataLocationsReadOnly'))
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('cleanupSection')),
+          h('p', { className: 'md-shelf-sub' }, format('cleanupHint')),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: cleanupBusy,
+              onClick: () => { void runCleanup() },
+            }, format('cleanup')),
+            cleanupNote === ''
+              ? null
+              : h('span', { className: 'md-settings-note', role: 'status' }, cleanupNote))
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('storageTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('storageHint')),
+          storage === null
+            ? null
+            : storage.total.bytes === 0
+              ? h('p', { className: 'md-shelf-sub' }, format('storageEmpty'))
+              : h(React.Fragment, null,
+                storage.areas
+                  .filter(area => area !== null && typeof area === 'object' && Number(area.bytes) > 0)
+                  .map(area => h('div', { className: 'md-settings-row', key: area.key },
+                    h('span', null, format(storageLabel[area.key] ?? 'storageTotal')),
+                    h('span', { className: 'md-settings-note' }, `${(Number(area.bytes) / 1048576).toFixed(1)} MB`))),
+                h('div', { className: 'md-settings-row' },
+                  h('strong', null, format('storageTotal')),
+                  h('strong', null, `${(storage.total.bytes / 1048576).toFixed(1)} MB`))),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: storageBusy,
+              onClick: () => { void refreshStorage() },
+            }, format('storageRefresh')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: storageBusy,
+              onClick: () => { void cleanStorage() },
+            }, format('storageClean')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: storageBusy,
+              onClick: () => { void emptyTrashNow() },
+            }, format('storageEmptyTrash'))),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('storageRetention')),
+            h('select', {
+              className: 'md-settings-input',
+              value: storageDays,
+              'aria-label': format('storageRetention'),
+              onChange: event => setStorageDays(Number(event.target.value) || 90),
+            },
+              [30, 90, 180].map(option => h('option', { key: option, value: option }, format('storageDayOption', { n: option })))),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: storageBusy,
+              onClick: () => { void pruneStorage('trash') },
+            }, format('storagePruneTrash', { days: storageDays })),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: storageBusy,
+              onClick: () => { void pruneStorage('translation') },
+            }, format('storagePruneCache', { days: storageDays }))),
+          h('p', { className: 'md-shelf-sub' }, format('storageRetentionHint')),
+          storageNote === ''
+            ? null
+            : h('p', { className: 'md-settings-note', role: 'status' }, storageNote)
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('duplicatesTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('duplicatesHint')),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: dupBusy,
+              onClick: () => { void scanLibraryDuplicates() },
+            }, dupBusy ? format('duplicatesScanning') : format('duplicatesScan')),
+            duplicates === null
+              ? null
+              : h('span', { className: 'md-settings-note' }, duplicates.groups.length === 0
+                ? format('duplicatesNone')
+                : format('duplicatesSummary', { n: duplicates.groups.length, mb: (duplicates.wasted / 1048576).toFixed(1) }))),
+          duplicates === null || duplicates.groups.length === 0
+            ? null
+            : h('ul', { className: 'md-split-preview' }, duplicates.groups.slice(0, 20).map((group, index) => h('li', { key: index },
+              `${format('duplicatesGroup', { count: group.count, mb: (Number(group.size) / 1048576).toFixed(2) })} — ${(group.files ?? []).join(' · ')}`)))
+        ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataHint')),
@@ -5628,28 +6964,99 @@ window.__ModuleLoader__.load({
               }),
               ` ${format('dataSettings')}`)
           ),
+          storage === null
+            ? null
+            : h('p', { className: 'md-settings-note' }, format('dataSizeHint', {
+              sessions: `${((storage.areas.find(area => area.key === 'sessions')?.bytes ?? 0) / 1048576).toFixed(1)} MB`,
+              fonts: `${((storage.areas.find(area => area.key === 'fonts')?.bytes ?? 0) / 1048576).toFixed(1)} MB`,
+            })),
           h('div', { className: 'md-settings-row' },
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
-              disabled: dataBusy === 'create',
+              disabled: exportBusy,
               onClick: createDataBackup,
             }, format('dataBackup')),
-            dataBackup === null
-              ? null
-              : h('a', {
-                className: 'md-btn md-btn-small',
-                href: dataBackup.download,
-                download: dataBackup.name,
-              }, format('dataDownload'))
+            exportBusy ? h('span', { className: 'md-settings-note' }, format('exportPackRunning')) : null
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('libraryExportTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('libraryExportHint')),
+          h('div', { className: 'md-settings-row' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: exportArtifacts,
+                onChange: event => setExportArtifacts(event.target.checked),
+              }),
+              ` ${format('libraryExportArtifacts')}`)
           ),
-          dataBackup === null
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: exportBusy,
+              onClick: runLibraryExport,
+            }, exportBusy ? format('dataWorking') : format('libraryExportStart'))
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('pdfExportTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('pdfExportHint')),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('pdfExportScope')),
+            h('select', {
+              className: 'md-settings-input',
+              value: pdfExportScope,
+              onChange: event => setPdfExportScope(event.target.value),
+            },
+              h('option', { value: 'fragments' }, format('pdfExportFragments')),
+              h('option', { value: 'whole' }, format('pdfExportWhole')),
+              h('option', { value: 'both' }, format('pdfExportBoth'))),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              disabled: exportBusy,
+              onClick: runPdfExport,
+            }, exportBusy ? format('dataWorking') : format('pdfExportStart'))
+          )
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('exportHistoryTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('exportHistoryHint')),
+          exportJob === null
             ? null
-            : h('p', { className: 'md-shelf-sub' },
-              format('dataBackupCreated', {
-                name: dataBackup.name,
-                files: dataBackup.files,
-                mb: (Number(dataBackup.bytes) / 1048576).toFixed(1),
-              }))
+            : h('p', { className: 'md-settings-note', role: 'status' },
+              exportJob.status === 'running'
+                ? format('exportPackRunning')
+                : exportJob.status === 'error'
+                  ? `${format('exportPackFailed')}${exportJob.error ?? ''}`
+                  : exportJob.result === null
+                    ? null
+                    : format('dataBackupCreated', {
+                      name: exportJob.result.name ?? '',
+                      files: Number(exportJob.result.files) || 0,
+                      mb: (Number(exportJob.result.bytes) / 1048576).toFixed(1),
+                    })),
+          exportItems.length === 0
+            ? h('p', { className: 'md-shelf-sub' }, format('exportHistoryEmpty'))
+            : exportItems.map(item => h('div', { className: 'md-settings-row', key: item.name },
+              h('span', null, `${format(item.kind === 'pdf-pack' ? 'exportKindPdf' : item.kind === 'library-export' ? 'exportKindLibrary' : 'exportKindBackup')}${item.library ? ` · ${item.library}` : ''} · ${new Date(item.createdAt).toLocaleString()} · ${(Number(item.bytes) / 1048576).toFixed(1)} MB`),
+              h('a', {
+                className: 'md-btn md-btn-small',
+                href: `${ENDPOINT}backup/file?name=${encodeURIComponent(item.name)}`,
+                download: item.name,
+              }, format('exportHistoryDownload')),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: format('exportHistoryOpen'),
+                onClick: () => { void openExportLocation(item.name) },
+              }, '📂'),
+              h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+                title: format('exportHistoryDelete'),
+                'aria-label': format('exportHistoryDelete'),
+                onClick: () => { void deleteExportPackage(item.name) },
+              }, '🗑')
+            ))
         ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataCacheTitle')),
@@ -5666,20 +7073,48 @@ window.__ModuleLoader__.load({
           )
         ),
         h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('translatePrefsTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('translatePrefsHint')),
+          h('div', { className: 'md-settings-row' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: skipAsk,
+                onChange: event => {
+                  setSkipAsk(event.target.checked)
+                  writePrefBool(TRANSLATE_SKIP_ASK, event.target.checked)
+                },
+              }),
+              ` ${format('translatePrefsSkipAsk')}`),
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: autoOverlay,
+                onChange: event => {
+                  setAutoOverlay(event.target.checked)
+                  writePrefBool(TRANSLATE_AUTO_OVERLAY, event.target.checked)
+                },
+              }),
+              ` ${format('translatePrefsAutoOverlay')}`))
+        ),
+        h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('dataImportTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataImportHint')),
           h('div', { className: 'md-settings-row' },
             h('input', {
-              className: 'md-settings-input', type: 'text',
-              value: dataPath,
-              placeholder: 'D:\\backup\\dsh-workbench-backup-....zip',
-              onChange: event => setDataPath(event.target.value),
+              type: 'file', accept: '.zip,application/zip',
+              style: { display: 'none' }, ref: dataPackageInput, onChange: inspectDataBackup,
             }),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
-              disabled: dataBusy === 'inspect' || dataPath.trim() === '',
-              onClick: inspectDataBackup,
-            }, format('dataInspect'))
+              disabled: dataBusy === 'inspect',
+              onClick: () => {
+                if (dataPackageInput.current !== null) dataPackageInput.current.click()
+              },
+            }, format('dataChoose')),
+            dataFileName === ''
+              ? null
+              : h('span', { className: 'md-settings-note' }, format('dataChosen', { name: dataFileName }))
           ),
           dataInfo === null
             ? null
@@ -5707,7 +7142,7 @@ window.__ModuleLoader__.load({
                   h('option', { value: 'skip' }, format('dataSkip'))),
                 h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-small',
-                  disabled: dataBusy === 'import',
+                  disabled: dataBusy === 'import' || dataPath === '',
                   onClick: runDataImport,
                 }, format('dataImport'))
               )
@@ -5734,40 +7169,21 @@ window.__ModuleLoader__.load({
           h('h4', { className: 'md-settings-heading' }, format('dataBookTitle')),
           h('p', { className: 'md-shelf-sub' }, format('dataBookHint')),
           h('div', { className: 'md-settings-row' },
-            h('input', {
-              className: 'md-settings-input', type: 'text',
-              value: bookPath,
-              placeholder: 'D:\\books\\chapters.zip',
-              onChange: event => setBookPath(event.target.value),
-            }),
-            h('select', {
-              className: 'md-settings-input',
-              value: bookTarget,
-              onChange: event => setBookTarget(event.target.value),
-            },
-              h('option', { value: 'fragments' }, format('dataBookFragments')),
-              h('option', { value: 'whole' }, format('dataBookWhole'))),
-            h('input', {
-              className: 'md-settings-input', type: 'text',
-              value: bookSubdir,
-              placeholder: format('dataBookSubdirPh'),
-              onChange: event => setBookSubdir(event.target.value),
-            }),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
-              disabled: dataBusy === 'book' || bookPath.trim() === '',
-              onClick: runBookImport,
+              onClick: props.onOpenBookWizard,
             }, format('dataBookImport'))
-          ),
-          bookReport === null
-            ? null
-            : h('p', { className: 'md-settings-note' },
-              format('dataBookReport', {
-                imported: Array.isArray(bookReport.imported) ? bookReport.imported.length : 0,
-                renamed: Array.isArray(bookReport.renamed) ? bookReport.renamed.length : 0,
-                skipped: Array.isArray(bookReport.skipped) ? bookReport.skipped.length : 0,
-                warnings: Array.isArray(bookReport.warnings) ? bookReport.warnings.length : 0,
-              }))
+          )
+        ),
+        // Same entry as the library page, kept here so a whole PDF can be cut
+        // without first switching to the shelf.
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('splitPdfTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('splitPdfHint')),
+          h(SplitStart, {
+            books: props.books,
+            onStart: props.onSplitBook,
+          })
         )
       )
       // One row per AI feature. Each row follows the deployment default or pins
@@ -5780,6 +7196,55 @@ window.__ModuleLoader__.load({
       ]
       const aiValue = (provider, model) => `${provider}|${model}`
       const aiPane = h(React.Fragment, null,
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('aiModeHeading')),
+          h('p', { className: 'md-shelf-sub' }, format('aiModeHint')),
+          h('div', { className: 'md-settings-row' },
+            h(KitButton, {
+              type: 'button',
+              className: aiMode === 'daily' ? 'md-btn md-btn-small md-btn-primary' : 'md-btn md-btn-small',
+              onClick: () => setAiMode(writeAiMode('daily')),
+            }, format('aiModeDaily')),
+            h(KitButton, {
+              type: 'button',
+              className: aiMode === 'quality' ? 'md-btn md-btn-small md-btn-primary' : 'md-btn md-btn-small',
+              onClick: () => setAiMode(writeAiMode('quality')),
+            }, format('aiModeQuality'))),
+          h('p', { className: 'md-settings-note' },
+            aiMode === 'daily' ? format('aiModeDailyHint') : format('aiModeQualityHint'))
+        ),
+        h('div', { className: 'md-settings-section' },
+          h('h4', { className: 'md-settings-heading' }, format('aiStyleHeading')),
+          h('p', { className: 'md-shelf-sub' }, format('aiStyleHint')),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('aiStyleDaily')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => { writeStylePrompt('daily', ''); setStyleDaily(readStylePrompt('daily')) },
+            }, format('aiStyleReset'))),
+          h('textarea', {
+            className: 'md-settings-input md-prompt-text',
+            rows: 3,
+            value: styleDaily,
+            'aria-label': format('aiStyleDaily'),
+            onChange: event => setStyleDaily(event.target.value),
+            onBlur: event => { writeStylePrompt('daily', event.target.value); setStyleDaily(readStylePrompt('daily')) },
+          }),
+          h('div', { className: 'md-settings-row' },
+            h('span', null, format('aiStyleQuality')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small',
+              onClick: () => { writeStylePrompt('quality', ''); setStyleQuality(readStylePrompt('quality')) },
+            }, format('aiStyleReset'))),
+          h('textarea', {
+            className: 'md-settings-input md-prompt-text',
+            rows: 3,
+            value: styleQuality,
+            'aria-label': format('aiStyleQuality'),
+            onChange: event => setStyleQuality(event.target.value),
+            onBlur: event => { writeStylePrompt('quality', event.target.value); setStyleQuality(readStylePrompt('quality')) },
+          })
+        ),
         h('div', { className: 'md-settings-section' },
           h('h4', { className: 'md-settings-heading' }, format('settingsAiHeading')),
           aiCatalog === null
@@ -6060,6 +7525,18 @@ window.__ModuleLoader__.load({
               h('code', { className: 'md-path' }, item.libraryDir),
               h('div', { className: 'md-library-actions' },
                 h(KitButton, {
+                  type: 'button', className: 'md-btn md-btn-small',
+                  disabled: busy,
+                  onClick: () => enterNow(item.id),
+                }, format('libraryEnter')),
+                h(KitButton, {
+                  type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-icon-btn',
+                  disabled: busy,
+                  title: format('libraryFolder'),
+                  'aria-label': format('libraryFolder'),
+                  onClick: () => { if (typeof props.onReveal === 'function') props.onReveal(item.id) },
+                }, '📂'),
+                h(KitButton, {
                   type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-icon-btn',
                   disabled: busy,
                   title: format('libraryRemove'),
@@ -6222,15 +7699,26 @@ window.__ModuleLoader__.load({
                 )
           ),
         h('div', { className: 'md-tool-card' },
+          h('h3', { className: 'md-subheading' }, format('wholePdfCardTitle')),
+          h('p', { className: 'md-shelf-sub' }, format('wholePdfCardHint')),
+          h(SplitStart, {
+            books: props.books,
+            busy,
+            importBusy: props.importBusy,
+            onStart: props.onSplitBook,
+            onImport: props.onImportPdf,
+          })
+        ),
+        h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
-          h('p', { className: 'md-shelf-sub' }, format('splitHint')),
+          h('p', { className: 'md-shelf-sub' }, format('splitToolCardHint')),
           h('p', { className: 'md-shelf-sub' }, `${format('splitWorkspace')}：${props.workspaceLabel === '' ? format('workspaceNotChosen') : props.workspaceLabel}`),
           h('div', { className: 'md-library-tools' },
             h(KitButton, {
               type: 'button', className: 'md-btn',
               disabled: busy || props.workspaceLabel === '',
               onClick: props.onSplit,
-            }, busy ? format('libraryBusy') : format('splitStart')),
+            }, busy ? format('libraryBusy') : format('splitToolStart')),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               disabled: busy,
@@ -6416,7 +7904,14 @@ window.__ModuleLoader__.load({
         empty
           ? h('div', { className: 'md-empty' },
             h('div', { className: 'md-empty-title' }, format('shelfEmpty')),
-            h('div', { className: 'md-empty-hint' }, format('emptyHint'))
+            h('div', { className: 'md-empty-hint' }, format('emptyHint')),
+            props.group !== null || typeof props.onImportPdf !== 'function'
+              ? null
+              : h('div', { className: 'md-empty-actions' },
+                h(KitButton, {
+                  type: 'button', className: 'md-btn',
+                  onClick: props.onImportPdf,
+                }, format('importTileTitle')))
           )
           : visibleBooks.length === 0 && props.collections.length === 0
             ? h('div', { className: 'md-empty' },
@@ -6437,7 +7932,22 @@ window.__ModuleLoader__.load({
                 onSelect: props.onToggle,
                 onOpen: props.onOpen,
                 registerRef: props.registerRef,
-              }))
+              })),
+              // The import tile lives at the end of the default shelf only: the file
+              // lands in 整本\ and belongs to no custom shelf yet.
+              props.group !== null || typeof props.onImportPdf !== 'function'
+                ? null
+                : h(KitButton, {
+                  key: '__import',
+                  type: 'button', className: 'md-card md-card-add',
+                  title: format('importTileHint'),
+                  onClick: props.onImportPdf,
+                },
+                  h('span', { className: 'md-card-add-box', 'aria-hidden': true },
+                    h('span', { className: 'md-card-add-plus' }, '+')),
+                  h('span', { className: 'md-card-body' },
+                    h('span', { className: 'md-card-title' }, format('importTileTitle')),
+                    h('span', { className: 'md-card-sub' }, format('importTileHint'))))
             ),
         box === null
           ? null
@@ -7190,10 +8700,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Pages kept warm around the one being read: the current page plus its two
-     * neighbours fits in five, which is enough to absorb a flick.
+     * Pages kept warm around the one being read: the current page plus its
+     * neighbours. The count is a Settings switch (`PAGE_CACHE_LIMIT_KEY`), so
+     * this is only the default.
      */
-    const PAGE_PRELOAD_LIMIT = 5
 
     /**
      * Paint one page into a canvas; shared by single and continuous mode so the
@@ -7466,6 +8976,12 @@ window.__ModuleLoader__.load({
      */
     function sketchPaths(entry, roughness) {
       if (roughLib === null || roughness <= 0) return null
+      // A shape's rough path is deterministic for a given entry object and
+      // roughness. The editor creates fresh objects only for the mark it moves,
+      // so every other shape reuses its paths instead of regenerating them on
+      // each drag frame.
+      const cached = sketchPaths.cache.get(entry)
+      if (cached !== undefined && cached.roughness === roughness) return cached.paths
       const generator = roughLib.generator()
       const width = Number.isFinite(entry.width) ? entry.width : 2
       const options = {
@@ -7509,8 +9025,11 @@ window.__ModuleLoader__.load({
           paths.push(...generator.toPaths(generator.line(px(entry.x1), py(entry.y1), ex, ey, options)))
         }
       }
+      sketchPaths.cache.set(entry, { roughness, paths })
       return paths
     }
+    /** @type {WeakMap<object, { roughness: number, paths: object[] }>} */
+    sketchPaths.cache = new WeakMap()
 
     /**
      * Apply one saved note to a page's annotation list. Shared by the reader and
@@ -9070,6 +10589,9 @@ window.__ModuleLoader__.load({
       const [selection, setSelection] = useState(null)
       const [draftStroke, setDraftStroke] = useState(null)
       const [textDraft, setTextDraft] = useState(null)
+      // The text box under the last text-tool press: a press without a drag
+      // selects it, while a drag draws a new box through it.
+      const textHitRef = useRef(-1)
       const [noteEdit, setNoteEdit] = useState(null)
       const [noteStyle, setNoteStyle] = useState(() => defaultNoteStyle())
       const [shapeDraft, setShapeDraft] = useState(null)
@@ -9121,6 +10643,7 @@ window.__ModuleLoader__.load({
         setDraftStroke,
         textDraft,
         setTextDraft,
+        textHitRef,
         noteEdit,
         setNoteEdit,
         noteStyle,
@@ -9332,7 +10855,45 @@ window.__ModuleLoader__.load({
      * chapter. The reader's page is not injected, so this replaces the old
      * "reading position: page N" suffix and says the page is not what matters.
      */
-    const WHOLE_CHAPTER_LINE = '阅读方式：整章思考（整章一起理解，不限定某一页；需要定位时我会描述具体段落）。'
+    /** Default style instruction per mode; the settings page may replace either one. */
+    const DEFAULT_STYLE = {
+      quality: '阅读方式：整章思考（整章一起理解，不限定某一页；需要定位时我会描述具体段落）。可以充分展开推导与证明，长答案没问题。',
+      daily: '阅读方式：整章已读过，可据此作答。回答像网页聊天：先给结论，3–5 句内说清，需要时再补要点；不要长篇推导。',
+    }
+
+    /**
+     * The style instruction a session seed uses: the user's own text when set,
+     * otherwise the built-in one. Users may want "简短" to mean something else,
+     * or add their own house rules.
+     * @param {'daily' | 'quality'} mode - which mode's prompt.
+     * @returns {string} the instruction line.
+     */
+    function readStylePrompt(mode) {
+      const key = `pdfdesk:ai-style:${mode === 'quality' ? 'quality' : 'daily'}`
+      try {
+        const custom = window.localStorage.getItem(key)
+        if (custom !== null && custom.trim() !== '') return custom.trim()
+      } catch {
+        // storage unavailable: use the default
+      }
+      return DEFAULT_STYLE[mode === 'quality' ? 'quality' : 'daily']
+    }
+
+    /**
+     * @param {'daily' | 'quality'} mode - which mode.
+     * @param {string} value - replacement text; blank clears the override.
+     * @returns {void}
+     */
+    function writeStylePrompt(mode, value) {
+      const key = `pdfdesk:ai-style:${mode === 'quality' ? 'quality' : 'daily'}`
+      try {
+        const text = String(value ?? '').trim()
+        if (text === '') window.localStorage.removeItem(key)
+        else window.localStorage.setItem(key, text)
+      } catch {
+        // storage unavailable
+      }
+    }
 
 
     /**
@@ -9351,7 +10912,7 @@ window.__ModuleLoader__.load({
      * @param {string} [persona] - the local Q&A persona, when enabled.
      * @returns {string} the header block.
      */
-    function sessionSeedText(bookRow, chapter, position, paths, persona) {
+    function sessionSeedText(bookRow, chapter, position, paths, persona, daily) {
       const pdf = position === null
         ? (chapter.file === '' ? '' : `${chapter.file}.pdf`)
         : position.pdf
@@ -9361,7 +10922,10 @@ window.__ModuleLoader__.load({
       ]
       if (pdf !== '') parts.push(`PDF：${pdf}`)
       const header = parts.join(' · ')
-      const lines = [header, WHOLE_CHAPTER_LINE]
+      const lines = [header, readStylePrompt(daily === true ? 'daily' : 'quality')]
+      if (daily === true && position !== null && Number(position.page) > 0) {
+        lines.push(`当前页：第 ${Number(position.page)} 页`)
+      }
       const hasPaths = paths !== null && paths !== undefined
       const hasPersona = typeof persona === 'string' && persona !== ''
       if (hasPaths) {
@@ -9394,6 +10958,159 @@ window.__ModuleLoader__.load({
         return Array.isArray(parsed) ? parsed : []
       } catch {
         return []
+      }
+    }
+
+    /* ------------------------------------------------- translate prefs -- */
+
+    /**
+     * A boolean preference stored on this machine. Each chapter used to ask the
+     * same two questions (cost, overwrite); remembering the answers is what
+     * removes the repeated clicks.
+     * @param {string} key - localStorage key.
+     * @param {boolean} fallback - value when nothing is stored.
+     * @returns {boolean} the preference.
+     */
+    function readPrefBool(key, fallback) {
+      try {
+        const raw = window.localStorage.getItem(key)
+        return raw === null ? fallback : raw === '1'
+      } catch {
+        return fallback
+      }
+    }
+
+    function writePrefBool(key, value) {
+      try {
+        window.localStorage.setItem(key, value ? '1' : '0')
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    /** How much chapter context a new session gets: `daily` (web-chat-like) or `quality` (whole chapter). */
+    const AI_MODE_KEY = 'pdfdesk:ai-mode'
+
+    /**
+     * @returns {'daily' | 'quality'} the stored reading mode; `daily` by default
+     * because a chapter-sized prefix costs 11k–40k tokens per session.
+     */
+    function readAiMode() {
+      try {
+        return window.localStorage.getItem(AI_MODE_KEY) === 'quality' ? 'quality' : 'daily'
+      } catch {
+        return 'daily'
+      }
+    }
+
+    /**
+     * @param {'daily' | 'quality'} value - mode to store.
+     * @returns {'daily' | 'quality'} the value that was stored.
+     */
+    function writeAiMode(value) {
+      const next = value === 'quality' ? 'quality' : 'daily'
+      try {
+        window.localStorage.setItem(AI_MODE_KEY, next)
+      } catch {
+        // storage unavailable: the mode applies for this page load only
+      }
+      return next
+    }
+
+    /** How many page bitmaps the reader keeps rendered (setting, 2–8). */
+    const PAGE_CACHE_LIMIT_KEY = 'pdfdesk:page-cache-limit'
+
+    /**
+     * The reader's warm-bitmap budget. Read at the moment a page is released, so
+     * a change in Settings applies without reopening the book.
+     * @returns {number} 2–8, default 5.
+     */
+    function readPageCacheLimit() {
+      try {
+        const raw = Number(window.localStorage.getItem(PAGE_CACHE_LIMIT_KEY))
+        if (!Number.isFinite(raw) || raw === 0) return 5
+        return Math.min(8, Math.max(2, Math.round(raw)))
+      } catch {
+        return 5
+      }
+    }
+
+    /**
+     * @param {unknown} value - requested limit.
+     * @returns {number} the clamped value that was stored.
+     */
+    function writePageCacheLimit(value) {
+      const next = Math.min(8, Math.max(2, Math.round(Number(value) || 5)))
+      try {
+        window.localStorage.setItem(PAGE_CACHE_LIMIT_KEY, String(next))
+      } catch {
+        // storage unavailable
+      }
+      return next
+    }
+
+    const ENV_GUIDE_SEEN = 'pdfdesk:env-guide-seen'
+
+    /**
+     * Preferences worth carrying between machines. Per-page annotation, mask and
+     * position caches are large and rebuildable, so they never enter a settings
+     * blob: a profile full of them used to blow past the request cap.
+     * @param {string} key - localStorage key.
+     * @returns {boolean} whether the key is a portable preference.
+     */
+    function isPortableSetting(key) {
+      if (typeof key !== 'string' || !key.startsWith('pdfdesk:')) return false
+      return !/^pdfdesk:(masks|annots|page|partial|translate-job|shared-branch|diag|debug|dev-mode)\b/.test(key)
+    }
+
+    /**
+     * Missing-capability ids already acknowledged with “知道了”. The checklist
+     * reminds once per kind of problem: resolving an item stays silent, a new
+     * kind of problem shows it once more. “不再提示” still silences everything.
+     * @returns {string[]} the acknowledged ids.
+     */
+    function readEnvGuideSeen() {
+      try {
+        const raw = window.localStorage.getItem(ENV_GUIDE_SEEN)
+        const parsed = raw === null ? [] : JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : []
+      } catch {
+        return []
+      }
+    }
+
+    /**
+     * @param {string[]} ids - missing ids the user just acknowledged.
+     * @returns {void}
+     */
+    function writeEnvGuideSeen(ids) {
+      try {
+        const seen = new Set(readEnvGuideSeen())
+        for (const id of ids) seen.add(id)
+        window.localStorage.setItem(ENV_GUIDE_SEEN, JSON.stringify([...seen]))
+      } catch {
+        // storage unavailable
+      }
+    }
+
+    const TRANSLATE_SKIP_ASK = 'pdfdesk:translate-skip-ask'
+    const TRANSLATE_AUTO_OVERLAY = 'pdfdesk:translate-auto-overlay'
+    const TRANSLATE_TARGET = 'pdfdesk:translate-target'
+
+    /** The last target language picked (zh/en), so it survives reopening. */
+    function readTranslateTarget() {
+      try {
+        return window.localStorage.getItem(TRANSLATE_TARGET) === 'en' ? 'en' : 'zh'
+      } catch {
+        return 'zh'
+      }
+    }
+
+    function writeTranslateTarget(value) {
+      try {
+        window.localStorage.setItem(TRANSLATE_TARGET, value === 'en' ? 'en' : 'zh')
+      } catch {
+        // storage unavailable
       }
     }
 
@@ -9570,6 +11287,11 @@ window.__ModuleLoader__.load({
       const [size, setSize] = useState({ width: 0, height: 0 })
       // Font scale per block from the fit pass (1 = the typesetter's size).
       const [scales, setScales] = useState({})
+      // Blocks that still do not fit after the 6 % allowance: they keep their
+      // size and are outlined instead of being squeezed until the page looks
+      // uneven (D follow-up, option B).
+      const [overflow, setOverflow] = useState(() => new Set())
+      const overflowSig = useRef('')
       const blocks = props.blocks
       const clipId = useMemo(() => `md-ov-clip-${Math.random().toString(36).slice(2, 9)}`, [])
       // KaTeX is the expensive part of a render, and the reader re-renders on
@@ -9617,6 +11339,7 @@ window.__ModuleLoader__.load({
         }
         let changed = false
         const next = { ...scales }
+        const capped = new Set()
         for (const block of blocks) {
           const node = nodes.current.get(String(block.id))
           if (node === undefined) continue
@@ -9630,18 +11353,33 @@ window.__ModuleLoader__.load({
           const room = nextTop === Infinity ? boxRoom : Math.max(boxRoom, nextTop - ownTop - 2)
           const current = scales[String(block.id)] ?? 1
           if (node.scrollHeight > room + 1 && Number(block.fontPt) * current > 9.05) {
-            next[String(block.id)] = Math.max(9 / Number(block.fontPt), current - 0.03)
-            changed = true
+            if (current > 0.945) {
+              next[String(block.id)] = Math.max(0.94, 9 / Number(block.fontPt), current - 0.03)
+              changed = true
+            } else {
+              // Stop at 6 % and outline the block: squeezing further is what made
+              // one paragraph look a size smaller than the next.
+              capped.add(String(block.id))
+            }
           }
         }
         if (changed) setScales(next)
+        const signature = [...capped].sort().join(',')
+        if (signature !== overflowSig.current) {
+          overflowSig.current = signature
+          setOverflow(capped)
+        }
       })
       if (props.page === null || size.height <= 0) {
         return h('div', { className: 'md-overlay-text', ref: root, 'aria-hidden': true })
       }
       const pxPerPt = size.height / Number(props.page.height)
       const frames = props.masks.filter(mask => mask.w > 0 && mask.h > 0)
-      return h('div', { className: 'md-overlay-text', ref: root, 'aria-hidden': true },
+      return h('div', {
+        className: 'md-overlay-text',
+        ref: root,
+        'aria-hidden': true,
+      },
         h('svg', { className: 'md-overlay-text-defs', width: 0, height: 0, 'aria-hidden': true },
           h('defs', null,
             h('clipPath', { id: clipId, clipPathUnits: 'objectBoundingBox' },
@@ -9683,7 +11421,7 @@ window.__ModuleLoader__.load({
               className: 'md-overlay-text-block',
               'data-block-id': block.id,
               'data-display': displayFirst ? 'true' : undefined,
-              'data-overflow': block.overflow === true ? 'true' : undefined,
+              'data-overflow': block.overflow === true || overflow?.has?.(String(block.id)) === true ? 'true' : undefined,
               style: {
                 left: `${Number(box[0]) * 100}%`,
                 top: `${top}px`,
@@ -10919,7 +12657,8 @@ window.__ModuleLoader__.load({
               cssWidth: offscreen.style.width,
               cssHeight: offscreen.style.height,
             })
-            while (pageCache.current.size > PAGE_PRELOAD_LIMIT) {
+            const keepWarm = readPageCacheLimit()
+            while (pageCache.current.size > keepWarm) {
               const oldest = pageCache.current.keys().next().value
               pageCache.current.delete(oldest)
             }
@@ -11271,6 +13010,10 @@ window.__ModuleLoader__.load({
       // also opens it by position.
       const [railOpen, setRailOpen] = useState(false)
       const [railPanel, setRailPanel] = useState(false)
+      // The reader box does not move between a pointerenter and its leave, so it is
+      // measured once per entry. Measuring it inside pointermove forced a layout
+      // on every mouse move, which made every drag stutter.
+      const railRect = useRef(null)
       // Vertical centre of the tool button that opened the panel, so the panel
       // sits beside that icon instead of at the middle of the page.
       const [railAnchor, setRailAnchor] = useState(null)
@@ -11308,10 +13051,23 @@ window.__ModuleLoader__.load({
         if (railCloseTimer.current !== null) clearTimeout(railCloseTimer.current)
       }, [])
       const onRailPointer = event => {
-        const rect = event.currentTarget.getBoundingClientRect()
+        // A drag owns the pointer: opening the rail mid-gesture only re-renders
+        // the reader and moves the hit targets under the cursor.
+        if (drawingRef.current) return
+        let rect = railRect.current
+        if (rect === null) {
+          rect = event.currentTarget.getBoundingClientRect()
+          railRect.current = rect
+        }
         const fromEdge = railSide === 'right' ? rect.right - event.clientX : event.clientX - rect.left
         const open = fromEdge <= 48
+        // Far from the edge and already closed: nothing to schedule. Skipping the
+        // state update here keeps a plain mouse move from touching React at all.
+        if (!open && !railOpen) return
         setRailOpen(current => (current === open ? current : open))
+      }
+      const trackRailPointer = event => {
+        railRect.current = event.currentTarget.getBoundingClientRect()
       }
       useEffect(() => {
         let alive = true
@@ -11336,7 +13092,7 @@ window.__ModuleLoader__.load({
       const overlaySource = useRef('')
       const overlayLayer = useRef(null)
       const overlayStart = useRef(null)
-      const [translateTarget, setTranslateTarget] = useState('zh')
+      const [translateTarget, setTranslateTarget] = useState(() => readTranslateTarget())
       // Translation facts live in the shared per-chapter cache, not in this
       // component: switching chapters must not carry the previous chapter's
       // answer along, and the preview must read the same record.
@@ -11424,6 +13180,7 @@ window.__ModuleLoader__.load({
         selection, setSelection,
         draftStroke, setDraftStroke,
         textDraft, setTextDraft,
+        textHitRef,
         noteEdit, setNoteEdit,
         noteStyle, setNoteStyle,
         shapeDraft, setShapeDraft,
@@ -11971,6 +13728,10 @@ window.__ModuleLoader__.load({
       // lands in between (the reader reports continuous pages on a debounce) may
       // not wipe the stroke that is being drawn.
       const drawingRef = useRef(false)
+      // One press owns exactly one release. Both the layer's pointerup and the
+      // window-level fallback call annotUp; without this flag the second call
+      // would save the same translation twice (a double move and two undo steps).
+      const gesturingRef = useRef(false)
       useEffect(() => {
         const pageChanged = lastAnnotKey.current !== annotKey
         lastAnnotKey.current = annotKey
@@ -12010,7 +13771,33 @@ window.__ModuleLoader__.load({
       // continuous mode the box of the page being read changes as the reader
       // scrolls, and a stale box would put a stroke a page height off.
       const pageNodes = useRef(new Map())
+      // The page rect cannot change while a gesture runs, so it is measured once
+      // on pointerdown. Re-measuring it on every pointermove forces a layout in
+      // the middle of the drag, which is what made moving and resizing stutter.
+      const gestureRect = useRef(null)
+      const captureGestureRect = () => {
+        const candidate = pageNodes.current.get(annotPage.current)
+        if (candidate === null || candidate === undefined || candidate.isConnected === false
+          || typeof candidate.getBoundingClientRect !== 'function') {
+          gestureRect.current = null
+          return
+        }
+        const rect = candidate.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) {
+          gestureRect.current = null
+          return
+        }
+        gestureRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+        annotBox.current = { width: rect.width, height: rect.height }
+      }
       const annotPoint = event => {
+        const cached = gestureRect.current
+        if (cached !== null) {
+          return plane.clampPoint([
+            (event.clientX - cached.left) / cached.width,
+            (event.clientY - cached.top) / cached.height,
+          ])
+        }
         // The page's own node is the ruler in both views (the capture layer is
         // stage-sized). If it is missing, the event's own layer is page-sized
         // and works the same way.
@@ -12225,6 +14012,15 @@ window.__ModuleLoader__.load({
           else setAnnotTool(value => (value === id ? '' : id))
         },
       }, annotIcon(path))
+      // The top sub-bar repeats the drawing tools with the same icons and the same
+      // action source as the rail and the preview bar (DEC-0003): one `annotTool`
+      // state, no second tool store.
+      const readerDrawTool = (id, labelKey, path) => h(KitButton, {
+        type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+        'aria-pressed': annotTool === id ? 'true' : 'false',
+        title: format(labelKey), 'aria-label': format(labelKey),
+        onClick: () => setAnnotTool(value => (value === id ? '' : id)),
+      }, annotIcon(path))
       const strokeDraft = useRef(null)
       const shapeDraftRef = useRef(null)
       const inkGestures = createInkGestures({
@@ -12246,6 +14042,21 @@ window.__ModuleLoader__.load({
       const annotDown = (event, side) => {
         if (event.button !== 0) return
         if (annotTool === '') return
+        // Keep receiving moves and the release even when the pointer leaves the
+        // page mid-drag; without this a drag towards the page edge stops dead.
+        // The capture layer steps aside once handles appear, so capture is taken
+        // on the page's annotation layer instead (the one that keeps the drag).
+        const downLayer = event.currentTarget
+        const pageNode = pageNodes.current.get(annotPage.current)
+        const captureTarget = downLayer !== null && downLayer !== undefined && downLayer.classList !== undefined
+          && downLayer.classList.contains('md-annot')
+          ? downLayer
+          : (pageNode !== null && pageNode !== undefined && typeof pageNode.querySelector === 'function'
+            ? pageNode.querySelector('.md-annot:not(.md-annot-static)')
+            : null)
+        if (captureTarget !== null && captureTarget !== undefined && typeof captureTarget.setPointerCapture === 'function') {
+          try { captureTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+        }
         // Continuous mode: the paper under the pen is the page being written on,
         // even when the reader's page report has not caught up yet (it is
         // debounced while scrolling). Adopt that page before the stroke starts,
@@ -12264,9 +14075,12 @@ window.__ModuleLoader__.load({
         }
         // The main layer is the original page (single view or the left column).
         setActiveSide('main')
+        // Freeze the page box for this gesture: pointermove must not re-measure it.
+        captureGestureRect()
         const point = annotPoint(event)
         if (point === null) return
         drawingRef.current = true
+        gesturingRef.current = true
         event.preventDefault()
         if (annotTool === 'select') {
           const list = strokesRef.current
@@ -12297,21 +14111,17 @@ window.__ModuleLoader__.load({
           return
         }
         if (annotTool === 'text') {
-          // Only a drag creates a new text box. Starting on an existing box
-          // selects and moves it instead of stacking another box on top.
+          // A drag always draws a new box, even when it starts on an existing
+          // one, so boxes can be layered. A press without a drag selects the
+          // box under the pointer instead (its resize handles then appear).
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
-          if (found >= 0) {
-            setSelection({ index: found, kind: 'text' })
-            setDrag({ index: found, start: point, dx: 0, dy: 0 })
-            return
-          }
+          textHitRef.current = strokesRef.current.findIndex(entry => entry.kind === 'text' && annotHit(entry, point))
           setTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1], side })
           return
         }
         if (annotTool === 'pen') inkGestures.down(event, point)
       }
-      const annotMove = event => {
+      const annotMoveNow = event => {
         if (annotTool === 'erase' && erasing.current) {
           // Dragging the eraser sweeps several strokes away, not just the one
           // under the first press.
@@ -12387,7 +14197,41 @@ window.__ModuleLoader__.load({
         if (point === null) return
         inkGestures.move(event, point)
       }
+      // Box gestures are rounded to one update per animation frame: pointermove
+      // can fire several times per frame, and every update re-renders the whole
+      // reader. The last pointer position in the frame wins; the pen and eraser
+      // still get every sample.
+      const moveFrame = useRef(0)
+      const pendingMove = useRef(null)
+      const cancelPendingMove = () => {
+        if (moveFrame.current !== 0) {
+          window.cancelAnimationFrame(moveFrame.current)
+          moveFrame.current = 0
+        }
+        pendingMove.current = null
+      }
+      const annotMove = event => {
+        const boxGesture = resize !== null || drag !== null || groupDrag !== null
+          || marquee !== null || textDraft !== null || shapeDraftRef.current !== null
+        if (!boxGesture || typeof window.requestAnimationFrame !== 'function') {
+          annotMoveNow(event)
+          return
+        }
+        event.preventDefault()
+        pendingMove.current = event
+        if (moveFrame.current !== 0) return
+        moveFrame.current = window.requestAnimationFrame(() => {
+          moveFrame.current = 0
+          const pending = pendingMove.current
+          pendingMove.current = null
+          if (pending !== null) annotMoveNow(pending)
+        })
+      }
       const annotUp = () => {
+        if (!gesturingRef.current) return
+        gesturingRef.current = false
+        cancelPendingMove()
+        gestureRect.current = null
         drawingRef.current = false
         inkGestures.up()
         if (textDraft !== null) {
@@ -12397,7 +14241,10 @@ window.__ModuleLoader__.load({
           const y = Math.min(draft.y0, draft.y1)
           const w = Math.abs(draft.x1 - draft.x0)
           const h = Math.abs(draft.y1 - draft.y0)
+          const hit = textHitRef.current
+          textHitRef.current = -1
           if (w > 0.012 && h > 0.012) openNote([x, y], draft.side, { x, y, w, h })
+          else if (hit >= 0 && strokesRef.current[hit] !== undefined) setSelection({ index: hit, kind: 'text' })
           return
         }
         if (resizeEntry !== null && resize !== null) {
@@ -12454,6 +14301,24 @@ window.__ModuleLoader__.load({
           return
         }
       }
+      // A gesture now ends on the release itself, not on pointerleave: setting
+      // pointer capture retargets the pointer, and the browser would otherwise
+      // fire pointerleave on the layer that was left behind and cancel the drag
+      // the moment it started. The window listener also catches releases that
+      // happen outside the reader.
+      const annotUpRef = useRef(null)
+      useEffect(() => { annotUpRef.current = annotUp })
+      useEffect(() => {
+        const end = () => {
+          if (annotUpRef.current !== null) annotUpRef.current()
+        }
+        window.addEventListener('pointerup', end)
+        window.addEventListener('pointercancel', end)
+        return () => {
+          window.removeEventListener('pointerup', end)
+          window.removeEventListener('pointercancel', end)
+        }
+      }, [])
 
       // Restore masks/notes from the sidecar written by "export chapter": the
       // file lives in the chapter artifacts, so another machine (or a fresh
@@ -12975,6 +14840,15 @@ window.__ModuleLoader__.load({
               rememberPartial(state)
               setDocRev(value => value + 1)
               updateNote(doneNote(state))
+              // One click for the whole chapter: open what the user would open
+              // next anyway (they can turn it off in Settings → Data).
+              if (readPrefBool(TRANSLATE_AUTO_OVERLAY, true) && !overlay && !dual) {
+                if (reader.mode !== 'single') props.onMode('single')
+                setDual(false)
+                setDualDoc(null)
+                setTimeout(bumpViewer, 80)
+                setOverlay(true)
+              }
               break
             }
             if (state.status === 'error') throw new Error(state.error === '' ? '翻译失败' : state.error)
@@ -13229,7 +15103,6 @@ window.__ModuleLoader__.load({
         onPointerDown: event => annotDown(event, side),
         onPointerMove: annotMove,
         onPointerUp: annotUp,
-        onPointerLeave: annotUp,
         onDoubleClick: event => editNoteAt(event, side),
         onContextMenu: openStylePanelOnLayer,
       },
@@ -13355,7 +15228,41 @@ window.__ModuleLoader__.load({
           ? (() => {
             const live = resizeEntry !== null && resize !== null && resize.index === selection.index ? resizeEntry : selectedEntry
             const box = live.kind === 'text' ? noteBox(live) : live
+            const gripDrag = drag !== null && drag.index === selection.index ? drag : null
             return h('div', { className: 'md-shape-handles' },
+              selectedEntry.kind === 'text'
+                ? h('span', {
+                  key: 'note-grip',
+                  className: 'md-note-grip',
+                  title: format('annotMoveHint'),
+                  'aria-hidden': true,
+                  style: {
+                    left: `${(box.x + box.w / 2 + (gripDrag === null ? 0 : gripDrag.dx)) * 100}%`,
+                    top: `${(box.y + (gripDrag === null ? 0 : gripDrag.dy)) * 100}%`,
+                  },
+                  onPointerDown: event => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+                    captureGestureRect()
+                    drawingRef.current = true
+                    gesturingRef.current = true
+                    const annot = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
+                    if (annot === undefined || annot === null) return
+                    // Same drag state the select tool uses, so the move and its
+                    // undo step land in exactly one place.
+                    setDrag({
+                      index: selection.index,
+                      start: [
+                        (event.clientX - annot.left) / annot.width,
+                        (event.clientY - annot.top) / annot.height,
+                      ],
+                      dx: 0,
+                      dy: 0,
+                    })
+                  },
+                }, annotIcon('M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3'))
+                : null,
               (selectedEntry.kind === 'shape' && (selectedEntry.shape === 'line' || selectedEntry.shape === 'arrow')
                 ? [['start', box.x0, box.y0], ['end', box.x1, box.y1]]
                 : [
@@ -13370,6 +15277,10 @@ window.__ModuleLoader__.load({
                 onPointerDown: event => {
                   event.preventDefault()
                   event.stopPropagation()
+                  try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* capture is a nicety */ }
+                  captureGestureRect()
+                  drawingRef.current = true
+                  gesturingRef.current = true
                   const annot = event.currentTarget.closest('.md-annot')?.getBoundingClientRect()
                   if (annot === undefined || annot === null) return
                   const raw = [
@@ -13581,7 +15492,6 @@ window.__ModuleLoader__.load({
           onWheel: forwardWheel,
           onPointerMove: annotMove,
           onPointerUp: annotUp,
-          onPointerLeave: annotUp,
           onPointerCancel: annotUp,
           onDoubleClick: event => editNoteAt(event, 'main'),
           onContextMenu: event => {
@@ -13607,7 +15517,11 @@ window.__ModuleLoader__.load({
         tabIndex: -1,
         ref: props.paneRef,
         onPointerMove: onRailPointer,
-        onPointerLeave: () => setRailOpen(false),
+        onPointerEnter: trackRailPointer,
+        onPointerLeave: () => {
+          railRect.current = null
+          setRailOpen(false)
+        },
       },
         h('div', { className: 'md-reader-bar' },
           h(KitButton, {
@@ -13685,6 +15599,27 @@ window.__ModuleLoader__.load({
           }, '×')
         ),
         h('div', { className: 'md-reader-subbar', style: toolsOpen ? undefined : { display: 'none' } },
+          h('span', { className: 'md-reader-drawbar' },
+            readerDrawTool('hand', 'annotHand', 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'),
+            readerDrawTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
+            readerDrawTool('erase', 'annotErase', 'm7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21M22 21H7M5 11l9 9'),
+            readerDrawTool('question', 'questionTool', 'M4 4h16v16H4zM9.6 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .8-1 1.4v.4M12 16.6h.01'),
+            readerDrawTool('text', 'annotText', 'M4 6h16M12 6v13M9 19h6'),
+            h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+              disabled: undoAvailable <= 0,
+              title: format('undoHint'), 'aria-label': format('undo'),
+              onClick: undoEither,
+            }, annotIcon('M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3')),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn',
+              disabled: redoAvailable <= 0,
+              title: format('redoHint'), 'aria-label': format('redo'),
+              onClick: redoEither,
+            }, annotIcon('M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3')),
+            h('span', { className: 'md-reader-sep', 'aria-hidden': true })
+          ),
           h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small',
             disabled: props.busy,
@@ -13806,7 +15741,10 @@ window.__ModuleLoader__.load({
                 { value: 'zh', label: format('langZh') },
                 { value: 'en', label: format('langEn') },
               ],
-              onChange: value => setTranslateTarget(value),
+              onChange: value => {
+                setTranslateTarget(value)
+                writeTranslateTarget(value)
+              },
             }),
             h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
@@ -13841,13 +15779,20 @@ window.__ModuleLoader__.load({
                   }
                   ask({ body: format('translateOverwriteConfirm'), run: () => { void runTranslate() } })
                 }
+                if (readPrefBool(TRANSLATE_SKIP_ASK, false)) {
+                  start()
+                  return
+                }
                 if (ask === null) {
                   if (window.confirm(body)) start()
                   return
                 }
                 ask({ body, run: start })
               },
-            }, translating ? format('translating') : format('translateChapterAction'))
+            }, translating ? format('translating') : format('translateChapterAction')),
+            props.canTranslate !== true
+              ? h('span', { className: 'md-reader-hint' }, format('envInlineMissing'))
+              : null
           ),
           props.mathMode !== true
             ? null
@@ -14595,7 +16540,14 @@ window.__ModuleLoader__.load({
           h('h2', { className: 'md-book-title', tabIndex: -1, ref: props.headingRef }, book.title),
           h('div', { className: 'md-book-meta' },
             book.author === '' ? null : h('span', { className: 'md-book-author' }, book.author),
-            h('span', { className: 'md-book-count' }, format('chapters', { n: chapters.length }))
+            h('span', { className: 'md-book-count' }, format('chapters', { n: chapters.length })),
+            book.whole === true && typeof props.onSplit === 'function'
+              ? h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: format('splitHint'),
+                onClick: () => props.onSplit(book),
+              }, format('splitButton'))
+              : null
           )
         ),
         chapters.length === 0
@@ -14712,13 +16664,20 @@ window.__ModuleLoader__.load({
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-3f2c5db56cc93c5a6873b1361d730c16.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+2c7,U+2d8-2d9,U+2db,U+2dd,U+302,U+306-307,U+30a-30c,U+326-328,U+212e,U+2211,U+fb01-fb02; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-349fac6ca4700ffec595a7150a0d1e1d.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+462-463,U+472-475,U+4d8-4d9,U+4e2-4e3,U+4e6-4e9,U+4ee-4ef; }
 @font-face { font-family: 'Excalifont'; src: url('/pdfdesk/vendor/fonts/excalifont/Excalifont-Regular-623ccf21b21ef6b3a0d87738f77eb071.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+300-301,U+303; }
-.md-root { position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: pdfdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
+.md-root { --pdf-bg: var(--dsw-alias-bg-base); --pdf-bg-sub: var(--dsw-alias-bg-layer-1); --pdf-surface: var(--dsw-alias-bg-layer-2); --pdf-border: var(--dsw-alias-border-l2); --pdf-border-strong: var(--dsw-alias-border-l3); --pdf-text: var(--dsw-alias-label-primary); --pdf-text-sub: var(--dsw-alias-label-secondary); --pdf-accent: var(--dsw-static-blue-600); --pdf-shadow: var(--dsw-elevation-soft); --pdf-radius: var(--dsw-radius-md); position: relative; flex: 1 1 auto; height: 100%; min-height: 0; display: flex; box-sizing: border-box; container-type: inline-size; container-name: pdfdesk; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font-size: 14px; line-height: 1.5; }
+/* DSH's brand is near-black in light and near-white in dark; the library keeps a
+   blue accent in both, using the platform's own static blue ramp. */
+body[data-ds-dark-theme] .md-root { --pdf-accent: var(--dsw-static-blue-400); }
+/* Light mode: a barely-tinted page makes the white cards read as surfaces; dark
+   mode already separates layer-2 cards from the base page. */
+.md-root:has(.md-home) { background: var(--dsw-static-neutral-bluish-50); }
+body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg-base); }
 .md-inner { height: 100%; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 clamp(18px, 4cqw, 40px); box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; }
 .md-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 28px 0 14px; }
 .md-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .01em; }
 .md-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
 .md-mode-pill { display: inline-flex; align-items: center; align-self: flex-start; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); }
-.md-mode-pill[data-mode='math'] { color: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
+.md-mode-pill[data-mode='math'] { color: var(--pdf-accent); border-color: var(--pdf-accent); }
 .md-workflow-base { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .md-workflow-always { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .md-workflow-base .md-mode-pill { margin-top: 0; }
@@ -14751,7 +16710,10 @@ window.__ModuleLoader__.load({
 .md-settings-section { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .md-settings-heading { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .md-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.md-book-wizard { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow: auto; }
 .md-settings-input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l3); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
+/* Editable style prompts: full width, a few lines tall, vertically resizable. */
+.md-prompt-text { flex-basis: 100%; width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; line-height: 1.5; }
 .md-kit-input { flex: 1 1 auto; min-width: 0; }
 .md-kit-input input { font: inherit; }
 .md-kit-select { position: relative; display: inline-flex; flex-direction: column; }
@@ -14794,6 +16756,7 @@ window.__ModuleLoader__.load({
 .md-crumb:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .md-crumb-sep { opacity: .5; }
 .md-crumb-current { color: var(--dsw-alias-label-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+.md-crumbs button.md-crumb-current { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: none; border: 0; padding: 2px 4px; min-height: 0; }
 .md-notice { flex: none; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 13px; }
 .md-alert { flex: none; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, var(--dsw-alias-bg-base)); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent); color: var(--dsw-alias-label-primary); font-size: 13px; }
 .md-alert-text { flex: 1; min-width: 0; }
@@ -14851,6 +16814,13 @@ window.__ModuleLoader__.load({
 .md-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; position: relative; }
 .md-card-selected { border-color: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
 .md-card-check { position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary-foreground); display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
+/* The shelf's own import tile: a dashed cover at the end of the grid, so adding a
+   book starts where the books are instead of in a separate tool card. */
+.md-card-add { color: var(--dsw-alias-label-secondary); }
+.md-card-add-box { display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 4; border: 1px dashed var(--dsw-alias-border-l3); border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 60%, transparent); transition: border-color .14s ease, color .14s ease; }
+.md-card-add:hover .md-card-add-box { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }
+.md-card-add-plus { font-size: 34px; line-height: 1; font-weight: 300; }
+.md-empty-actions { display: flex; gap: 8px; margin-top: 10px; }
 .md-shelf { position: relative; display: flex; flex-direction: column; gap: 16px; }
 .md-shelf-loose { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-shelf-head { display: flex; align-items: baseline; gap: 10px; }
@@ -14923,62 +16893,104 @@ window.__ModuleLoader__.load({
 .md-manual-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .md-library-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .md-library-add { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-bg-layer-2); }
-/* Library landing: generous whitespace, a pixel whale in the hero, and a sticky
-   action bar that only appears once the hero has scrolled away. */
-.md-home { position: relative; display: flex; flex-direction: column; gap: 0; max-width: 1120px; margin: 0 auto; padding: 0 28px 72px; box-sizing: border-box; }
-.md-home > .md-shelf-head { order: 2; margin: 4px 0 18px; }
+/* Library landing: restrained surfaces, blue accents, and a solid sticky toolbar;
+   keep the existing pixel whale and its slow drift. */
+.md-home { position: relative; display: flex; flex-direction: column; gap: 0; max-width: 1120px; margin: 0 auto; padding: 0 24px 48px; box-sizing: border-box; color: var(--pdf-text); font-size: 14px; line-height: 1.6; }
+.md-home > .md-shelf-head { order: 2; margin: 0 0 12px; }
 .md-home > .md-library-list, .md-home > .md-alert, .md-home > p { order: 3; }
-.md-home > .md-library-add { order: 4; margin-top: 32px; }
-.md-home > .md-home-tools-head { order: 5; margin-top: 44px; }
+.md-home > .md-library-add { order: 4; margin-top: 24px; }
+.md-home > .md-home-tools-head { order: 5; margin-top: 32px; margin-bottom: 12px; }
 .md-home > .md-library-toolcell { order: 5; }
-.md-home > .md-details { order: 7; margin-top: 48px; }
-.md-home-toolbar { position: sticky; top: 0; z-index: 20; height: 48px; box-sizing: border-box; margin: 0 -28px -48px; padding: 0 28px; display: flex; align-items: center; gap: 8px; opacity: 0; visibility: hidden; transform: translateY(-6px); pointer-events: none; transition: opacity .18s ease, transform .18s ease, background .18s ease, visibility .18s; background: color-mix(in srgb, var(--dsw-alias-bg-base) 86%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid transparent; }
-.md-home-toolbar.is-stuck { opacity: 1; visibility: visible; transform: none; pointer-events: auto; border-bottom-color: var(--dsw-alias-border-l2); }
-.md-home-toolbar-count { margin-left: auto; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.md-hero { position: relative; order: 0; padding: 68px 0 8px; max-width: 740px; }
-.md-hero-eyebrow { margin: 0; font-size: 11px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; color: var(--dsw-alias-brand-primary); }
-.md-hero-title { margin: 16px 0 18px; font-size: 40px; line-height: 1.12; letter-spacing: -.035em; font-weight: 650; color: var(--dsw-alias-label-primary); }
-.md-hero-lead { margin: 0; max-width: 560px; font-size: 15px; line-height: 1.85; color: var(--dsw-alias-label-secondary); }
-.md-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
-.md-hero-meta { margin: 22px 0 0; font-size: 12.5px; color: var(--dsw-alias-label-secondary); }
-.md-hero-whale { position: absolute; top: 30px; right: 12px; width: 340px; height: auto; color: var(--dsw-alias-brand-primary); opacity: .1; pointer-events: none; animation: md-whale 16s ease-in-out infinite alternate; }
+.md-home > .md-details { order: 7; margin-top: 32px; }
+.md-home .md-home-toolbar { position: sticky; top: 0; z-index: 20; height: 44px; box-sizing: border-box; margin: 0 -24px -44px; padding: 0 24px; display: flex; align-items: center; gap: 8px; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .16s ease, background-color .16s ease, border-color .16s ease, visibility .16s ease; background: var(--pdf-bg); border-bottom: 1px solid transparent; }
+.md-home .md-home-toolbar.is-stuck { opacity: 1; visibility: visible; pointer-events: auto; border-bottom-color: var(--pdf-border); box-shadow: var(--pdf-shadow); }
+.md-home .md-home-toolbar-count { margin-left: auto; font-size: 12px; color: var(--pdf-text-sub); }
+.md-home .md-hero { position: relative; order: 0; padding: 48px 0 8px; max-width: 740px; }
+.md-home .md-hero-eyebrow { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--pdf-accent); }
+.md-home .md-hero-title { margin: 12px 0; font-size: 28px; line-height: 1.25; letter-spacing: normal; font-weight: 650; color: var(--pdf-text); }
+.md-home .md-hero-lead { margin: 0; max-width: 60ch; font-size: 14px; line-height: 1.7; color: var(--pdf-text-sub); }
+.md-home .md-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.md-home .md-hero-meta { margin: 16px 0 0; font-size: 12px; color: var(--pdf-text-sub); }
+.md-home .md-hero-whale { position: absolute; top: 32px; right: 16px; width: 340px; height: auto; color: var(--pdf-accent); opacity: .1; pointer-events: none; animation: md-whale 16s ease-in-out infinite alternate; }
 @keyframes md-whale { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-20px, 10px, 0); } }
 .md-btn-primary { color: var(--dsw-alias-label-primary-foreground); background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
 .md-btn-primary:hover { filter: brightness(1.06); }
-.md-home .md-shelf-head .md-heading { font-size: 18px; }
-.md-home .md-library-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.md-home .md-shelf-head .md-heading, .md-home .md-home-tools-head .md-heading { font-size: 18px; }
+.md-home .md-shelf-sub { font-size: 12px; line-height: 1.6; color: var(--pdf-text-sub); }
+.md-home .md-library-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
 .md-home .md-library-list:empty { display: none; }
-.md-home .md-library { position: relative; padding: 20px 22px 18px; border-radius: 16px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
-.md-home .md-library:hover { transform: translateY(-1px); border-color: var(--dsw-alias-border-l4); box-shadow: var(--dsw-elevation-soft); }
-.md-home .md-library-active { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 5%, var(--dsw-alias-bg-layer-2)); }
-.md-home .md-library-name { font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; }
-.md-home .md-library .md-path { margin-top: 10px; font-size: 12px; }
-.md-home .md-library-actions { position: absolute; top: 14px; right: 14px; opacity: 0; transition: opacity .16s ease; }
+.md-home .md-library { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--pdf-radius); background: var(--pdf-surface); border: 1px solid var(--pdf-border); transition: background-color .16s ease, border-color .16s ease; }
+.md-home .md-library:hover { background: var(--pdf-bg-sub); border-color: var(--pdf-border-strong); }
+.md-home .md-library-active { border-color: var(--pdf-accent); background: var(--pdf-bg-sub); box-shadow: none; }
+.md-home .md-library:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 4px; }
+.md-home .md-library-name { font-size: 14px; font-weight: 600; letter-spacing: normal; color: var(--pdf-text); }
+.md-home .md-library .md-path { margin-top: 8px; padding: 4px 8px; font-size: 12px; color: var(--pdf-text-sub); background: var(--pdf-bg); border-color: var(--pdf-border); }
+.md-home .md-library-actions { position: absolute; top: 12px; right: 12px; opacity: 0; transition: opacity .16s ease; }
 .md-home .md-library:hover .md-library-actions, .md-home .md-library:focus-within .md-library-actions { opacity: 1; }
-.md-home .md-library-add { max-width: none; width: 100%; box-sizing: border-box; padding: 14px 16px; border-radius: 16px; gap: 10px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); }
+.md-home .md-library-actions .md-icon-btn { min-height: 32px; padding: 4px 8px; font-size: 14px; }
+.md-home .md-badge { font-size: 12px; line-height: 1.5; padding: 4px 8px; border-radius: 6px; color: var(--pdf-accent); background: color-mix(in srgb, var(--pdf-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--pdf-accent) 28%, transparent); }
+.md-home .md-badge-quiet { color: var(--pdf-text-sub); background: var(--pdf-bg-sub); border-color: var(--pdf-border); }
+.md-home .md-library-add { max-width: none; width: 100%; box-sizing: border-box; padding: 16px; border-radius: var(--pdf-radius); gap: 12px; background: var(--pdf-surface); border: 1px solid var(--pdf-border); }
 .md-add-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .md-add-head .md-subheading { margin: 0; font-size: 14px; font-weight: 600; }
-.md-add-head .md-shelf-sub { font-size: 11.5px; }
+.md-home .md-add-head .md-shelf-sub { font-size: 12px; }
 .md-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .md-add-row .md-input { height: 34px; box-sizing: border-box; font-size: 12.5px; }
+.md-home .md-add-row .md-input { height: 40px; padding: 8px 12px; font-size: 14px; color: var(--pdf-text); background: var(--pdf-bg); border: 1px solid var(--pdf-border); border-radius: 6px; }
+.md-home .md-add-row .md-input:focus, .md-home .md-add-row .md-input:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 4px; border-color: var(--pdf-accent); }
 .md-add-path { flex: 1 1 320px; min-width: 200px; }
 .md-add-name { flex: 0 1 150px; width: 150px; }
+.md-home .md-add-name { flex: 0 1 160px; width: 160px; }
 .md-add-row .md-btn { height: 34px; }
+.md-home .md-add-row .md-btn { height: 40px; }
 .md-add-submit { margin-left: auto; }
+.md-home .md-btn { min-height: 40px; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; font-size: 14px; }
+.md-home .md-btn:not(.md-btn-primary):not(.md-btn-ghost) { color: var(--pdf-text); background: var(--pdf-surface); border-color: var(--pdf-border); }
+.md-home .md-btn:not(.md-btn-primary):not(.md-btn-ghost):hover:not(:disabled) { background: var(--pdf-bg-sub); border-color: var(--pdf-border-strong); }
+.md-home .md-btn-primary { background: var(--pdf-accent); border-color: var(--pdf-accent); }
+.md-home .md-btn-primary:hover:not(:disabled) { background: var(--pdf-accent); border-color: var(--pdf-accent); filter: none; }
+.md-home .md-btn-ghost { color: var(--pdf-text-sub); background: transparent; border-color: transparent; }
+.md-home .md-btn-ghost:hover:not(:disabled) { background: var(--pdf-bg-sub); border-color: transparent; }
+.md-home .md-btn:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 4px; }
 .md-home-tools-head { display: flex; flex-direction: column; gap: 4px; }
 .md-home .md-library-toolcell { position: static; height: auto; }
-.md-home .md-library-toolscroll { position: static; display: flex; flex-direction: row; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 16px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: transparent transparent; }
-.md-home .md-library-toolscroll::-webkit-scrollbar { height: 8px; background: transparent; }
-.md-home .md-library-toolscroll::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
-.md-home .md-library-toolscroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
-.md-home .md-library-toolscroll.md-scrolling { scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
-.md-home .md-library-toolscroll.md-scrolling::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
-.md-home .md-library-toolscroll:hover { scrollbar-color: color-mix(in srgb, var(--dsw-alias-border-l4) 55%, transparent) transparent; }
-.md-home .md-library-toolscroll:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dsw-alias-border-l3) 70%, transparent); }
+.md-home .md-library-toolscroll { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; overflow: visible; padding: 0; border: 0; border-radius: 0; background: transparent; scroll-snap-type: none; scrollbar-width: none; }
 .md-home .md-library-toolscroll > .md-subheading { display: none; }
-.md-home .md-tool-card { flex: 0 0 300px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-layer-2); }
+.md-home .md-tool-card { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
 .md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
-.md-home .md-manual { border-radius: 18px; padding: 0; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); background: transparent; }
+.md-home .md-manual { border-radius: var(--pdf-radius); padding: 0; overflow: hidden; border: 1px solid var(--pdf-border); background: var(--pdf-surface); }
+.md-home .md-manual-summary { gap: 12px; padding: 16px; }
+.md-home .md-manual-summary-main { gap: 4px; }
+.md-home .md-manual-title { font-size: 14px; font-weight: 600; color: var(--pdf-text); }
+.md-home .md-manual-sub { font-size: 12px; color: var(--pdf-text-sub); }
+.md-home .md-manual-chevron { font-size: 14px; color: var(--pdf-text-sub); transition: transform .16s ease; }
+.md-home .md-manual-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; padding: 16px; border-top-color: var(--pdf-border); }
+.md-home .md-manual-body { gap: 16px; padding: 16px; border-top-color: var(--pdf-border); }
+.md-home .md-manual-lead { font-size: 14px; line-height: 1.7; color: var(--pdf-text); }
+.md-home .md-manual-steps { gap: 8px; }
+.md-home .md-manual-steps li { padding-left: 32px; font-size: 14px; line-height: 1.6; color: var(--pdf-text-sub); }
+.md-home .md-manual-steps li::before { top: 4px; width: 24px; height: 24px; border-radius: 6px; font-size: 12px; background: var(--pdf-accent); }
+.md-home .md-manual-block { gap: 12px; padding-top: 16px; border-top-color: var(--pdf-border); }
+.md-home .md-manual-heading { margin: 0; font-size: 14px; font-weight: 600; color: var(--pdf-text); }
+.md-home .md-manual-text, .md-home .md-manual-list { font-size: 14px; line-height: 1.6; color: var(--pdf-text-sub); }
+.md-home .md-manual-actions, .md-home .md-library-tools { gap: 8px; }
+.md-home .md-manual-tree { padding: 12px 16px; font-size: 12px; line-height: 1.6; color: var(--pdf-text); background: var(--pdf-bg-sub); border: 1px solid var(--pdf-border); border-radius: 6px; }
+.md-home details.md-manual-sub { padding: 12px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); }
+.md-home .md-manual-sub-summary { font-size: 12px; color: var(--pdf-text); }
+.md-home .md-manual-code { padding: 8px 12px; font-size: 12px; line-height: 1.6; color: var(--pdf-text); background: var(--pdf-bg-sub); border-color: var(--pdf-border); border-radius: 6px; }
+.md-home .md-manual-label { font-size: 12px; color: var(--pdf-text-sub); }
+.md-home .md-manual-path .md-path { padding: 4px 8px; font-size: 12px; color: var(--pdf-text); background: var(--pdf-bg); border-color: var(--pdf-border); }
+.md-home .md-alert { font-size: 14px; line-height: 1.6; }
+@container pdfdesk (max-width: 760px) {
+  .md-home { padding: 0 16px 32px; }
+  .md-home .md-home-toolbar { margin: 0 -16px -44px; padding: 0 16px; }
+  .md-home .md-hero { padding-top: 40px; }
+  .md-home .md-hero-whale { width: 200px; right: 8px; opacity: .08; }
+  .md-home .md-add-path { flex-basis: 100%; min-width: 0; }
+  .md-home .md-add-name { flex: 1 1 160px; width: auto; }
+  .md-home .md-add-submit { margin-left: 0; }
+  .md-home .md-manual-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .md-manual-summary { list-style: none; display: flex; align-items: center; gap: 16px; padding: 18px 22px; cursor: pointer; }
 .md-manual-summary::-webkit-details-marker { display: none; }
 .md-manual-summary-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -14998,7 +17010,7 @@ window.__ModuleLoader__.load({
 .md-manual-text { margin: 0; font-size: 13.5px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
 .md-manual-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
 .md-manual-tree { margin: 0; padding: 14px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: auto; white-space: pre; }
-.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
+details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
 .md-manual-sub-summary { cursor: pointer; font-size: 12.5px; font-weight: 550; color: var(--dsw-alias-label-primary); }
 .md-manual-sub[open] .md-manual-sub-summary { margin-bottom: 8px; }
 .md-manual-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -15089,23 +17101,24 @@ window.__ModuleLoader__.load({
 .md-refs-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .md-refs-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-refs-actions { display: flex; justify-content: flex-end; }
-.md-reader { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); }
-.md-reader-bar { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.md-reader-titles { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 0; }
-.md-reader-name { font-size: 13.5px; font-weight: 550; color: var(--dsw-alias-label-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.md-reader-sub { font-size: 11.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.md-reader-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.md-reader { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; background: var(--pdf-bg); color: var(--pdf-text); }
+.md-reader-bar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--pdf-bg); border-bottom: 1px solid var(--pdf-border); }
+.md-reader-bar > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 8px; border-radius: 6px; }
+.md-reader-titles { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; min-width: 0; }
+.md-reader-name { font-size: 14px; font-weight: 600; color: var(--pdf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-reader-sub { font-size: 12px; line-height: 1.5; color: var(--pdf-text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-reader-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }
 .md-reader-tools .md-btn { white-space: nowrap; flex: 0 0 auto; }
-.md-reader-pager { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
-.md-reader-pager .md-btn { border: 0; background: transparent; height: 26px; min-width: 26px; padding: 0 6px; border-radius: 7px; color: var(--dsw-alias-label-secondary); box-shadow: none; }
-.md-reader-pager .md-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.md-reader-pager .md-reader-page { width: 46px; height: 26px; border: 0; background: transparent; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); }
-.md-reader-pager .md-reader-page:hover, .md-reader-pager .md-reader-page:focus { background: var(--dsw-alias-bg-layer-2); }
-.md-reader-of { padding-right: 6px; font-size: 11px; }
-.md-reader-page { width: 64px; font: inherit; font-size: 12.5px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; padding: 3px 6px; }
-.md-reader-of { font-size: 12px; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
-.md-reader-scale { min-width: 40px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
-.md-reader-sep { width: 1px; height: 18px; background: var(--dsw-alias-border-l2); }
+.md-reader-tools > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 8px; border-radius: 6px; }
+.md-reader-pager { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
+.md-reader-pager .md-btn { box-sizing: border-box; border: 0; background: transparent; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 6px; color: var(--pdf-text-sub); box-shadow: none; }
+.md-reader-pager .md-btn:hover:not(:disabled) { background: var(--pdf-bg-sub); color: var(--pdf-text); }
+.md-reader-pager .md-reader-page { box-sizing: border-box; width: 56px; min-width: 56px; height: 32px; padding: 4px 8px; border: 1px solid var(--pdf-border); border-radius: 6px; background: var(--pdf-bg); font-variant-numeric: tabular-nums; color: var(--pdf-text); }
+.md-reader-pager .md-reader-page:hover, .md-reader-pager .md-reader-page:focus { background: var(--pdf-bg-sub); }
+.md-reader-of { padding-right: 8px; font-size: 12px; color: var(--pdf-text-sub); white-space: nowrap; }
+.md-reader-page { width: 64px; font: inherit; font-size: 12px; text-align: center; color: var(--pdf-text); background: var(--pdf-bg); border: 1px solid var(--pdf-border); border-radius: 6px; padding: 4px 8px; }
+.md-reader-scale { min-width: 40px; font-size: 12px; color: var(--pdf-text-sub); text-align: right; font-variant-numeric: tabular-nums; }
+.md-reader-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--pdf-border); }
 .md-reader-stage { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: safe center; padding: 20px 24px 32px; }
 /* The stage scrolls; this frame does not. The pointer layer lives here so it
    always covers what is on screen, at any scroll offset. */
@@ -15123,11 +17136,18 @@ window.__ModuleLoader__.load({
 .md-reader-stage[data-grab="true"]:active { cursor: grabbing; }
 .md-reader-stage[data-panning="true"] { cursor: grabbing; }
 .md-canvas-capture { position: absolute; inset: 0; z-index: 20; touch-action: none; }
+/* The stage-wide capture layer exists so a mark can start outside the page. While
+   a mark is selected its corner handles live in the page layer below, so the
+   capture layer must step aside or every handle drag turns into a box drag. */
+.md-reader-stage-host:has(.md-shape-handles) .md-canvas-capture,
+.md-side-body:has(.md-shape-handles) .md-canvas-capture { pointer-events: none; }
 /* The stage-sized layer sits above the page, so it has to show the tool's own
-   cursor or picking a pen would look like nothing happened. */
-.md-canvas-capture[data-tool="pen"], .md-canvas-capture[data-tool="text"] { cursor: crosshair; }
-.md-canvas-capture[data-tool="line"], .md-canvas-capture[data-tool="arrow"], .md-canvas-capture[data-tool="rect"], .md-canvas-capture[data-tool="diamond"], .md-canvas-capture[data-tool="ellipse"] { cursor: crosshair; }
-.md-canvas-capture[data-tool="erase"] { cursor: cell; }
+   cursor or picking a pen would look like nothing happened. The pen and the
+   eraser get their real tip as the hotspot (user decision 2026-11-26: 笔对笔尖、
+   橡皮对橡皮头), so what you aim at is what you draw with. */
+.md-canvas-capture[data-tool="pen"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M25 3 9 19l-3 5 5-3L27 5z' fill='%23fff' stroke='%23111827' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M9 19l5 5' stroke='%23111827' stroke-width='1.2'/%3E%3C/svg%3E") 3 24, crosshair; }
+.md-canvas-capture[data-tool="text"], .md-canvas-capture[data-tool="line"], .md-canvas-capture[data-tool="arrow"], .md-canvas-capture[data-tool="rect"], .md-canvas-capture[data-tool="diamond"], .md-canvas-capture[data-tool="ellipse"] { cursor: crosshair; }
+.md-canvas-capture[data-tool="erase"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Crect x='3' y='3' width='14' height='18' rx='2' transform='rotate(-20 10 12)' fill='%23fff' stroke='%23111827' stroke-width='1.4'/%3E%3Crect x='3' y='12' width='14' height='9' rx='2' transform='rotate(-20 10 12)' fill='%23cbd5e1' stroke='%23111827' stroke-width='1.2'/%3E%3C/svg%3E") 3 21, cell; }
 .md-canvas-capture[data-tool="select"] { cursor: default; }
 .md-hand-capture { cursor: grab; }
 .md-hand-capture:active { cursor: grabbing; }
@@ -15269,6 +17289,10 @@ window.__ModuleLoader__.load({
 .md-side-rail-tab { top: calc(50% + 22px); }
 .md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
 .md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid var(--dsw-alias-brand-primary); border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
+/* A press on a text box draws the next one, so moving keeps its own grip above
+   the box (the mask boxes use the same idea). */
+.md-note-grip { position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid #2563eb; color: #2563eb; cursor: move; pointer-events: auto; }
+.md-note-grip .md-icon { width: 12px; height: 12px; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
 .md-annot[data-tool="text"] { cursor: crosshair; }
 .md-annot[data-tool="erase"] { cursor: cell; }
@@ -15379,17 +17403,75 @@ window.__ModuleLoader__.load({
 .md-reader-slot { display: flex; flex-direction: column; align-items: safe center; min-height: 240px; position: relative; }
 .md-reader-ghost { justify-content: center; opacity: .55; }
 .md-reader-page-no { padding-bottom: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
-.md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.md-reader-modes { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
-.md-reader-modes .md-btn { border: 0; background: transparent; height: 26px; padding: 0 9px; border-radius: 7px; color: var(--dsw-alias-label-secondary); }
-.md-reader-modes .md-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); box-shadow: none; }
+.md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--pdf-bg-sub); border-bottom: 1px solid var(--pdf-border); }
+.md-reader-subbar > :has(~ .md-reader-modes) { order: 2; }
+.md-reader-subbar > .md-reader-modes, .md-reader-subbar > .md-reader-modes ~ * { order: 1; }
+.md-reader-subbar > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 12px; border: 1px solid var(--pdf-border); border-radius: 6px; background: var(--pdf-surface); color: var(--pdf-text); font-size: 12px; }
+.md-reader-subbar > .md-btn:hover:not(:disabled) { background: var(--pdf-bg); border-color: var(--pdf-border-strong); }
+.md-reader-modes { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
+.md-reader-modes .md-btn { box-sizing: border-box; border: 1px solid transparent; background: transparent; height: 32px; min-height: 32px; padding: 0 12px; border-radius: 6px; color: var(--pdf-text-sub); box-shadow: none; }
+.md-reader-modes .md-btn:hover:not(:disabled) { background: var(--pdf-bg-sub); color: var(--pdf-text); }
+.md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--pdf-accent); background: var(--pdf-bg-sub); color: var(--pdf-accent); box-shadow: none; }
 .md-reader-subbar .md-btn { white-space: nowrap; flex: 0 0 auto; }
+.md-reader-drawbar { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 4px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
+.md-reader-drawbar .md-icon-btn { box-sizing: border-box; width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--pdf-text-sub); }
+.md-reader-drawbar .md-icon-btn:hover:not(:disabled) { background: var(--pdf-bg-sub); color: var(--pdf-text); }
+.md-reader .md-reader-subbar .md-icon-btn[aria-pressed="true"] { border-color: var(--pdf-accent); background: var(--pdf-bg-sub); color: var(--pdf-accent); }
+.md-reader-subbar .md-reader-lang, .md-reader-subbar .md-reader-export { box-sizing: border-box; min-height: 36px; padding: 4px 8px; border: 1px solid var(--pdf-border); border-radius: 6px; background: var(--pdf-surface); color: var(--pdf-text); font-size: 12px; }
+.md-reader-subbar .md-reader-export { min-width: 88px; }
+.md-reader-subbar .md-question-jump { min-width: 200px; max-width: min(360px, 56vw); overflow: hidden; text-overflow: ellipsis; }
+.md-reader-subbar .md-reader-hint { font-size: 12px; line-height: 1.5; color: var(--pdf-text-sub); flex: 0 1 auto; }
+
+/* Split panel: WPS-like page grid on the left, ranges and output on the right. */
+.md-split-backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.45); }
+.md-split-panel { width: min(1180px, 96vw); height: min(840px, 92vh); display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.md-split-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
+.md-split-body { flex: 1; min-height: 0; padding: 14px 16px; overflow: hidden; }
+.md-split-side { overflow: auto; }
+.md-split { height: 100%; min-height: 0; max-height: none; }
+@media (max-width: 860px) { .md-split { grid-template-columns: 1fr; } .md-split-side { order: -1; } }
+.md-split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; min-height: 320px; max-height: 70vh; }
+.md-split-pages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: start; gap: 20px 16px; overflow: auto; padding: 8px 14px 20px; }
+@media (max-width: 1100px) { .md-split-pages { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .md-split-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.md-split-item { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.md-split-page { position: relative; width: 100%; border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; overflow: hidden; background: #fff; box-shadow: var(--dsw-elevation-soft); }
+.md-split-page canvas { display: block; width: 100%; height: auto; }
+.md-split-num { position: absolute; left: 5px; bottom: 5px; font-size: 12px; color: #444; background: rgba(255, 255, 255, 0.9); border-radius: 3px; padding: 0 5px; }
+.md-split-num-on { color: #fff; background: #dc2626; }
+.md-split-cut { position: absolute; top: 0; bottom: 0; right: -9px; width: 18px; display: flex; flex-direction: column; align-items: center; padding: 0; border: 0; background: transparent; color: #64748b; cursor: pointer; z-index: 2; }
+.md-split-cut-line { flex: 1; width: 0; border-left: 2px dashed #c3c9d4; }
+.md-split-cut-btn { position: absolute; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; border: 1px dashed #9aa3b2; background: var(--dsw-alias-bg-base); font-size: 12px; line-height: 1; }
+.md-split-cut:hover { color: #2563eb; }
+.md-split-cut:hover .md-split-cut-line { border-left-color: #2563eb; }
+.md-split-cut:hover .md-split-cut-btn { border-color: #2563eb; border-style: solid; }
+.md-split-cut:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.md-split-cut-on { color: #dc2626; }
+.md-split-cut-on .md-split-cut-line { border-left-style: solid; border-left-color: #dc2626; }
+.md-split-cut-on .md-split-cut-btn { border: 1px solid #dc2626; border-style: solid; background: #dc2626; color: #fff; }
+.md-split-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.md-split-preview { margin: 0; padding-left: 16px; font-size: 11px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.md-wizard-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.45); }
+.md-wizard-panel { width: min(860px, 94vw); max-height: min(840px, 92vh); display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.md-wizard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
+.md-wizard-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; }
+.md-wizard { display: flex; flex-direction: column; gap: 12px; }
+.md-wizard-step { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; }
+.md-wizard-step-title { font-size: 13px; font-weight: 600; }
+.md-wizard-drop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed #c3c9d4; border-radius: 8px; background: rgba(148, 163, 184, 0.06); }
+.md-wizard-drop-filled { border-style: solid; border-color: #34d399; background: rgba(52, 211, 153, 0.08); }
+.md-wizard-file { font-size: 12px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.md-wizard-books { display: flex; flex-direction: column; gap: 6px; max-height: 34vh; overflow: auto; }
+.md-wizard-books .md-settings-row { align-items: center; }
+.md-wizard-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--dsw-alias-border-l3); }
 .md-reader-export { min-width: 92px; font-size: 12px; }
-.md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--dsw-alias-border-l4); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.md-reader-modes .md-btn[aria-pressed="true"] { border-color: var(--pdf-accent); background: var(--pdf-bg-sub); color: var(--pdf-accent); box-shadow: none; }
 /* The block-box button stays pressed while its own boxes are on the page; the
    next press is the cancel. */
 .md-btn[aria-pressed="true"].md-blocks-toggle { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); }
-.md-reader-newlabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.md-reader .md-reader-subbar .md-btn[aria-pressed="true"].md-blocks-toggle { border-color: var(--pdf-accent); background: var(--pdf-bg-sub); color: var(--pdf-accent); box-shadow: none; }
+.md-reader .md-reader-bar .md-btn:focus-visible, .md-reader .md-reader-subbar .md-btn:focus-visible, .md-reader .md-reader-page:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 4px; }
+.md-reader-newlabel { font-size: 12px; color: var(--pdf-text-sub); }
 .md-reader-canvas { display: block; flex: none; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); }
 .md-reader-state { margin: 48px auto; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .md-session-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-state-success-primary); }
@@ -15699,6 +17781,23 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const maskStartRef = useRef(null)
       const boxRef = useRef(null)
       const boxSize = useRef({ width: 400, height: 600 })
+      // Same rule as the reader: the box is measured once per gesture, never on
+      // every pointermove (which would force a layout mid-drag).
+      const sideGestureRect = useRef(null)
+      const captureSideRect = () => {
+        const node = boxRef.current
+        if (node === null || node === undefined || typeof node.getBoundingClientRect !== 'function') {
+          sideGestureRect.current = null
+          return
+        }
+        const rect = node.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) {
+          sideGestureRect.current = null
+          return
+        }
+        sideGestureRect.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+        boxSize.current = { width: rect.width, height: rect.height }
+      }
       const seenAnnotRev = useRef(0)
       const sideRoot = useRef(null)
       const stage = useRef(null)
@@ -15742,6 +17841,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [sideDrag, setSideDrag] = useState(null)
       const [sideMarquee, setSideMarquee] = useState(null)
       const [sideTextDraft, setSideTextDraft] = useState(null)
+      // Same click-vs-drag rule as the reader: a press selects the note under
+      // it, a drag draws a new box through it.
+      const sideTextHitRef = useRef(-1)
       const sideBasePanNeeds = offPageExtent(strokes)
       const sidePanNeeds = sideExpanded === 0
         ? sideBasePanNeeds
@@ -15946,6 +18048,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // the box width is remembered so the eraser's pixel tolerance can become
       // page units.
       const pointOf = event => {
+        const cached = sideGestureRect.current
+        if (cached !== null) {
+          return plane.clampPoint([
+            (event.clientX - cached.left) / cached.width,
+            (event.clientY - cached.top) / cached.height,
+          ])
+        }
         const node = boxRef.current
         if (node === null) return null
         const raw = inkPointOfFree(event, node)
@@ -16041,6 +18150,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       })
       const editDown = event => {
         if (tool === '') return
+        captureSideRect()
         const point = pointOf(event)
         if (point === null) return
         event.preventDefault()
@@ -16069,15 +18179,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (tool === 'text') {
-          // Match the reader: a drag creates the box; a click on an existing
-          // note selects and moves it instead of stacking another one.
+          // A drag always draws a new box, even over an existing one; a press
+          // without a drag selects the note under the pointer.
           if (noteEditRef.current !== null) saveNote(noteEditRef.current.id)
-          const found = strokesRef.current.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
-          if (found >= 0) {
-            setSelection({ index: found, kind: 'text' })
-            setSideDrag({ index: found, start: point, dx: 0, dy: 0 })
-            return
-          }
+          sideTextHitRef.current = strokesRef.current.findIndex(entry => entry.kind === 'text' && hitTest(entry, point))
           setSideTextDraft({ x0: point[0], y0: point[1], x1: point[0], y1: point[1] })
           return
         }
@@ -16141,6 +18246,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         sideGestures.move(event, point)
       }
       const editUp = () => {
+        sideGestureRect.current = null
         if (sideTextDraft !== null) {
           const draft = sideTextDraft
           setSideTextDraft(null)
@@ -16148,7 +18254,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           const y = Math.min(draft.y0, draft.y1)
           const w = Math.abs(draft.x1 - draft.x0)
           const h = Math.abs(draft.y1 - draft.y0)
+          const hit = sideTextHitRef.current
+          sideTextHitRef.current = -1
           if (w > 0.012 && h > 0.012) openNote([x, y], { x, y, w, h })
+          else if (hit >= 0 && strokesRef.current[hit] !== undefined) setSelection({ index: hit, kind: 'text' })
           return
         }
         if (sideDrag !== null) {
@@ -17350,6 +19459,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-icon-btn',
+            'aria-pressed': tool === 'question' ? 'true' : 'false',
+            title: format('questionTool'),
+            'aria-label': format('questionTool'),
+            onClick: () => toggleTool('question'),
+          }, annotIcon('M4 4h16v16H4zM9.6 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .8-1 1.4v.4M12 16.6h.01')),
+          h(KitButton, {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn',
             disabled: overlayUnavailable,
             'aria-pressed': tool === 'mask' ? 'true' : 'false',
             title: format('overlayHint'),
@@ -17602,6 +19719,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // silently; the translate cost/overwrite questions go through this modal
       // instead so a click always has a visible answer.
       const [translateAsk, setTranslateAsk] = useState(null)
+      const [splitBook, setSplitBook] = useState(null)
+      const [guideClosed, setGuideClosed] = useState(false)
+      // The settings page can bring the checklist back even when nothing is
+      // missing; the flag lives only for that one open.
+      const [guideForced, setGuideForced] = useState(false)
+      // Settings → 环境: the checklist does not pop on every start, so this is the
+      // way back to it after “不再提示” (or when everything is already installed).
+      const reopenEnvGuide = useCallback(() => {
+        setSettingsOpen(false)
+        setGuideForced(true)
+        setGuideClosed(false)
+      }, [])
+      const [askSkipTick, setAskSkipTick] = useState(0)
       const [workspaces, setWorkspaces] = useState([])
       const [workspacePrompt, setWorkspacePrompt] = useState(null)
       const workspaceTarget = useRef(null)
@@ -17755,6 +19885,35 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const [sampleBusy, setSampleBusy] = useState(false)
       const [importBusy, setImportBusy] = useState(false)
       const importInput = useRef(null)
+      const pdfInput = useRef(null)
+      // The file stem of a just-imported PDF, and the whole book it turned into:
+      // the catalog reload is async, so the "split it now?" question waits for the
+      // book to appear instead of guessing from the file name.
+      const importPdfStem = useRef('')
+      const [importAsk, setImportAsk] = useState(null)
+      const [bookWizard, setBookWizard] = useState(null)
+      // A whole-book PDF over 64 MB is still importable, but not without saying
+      // twice what it costs: the whole book's pages enter conversations, so the
+      // context fills fast and translating it is expensive. Splitting first is
+      // the recommended path.
+      const LARGE_PDF_BYTES = 64 * 1024 * 1024
+      const [largeAsk, setLargeAsk] = useState(null)
+      const largeAskResolver = useRef(null)
+      const askLargePdf = file => new Promise(resolve => {
+        largeAskResolver.current = resolve
+        setLargeAsk({ name: file.name, mb: (file.size / 1048576).toFixed(1), step: 1 })
+      })
+      const answerLargePdf = confirmed => {
+        if (largeAsk === null) return
+        if (largeAsk.step === 1 && confirmed) {
+          setLargeAsk({ ...largeAsk, step: 2 })
+          return
+        }
+        const resolve = largeAskResolver.current
+        largeAskResolver.current = null
+        setLargeAsk(null)
+        if (typeof resolve === 'function') resolve(confirmed)
+      }
       const [shelfGroups, setShelfGroups] = useState({ hidden: [], shelves: [] })
       const [group, setGroup] = useState(null)
       const groupRef = useRef(null)
@@ -18781,6 +20940,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             libraryId: data.library !== null && typeof data.library === 'object' && typeof data.library.id === 'string' ? data.library.id : '',
             covers: new Set(Array.isArray(data.covers) ? data.covers : []),
             libraryDir: typeof data.libraryDir === 'string' ? data.libraryDir : '',
+            dataDir: typeof data.dataDir === 'string' ? data.dataDir : '',
             fragmentDir: typeof data.fragmentDir === 'string' ? data.fragmentDir : '',
             artifactDir: typeof data.artifactDir === 'string' ? data.artifactDir : '',
             resumeRatio: typeof data.resumeRatio === 'number' ? data.resumeRatio : 0.85,
@@ -19221,13 +21381,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
        * the blank about to be reused by the current New and is left alone.
        * @param {string | null | undefined} keepId - a blank to leave alone.
        * @param {boolean} [force] - also archive the currently selected blank (explicit cleanup).
+       * @param {boolean} [quiet] - skip the page notice when the settings dialog reports it.
+       * @returns {Promise<number>} how many blank sessions were archived.
        */
-      const settlePending = useCallback(async (keepId, force) => {
+      const settlePending = useCallback(async (keepId, force, quiet) => {
         const sessions = sessionService()
-        if (sessions === null || sessions.list === undefined) return
+        if (sessions === null || sessions.list === undefined) return 0
         const list = sessions.list.getSnapshot()
         // Only settle against a complete list; a pending phase would look like "session gone".
-        if (list === null || list.phase !== 'ready' || list.byId === undefined) return
+        if (list === null || list.phase !== 'ready' || list.byId === undefined) return 0
         const targetPath = catalog === null ? '' : catalog.target.cwd
         const pending = pendingRef.current
         let archived = 0
@@ -19270,8 +21432,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
         if (archived > 0) {
           refreshSessions()
-          showNotice(format('cleanupNotice', { n: archived }))
+          if (quiet !== true) showNotice(format('cleanupNotice', { n: archived }))
         }
+        return archived
       }, [archiveSessionRow, catalog, refreshSessions, removePendingRecord, showNotice])
 
       /**
@@ -19405,7 +21568,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             mode: shown.mode,
           }
           : null
-        return sessionSeedText(bookRow, chapter, position, paths ?? null, typeof persona === 'string' ? persona : '')
+        return sessionSeedText(bookRow, chapter, position, paths ?? null, typeof persona === 'string' ? persona : '', readAiMode() === 'daily')
       }, [])
 
       /**
@@ -19557,10 +21720,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setCreatingMode(mode)
         setCreateError(null)
         try {
-          // The shared-prefix branch: the chapter is read once by a hidden base
-          // session and every mode talks in its own fork of that prefix. A
-          // chapter the Host cannot extract (scanned) falls back to an ordinary
-          // session that reads the PDF itself.
+          // Both modes keep the whole-chapter prefix: the user confirmed a
+          // page-only context answers worse. What the mode changes is the answer
+          // style (see the seed text) — thinking depth itself comes from the DSH
+          // model, which this plugin does not override.
           let sessionId = ''
           try {
             sessionId = await ensureSharedBranch(book.id, chapter.code, mode === GENERAL_MODE ? 'general' : mode)
@@ -20239,25 +22402,118 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return () => { alive = false }
       }, [sample, work])
 
-      /** Copy browser-selected files into the active library's 导入 folder. */
+      /**
+       * Upload browser-selected files through the unified import pipeline and
+       * report one summary: new, duplicate, renamed, rejected (with reasons).
+       */
       const importFiles = useCallback(async event => {
         const files = Array.from(event.target.files ?? [])
         event.target.value = ''
         if (files.length === 0) return
         setImportBusy(true)
-        let copied = 0
+        const totals = { imported: 0, duplicates: 0, renamed: 0, rejected: 0 }
+        const reasons = []
+        const countOf = (report, key) => (Array.isArray(report[key]) ? report[key].length : 0)
         for (const file of files) {
+          const extension = file.name.toLowerCase().split('.').pop()
+          const kind = extension === 'md' || extension === 'markdown' || extension === 'txt' ? 'md' : 'pdf'
+          const oversized = kind === 'pdf' && file.size > LARGE_PDF_BYTES
+          if (oversized) {
+            const proceed = await askLargePdf(file)
+            if (!proceed) {
+              reasons.push(`${file.name}：${format('bigFileCancelled')}`)
+              continue
+            }
+          }
           try {
-            const response = await fetch(`${ENDPOINT}import?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
-            if (response.ok) copied += 1
-          } catch {
+            const allowLarge = oversized ? '&allowLarge=1' : ''
+            const response = await fetch(`${ENDPOINT}imports?kind=${kind}&name=${encodeURIComponent(file.name)}${allowLarge}`, { method: 'POST', body: file })
+            const payload = await response.json().catch(() => null)
+            const report = payload !== null && payload.report !== undefined && payload.report !== null ? payload.report : null
+            if (report === null) {
+              reasons.push(`${file.name}：${payload !== null && payload.error !== undefined ? payload.error.message : `HTTP ${response.status}`}`)
+              continue
+            }
+            totals.imported += countOf(report, 'imported')
+            totals.duplicates += countOf(report, 'duplicates')
+            totals.renamed += countOf(report, 'renamed')
+            totals.rejected += countOf(report, 'rejected')
+            for (const entry of Array.isArray(report.rejected) ? report.rejected : []) {
+              reasons.push(`${entry.name}：${entry.reason}`)
+            }
+          } catch (error) {
             // A failed file is skipped; the notice reports how many landed.
+            reasons.push(`${file.name}：${String(error && error.message ? error.message : error)}`)
           }
         }
         setImportBusy(false)
-        showNotice(format('importFilesDone', { n: copied }))
+        const summary = format('importFilesDone', totals)
+        showNotice(reasons.length === 0 ? summary : `${summary}（${reasons.slice(0, 3).join('；')}）`)
         setReloadKey(key => key + 1)
       }, [showNotice])
+
+      /**
+       * Import one PDF through the unified pipeline and offer to split it. The
+       * Host decides the stored name (a duplicate keeps the existing one), so the
+       * split offer is matched to the book by that name after the reload.
+       */
+      const importPdfFile = useCallback(async event => {
+        const file = Array.from(event.target.files ?? [])[0]
+        event.target.value = ''
+        if (file === undefined) return
+        // A ZIP opens the import wizard (packages with split books, whole books
+        // or both); a single PDF keeps the quick path below.
+        if (/\.zip$/i.test(file.name)) {
+          setBookWizard({ initialPdf: file })
+          return
+        }
+        const oversized = file.size > LARGE_PDF_BYTES
+        if (oversized && !(await askLargePdf(file))) return
+        setImportBusy(true)
+        try {
+          const allowLarge = oversized ? '&allowLarge=1' : ''
+          const response = await fetch(`${ENDPOINT}imports?kind=pdf&name=${encodeURIComponent(file.name)}${allowLarge}`, { method: 'POST', body: file })
+          const payload = await response.json().catch(() => null)
+          if (!response.ok || payload === null || payload.ok !== true) {
+            const reason = payload !== null && payload.error !== undefined ? payload.error.message : `HTTP ${response.status}`
+            showNotice(`${format('importPdfFailed')}：${reason}`)
+            return
+          }
+          const report = payload.report !== undefined && payload.report !== null ? payload.report : null
+          const imported = report !== null && Array.isArray(report.imported) && report.imported.length > 0 ? report.imported[0] : null
+          const duplicate = report !== null && Array.isArray(report.duplicates) && report.duplicates.length > 0 ? report.duplicates[0] : null
+          if (imported === null && duplicate === null) {
+            const reason = report !== null && Array.isArray(report.rejected) && report.rejected.length > 0
+              ? report.rejected[0].reason
+              : format('importRejected')
+            showNotice(`${format('importPdfFailed')}：${reason}`)
+            return
+          }
+          const name = imported !== null ? String(imported.name) : String(duplicate.existing)
+          if (imported === null) {
+            showNotice(format('importDuplicate', { name }))
+            return
+          }
+          importPdfStem.current = name.replace(/\.pdf$/i, '')
+          showNotice(format('importPdfDone', { name }))
+          setReloadKey(key => key + 1)
+        } catch (error) {
+          showNotice(`${format('importPdfFailed')}：${String(error && error.message ? error.message : error)}`)
+        } finally {
+          setImportBusy(false)
+        }
+      }, [showNotice])
+
+      // Ask "split it now?" once the imported PDF shows up as a whole book. A miss
+      // keeps the stem: the next catalog reload may still list it.
+      useEffect(() => {
+        const stem = importPdfStem.current
+        if (stem === '' || catalog === null) return
+        const found = wholeBookByFileStem(catalog.books, stem)
+        if (found === null) return
+        importPdfStem.current = ''
+        setImportAsk(found)
+      }, [catalog])
 
       /** Copy the AI prompt to the clipboard (falls back to showing it). */
       const copyAiPrompt = useCallback(async () => {
@@ -20364,6 +22620,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           setLibBusy(false)
         }
       }, [applyLibraryList, libBusy])
+
+      const revealLibrary = useCallback(async id => {
+        try {
+          await request('POST', 'library/reveal', { library: id })
+        } catch (reason) {
+          setLibError(`${format('libraryRevealFailed')} (${errorText(reason)})`)
+        }
+      }, [])
 
       const pickLibraryDir = useCallback(async () => {
         const uiWorkspace = clientContext === null ? null : clientContext.get('uiWorkspace')
@@ -20482,16 +22746,19 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // On every mount, resolve intents a previous workbench visit left behind:
       // name a started session, archive an unused blank, and remove archived
       // blank records nobody can otherwise delete.
-      const purgeBlanks = useCallback(async () => {
+      const purgeBlanks = useCallback(async (quiet) => {
         try {
           const payload = await request('POST', 'purge')
-          if (typeof payload.purged === 'number' && payload.purged > 0) {
+          const purged = typeof payload.purged === 'number' ? payload.purged : 0
+          if (purged > 0) {
             refreshSessions()
-            showNotice(format('cleanupNotice', { n: payload.purged }))
+            if (quiet !== true) showNotice(format('cleanupNotice', { n: purged }))
           }
+          return purged
         } catch (reason) {
           // Cleanup is best effort; the next visit tries again.
           trace('purge failed', errorText(reason))
+          return 0
         }
       }, [refreshSessions, showNotice])
 
@@ -20499,15 +22766,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       useEffect(() => {
         if (reconciled.current || catalog === null || sessionIndex.loaded !== true) return
         reconciled.current = true
-        void settlePending().then(purgeBlanks)
+        void settlePending().then(() => purgeBlanks())
       }, [catalog, purgeBlanks, sessionIndex.loaded, settlePending])
 
       const cleanupNow = useCallback(async () => {
-        if (creatingRef.current) return
+        if (creatingRef.current) return 0
         creatingRef.current = true
         try {
-          await settlePending(null, true)
-          await purgeBlanks()
+          const archived = await settlePending(null, true, true)
+          const purged = await purgeBlanks(true)
+          return (archived ?? 0) + purged
         } finally {
           creatingRef.current = false
         }
@@ -20548,7 +22816,6 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [work === null ? '' : work.view, work === null ? '' : work.bookId])
 
       const busy = phase === 'loading'
-      const totalChapters = books.reduce((sum, item) => sum + (Array.isArray(item.chapters) ? item.chapters.length : 0), 0)
       const problemText = catalog !== null && catalog.problem !== null
         ? (catalog.problem.code === 'fragment-dir-unreadable'
           ? `${format('problemUnreadable')} ${catalog.problem.message === '' ? '' : `(${catalog.problem.message})`}`.trim()
@@ -20598,9 +22865,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           error: libError !== '' ? libError : problemText,
           onUse: activateLibrary,
           onRemove: removeLibrary,
+          onReveal: revealLibrary,
           onAdd: addLibrary,
           onPick: pickLibraryDir,
           onSplit: startSplitSession,
+          onSplitBook: book => setSplitBook(book),
+          onImportPdf: () => pdfInput.current?.click(),
+          books,
           onChooseWorkspace: chooseWorkspace,
           workspaceLabel,
           sample,
@@ -20629,6 +22900,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           mathMode,
           workflow: activeWorkflow,
           onEnvRequired: setEnvPrompt,
+          onSplit: setSplitBook,
           artifacts,
           libraryDir: catalog.libraryDir,
           counts: counts[book.id],
@@ -20714,6 +22986,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onUnhide: unhideSelected,
           onRemoveFromShelf: removeFromShelf,
           onClear: clearSelection,
+          onImportPdf: () => pdfInput.current?.click(),
         })
       }
 
@@ -20766,6 +23039,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           type: 'file', multiple: true, ref: importInput,
           style: { display: 'none' }, onChange: importFiles,
         }),
+        h('input', {
+          type: 'file', accept: '.pdf,.zip,.lnk,application/pdf,application/zip', ref: pdfInput,
+          style: { display: 'none' }, onChange: importPdfFile,
+        }),
         h('div', { className: 'md-inner' },
           h('header', { className: 'md-head', inert: covered ? '' : undefined },
             h('div', {
@@ -20774,12 +23051,12 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               onDoubleClick: () => backToLibraries(),
             },
               h('h1', { className: 'md-title' }, format('title')),
-              h('p', { className: 'md-subtitle' }, format('subtitle', { books: books.length, chapters: totalChapters })),
+              h('p', { className: 'md-subtitle' }, format('subtitle')),
               h('span', {
                 className: 'md-mode-pill',
                 'data-mode': mathMode ? 'math' : 'general',
                 title: format('workflowHint'),
-              }, format(mathMode ? 'workflowMath' : 'workflowGeneral'))
+              }, format(mathMode ? 'modePillMath' : 'modePillGeneral'))
             ),
             h('div', { className: 'md-head-actions' },
               book === null ? null : h(KitButton, {
@@ -20790,13 +23067,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   type: 'button', className: 'md-btn md-btn-ghost',
                   'aria-haspopup': 'dialog', 'aria-expanded': settingsOpen ? 'true' : 'false',
                   onClick: () => setSettingsOpen(value => !value),
-                }, `⚙ ${format('settings')}`)
+                }, format('settings'))
               ),
-              h(KitButton, {
-                type: 'button', className: 'md-btn', disabled: busy || creatingKey !== '',
-                title: format('cleanupHint'),
-                onClick: cleanupNow,
-              }, format('cleanup')),
               h(KitButton, {
                 type: 'button', className: 'md-btn', disabled: busy,
                 onClick: reload,
@@ -20907,8 +23179,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? h(SettingsDialog, {
             version: catalog === null ? '' : catalog.version,
             envTools,
+            libraries: libs.items,
+            libraryDir: catalog === null ? '' : catalog.libraryDir,
+            dataDir: catalog === null ? '' : catalog.dataDir,
             initialTab: settingsTab,
             activeWorkflow,
+            // The split panel is a modal of the app, not of Settings: closing the
+            // dialog first keeps the two layers from stacking.
+            books,
+            onSplitBook: book => {
+              setSettingsOpen(false)
+              setSplitBook(book)
+            },
+            onOpenEnvGuide: reopenEnvGuide,
+            onCleanupBlanks: cleanupNow,
+            onOpenBookWizard: () => {
+              setSettingsOpen(false)
+              setBookWizard({ initialPdf: null })
+            },
             onWorkflowChange: value => writeWorkflowMode(value),
             onApiKeyChange: configured => setEnvTools(current => ({ ...current, apiKey: configured === true })),
             updateBusy,
@@ -21063,7 +23351,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : h(KitModal, {
             title: format('translateChapterAction'),
             onClose: () => setTranslateAsk(null),
-            children: h('p', { className: 'md-env-body', style: { whiteSpace: 'pre-line' } }, translateAsk.body),
+            children: h(React.Fragment, null,
+              h('p', { className: 'md-env-body', style: { whiteSpace: 'pre-line' } }, translateAsk.body),
+              h('div', { className: 'md-settings-row' },
+                h('label', null,
+                  h('input', {
+                    key: String(askSkipTick),
+                    type: 'checkbox',
+                    checked: readPrefBool(TRANSLATE_SKIP_ASK, false),
+                    onChange: event => {
+                      writePrefBool(TRANSLATE_SKIP_ASK, event.target.checked)
+                      setAskSkipTick(value => value + 1)
+                    },
+                  }),
+                  ` ${format('translateAskSkip')}`),
+                h('span', { className: 'md-shelf-sub' }, format('translateAskSkipHint')))),
             footer: [
               h(KitButton, {
                 key: 'cancel', variant: 'outline',
@@ -21077,6 +23379,94 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   run()
                 },
               }, format('translateChapterAction')),
+            ],
+          }),
+        (() => {
+          const modelOk = translateModel !== null && translateModel !== undefined && translateModel.images === true
+          const missingIds = []
+          if (canRender !== true) missingIds.push('render')
+          if (!modelOk) missingIds.push('model')
+          const missing = missingIds.length > 0
+          if (guideClosed && !guideForced) return null
+          // The checklist reminds once per kind of missing capability, plus
+          // whenever the user asks for it in Settings → 环境.
+          if (!guideForced && !missing) return null
+          if (!guideForced && readPrefBool('pdfdesk:env-onboarded', false)) return null
+          const seenIds = readEnvGuideSeen()
+          if (!guideForced && missingIds.every(id => seenIds.includes(id))) return null
+          const closeGuide = () => {
+            setGuideForced(false)
+            setGuideClosed(true)
+          }
+          return h(EnvGuide, {
+            envTools,
+            modelOk,
+            modelLabel: modelOk ? `${translateModel.provider} / ${translateModel.model}` : format('envNeedTranslateModel'),
+            onClose: () => {
+              // “知道了” counts as acknowledged: the same set of problems stays
+              // silent on the next launch instead of nagging again.
+              if (missingIds.length > 0) writeEnvGuideSeen(missingIds)
+              closeGuide()
+            },
+            onNever: () => {
+              writePrefBool('pdfdesk:env-onboarded', true)
+              closeGuide()
+            },
+            onOpenSettings: () => {
+              closeGuide()
+              setSettingsTab('env')
+              setSettingsOpen(true)
+            },
+          })
+        })(),
+        splitBook === null
+          ? null
+          : h(SplitDialog, {
+            book: splitBook,
+            onClose: () => setSplitBook(null),
+            onDone: () => { setSplitBook(null); reload() },
+          }),
+        // Asked right after a PDF lands in 整本\: the file is already imported, so
+        // "later" costs nothing and the answer is never a blocking dialog.
+        importAsk === null
+          ? null
+          : h(KitModal, {
+            title: format('importSplitAskTitle'),
+            onClose: () => setImportAsk(null),
+            children: h('p', { className: 'md-env-body' }, format('importSplitAsk', { title: importAsk.title })),
+            footer: [
+              h(KitButton, { key: 'later', variant: 'ghost', onClick: () => setImportAsk(null) }, format('importSplitLater')),
+              h(KitButton, {
+                key: 'split', variant: 'primary',
+                onClick: () => {
+                  const book = importAsk
+                  setImportAsk(null)
+                  setSplitBook(book)
+                },
+              }, format('importSplitNow')),
+            ],
+          }),
+        bookWizard === null
+          ? null
+          : h(BookImportWizard, {
+            initialPdf: bookWizard.initialPdf === undefined ? null : bookWizard.initialPdf,
+            onClose: () => setBookWizard(null),
+            onImported: () => { void reload() },
+          }),
+        largeAsk === null
+          ? null
+          : h(KitModal, {
+            title: format('bigFileTitle'),
+            onClose: () => answerLargePdf(false),
+            children: h('p', { className: 'md-env-body' },
+              format(largeAsk.step === 1 ? 'bigFileStep1' : 'bigFileStep2', { name: largeAsk.name, mb: largeAsk.mb })),
+            footer: [
+              h(KitButton, { key: 'cancel', variant: 'ghost', onClick: () => answerLargePdf(false) }, format('bigFileCancel')),
+              h(KitButton, {
+                key: 'go',
+                variant: 'primary',
+                onClick: () => answerLargePdf(true),
+              }, format(largeAsk.step === 1 ? 'bigFileContinue' : 'bigFileConfirm')),
             ],
           }),
         workspacePrompt === null

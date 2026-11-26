@@ -15,6 +15,7 @@
  * @module dsh-pdf-workbench
  */
 import { basename, dirname, join } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { resolveConfig } from './src/host/config.js'
@@ -28,6 +29,7 @@ import { ShelfGroups } from './src/host/shelf-groups.js'
 import { PREFIX, createHandler } from './src/host/routes.js'
 import { installToolkit } from './src/host/toolkit.js'
 import { purgeArchivedBlanks } from './src/host/purge.js'
+import { migrateTranslationCache } from './src/host/translation-cache.js'
 
 /** Cordis plugin name. */
 export const name = 'pdfdesk'
@@ -52,6 +54,7 @@ export const inject = ['webServer', 'connection']
  * @returns {void}
  */
 export function apply(ctx, rawConfig) {
+  const startedAt = Date.now()
   const config = resolveConfig(rawConfig)
   const connection = ctx.get('connection')
   const pending = new PendingStore(config.pendingPath)
@@ -66,6 +69,24 @@ export function apply(ctx, rawConfig) {
     indexPath: config.indexPath,
     name: basename(config.libraryDir),
   })
+
+  // The per-page translation cache moved from this data folder into each
+  // library (`<libraryDir>/.pdfdesk/translation/`), so two libraries cannot
+  // share a same-named book's pages. The move starts once at mount and the
+  // routes that touch the cache await it (DEC-0014 §5); a book whose owner is
+  // ambiguous stays in the old folder and is reported instead of guessed.
+  const translationMigration = (async () => {
+    try {
+      const listed = await libraries.list()
+      const entries = listed.items.length === 0 ? [libraries.fallbackEntry()] : listed.items
+      const report = await migrateTranslationCache({ dataDir: config.dataDir, libraries: entries })
+      for (const warning of report.warnings) ctx.logger?.warn?.('pdfdesk: translation cache migration: %s', warning)
+      return report
+    } catch (error) {
+      ctx.logger?.warn?.('pdfdesk: translation cache migration failed: %s', String(error))
+      return { moved: [], skipped: [], warnings: [String(error)] }
+    }
+  })()
 
   /**
    * Read one session's context pressure, live when it is running and from the
@@ -425,6 +446,9 @@ export function apply(ctx, rawConfig) {
     links,
     libraries,
     shelves,
+    // Routes that read or write a chapter's translation cache await the move
+    // from the old global folder before doing so.
+    translationMigration: () => translationMigration,
     contextPressure,
     aiCatalog,
     aiSession,
@@ -518,4 +542,21 @@ export function apply(ctx, rawConfig) {
       await pending.remove(session.id)
     }).catch(() => {})
   }), 'pdfdesk: pending naming and context pressure')
+
+  // Start-up baseline (T-08): one record per DSH start, so the cost the plugin
+  // adds is measurable without a profiler. A failed write must never block start.
+  try {
+    const file = join(config.dataDir, 'startup.json')
+    let list = []
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'))
+      if (Array.isArray(parsed)) list = parsed
+    } catch {
+      // first run, or the file was removed
+    }
+    list.push({ at: Date.now(), applyMs: Date.now() - startedAt, engine: typeset.engine })
+    writeFileSync(file, JSON.stringify(list.slice(-30), null, 1))
+  } catch {
+    // measurement only
+  }
 }

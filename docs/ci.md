@@ -47,6 +47,11 @@ Get-ChildItem src\host\*.js | ForEach-Object { node --check $_.FullName }
 - 改了 `src/client/` 或 vendor UI 时：`npm run build:host-ui`。当前沙箱可能因 esbuild 启动 `EPERM` 失败；如果 `vendor/host-ui.*` 本次没有改动，可使用已有产物并在发布记录注明。不要为了跳过失败而改写构建链。
 - 至少跑仓库外现有的 `check-keys.mjs`、`check-deps.mjs`、`host-test.mjs`；再跑与本次改动相关的全部 `.dsh-scratch/*test*.mjs`。失败不发布。
 - 用户可见交互变更按 `docs/TESTING.md` 的干净环境矩阵补做必要验收；真机结论以用户手测为准，不能只看脚本。
+- **开发者模式已删除（2026-11-26 用户要求）**：`client.js` 不得再出现 `DEV_MODE_SUPPORTED`、`Ctrl+Shift+D`、`pdfdesk:dev-mode`、`devModeBadge` 等字样。`build-dist.ps1` 仍会调用 `scripts/prepare-release-client.mjs`：删除 `pdfdesk:dev-only-*` 标记块（留给以后的本机代码）、拒绝 `ENV_GUIDE_ALWAYS` 与上述开发者模式残留、`node --check`；任一步失败即中止打包。发布前可手动验证：
+  ```powershell
+  Select-String -Path ..\dist\dsh-pdf-workbench-*\client.js -Pattern 'DEV_MODE_SUPPORTED','Ctrl\+Shift\+D','pdfdesk:dev-mode','pdfdesk:dev-only'
+  ```
+  结果必须无命中；另跑 `.dsh-scratch/release-guard-test.mjs`。
 - 分发构建：
 
 ```powershell

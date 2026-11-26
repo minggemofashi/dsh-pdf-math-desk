@@ -11,6 +11,8 @@
  *   GET  /pdfdesk/questions        one chapter's page-mark questions
  *   PUT  /pdfdesk/questions        replace one chapter's questions
  *   POST /pdfdesk/print-page       one Markdown product as a printable HTML page
+ *   POST /pdfdesk/imports          the one import pipeline (PDF, md/txt, book ZIP, migration ZIP)
+ *   POST /pdfdesk/library-export   one library's data (index, .pdfdesk, optional artifacts; no PDFs) as a ZIP
  *   POST /pdfdesk/digest           summarize a chapter's conversations
  *   GET  /pdfdesk/vendor/<file>    the reader's pdf.js build
  *   POST /pdfdesk/links            attach an existing session to a chapter
@@ -41,13 +43,17 @@ import { addAttachment, attachmentsDir, listAttachments, MAX_ATTACHMENT_BYTES, r
 import { convertPptToPdf, isPptPath, pdfNameForPpt } from './ppt.js'
 import { MAX_FONT_BYTES, downloadFont, fontStatus, installFont, readFont, removeFont } from './fonts.js'
 import { createBackup, importBackup, readBackup } from './backup.js'
-import { importBookArchive } from './book-import.js'
+import { isExportName, listExports, listJobs, revealDirectory, revealInFileManager, startExportJob } from './exports.js'
+import { exportLibrary, exportPdfPack } from './library-export.js'
+import { checkArchiveFile, importArchive, importSingle, MAX_ARCHIVE_FILE_BYTES, MAX_ARCHIVE_TOTAL_BYTES, MAX_UPLOAD_BYTES, receiveUpload, RejectError } from './imports.js'
+import { applyBookPack, discardStage, inspectBookPack } from './book-wizard.js'
 import { markdownToHtml, printPageHtml } from './print.js'
 import { PLUGIN_VERSION } from './config.js'
-import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson } from './http.js'
+import { fail, isLoopback, isSameOrigin, readJson, sendBytes, sendJson, sendNotModified } from './http.js'
 import { installTypst, installed, TYPST_VERSION } from './typst-install.js'
 import { loadCatalog } from './index-source.js'
 import { readPageBlocks } from './blocks.js'
+import { chapterCacheDir, legacyTranslationRoot, translationRoot } from './translation-cache.js'
 import { translatePage } from './translate.js'
 import { startChapterJob } from './translate-job.js'
 import { artifactPdfPath, chapterPdfPath } from './pdf-source.js'
@@ -56,6 +62,7 @@ import { checkForUpdate } from './update.js'
 import { detectEnvironment } from './environment.js'
 import { renderMarkdown } from './render.js'
 import { readState, writeState } from './state.js'
+import { cleanTemporary, emptyTrash, measureStorage, pruneStaleJobs, pruneTranslationIdle, pruneTrash, scanDuplicates } from './storage.js'
 
 /** Route prefix owned by this plugin. */
 export const PREFIX = '/pdfdesk'
@@ -112,18 +119,51 @@ async function coverIds(dir) {
 }
 
 /**
+ * The manifest summary both the JSON path-import and the upload import return,
+ * so the settings page renders one shape either way.
+ * @param {{ manifest: object }} verified - a checksum-verified backup.
+ * @returns {object} the summary.
+ */
+function backupSummary(verified) {
+  const included = verified.manifest.included ?? {}
+  return {
+    format: verified.manifest.format,
+    createdAt: verified.manifest.createdAt,
+    plugin: verified.manifest.plugin ?? null,
+    machine: verified.manifest.machine ?? null,
+    included,
+    paths: verified.manifest.paths ?? null,
+    files: Array.isArray(verified.manifest.files) ? verified.manifest.files.length : 0,
+  }
+}
+
+/**
+ * HTTP status for one import-pipeline refusal.
+ * @param {string} code - `RejectError.code`.
+ * @returns {number} status.
+ */
+function rejectStatus(code) {
+  if (code === 'too-large') return 413
+  if (code === 'render-unavailable') return 503
+  if (code === 'render-failed') return 502
+  if (code === 'no-library') return 409
+  return 400
+}
+
+/**
  * Read the request body for a mutation.
  * @param {import('node:http').IncomingMessage} request - inbound request.
  * @param {import('node:http').ServerResponse} response - outbound response.
+ * @param {number} [limit] - body ceiling; defaults to the tiny position-sized cap.
  * @returns {Promise<unknown | undefined>} the body, or undefined after a failure was answered.
  */
-async function mutationBody(request, response) {
+async function mutationBody(request, response, limit) {
   if (!isSameOrigin(request)) {
     fail(response, 403, 'cross-origin', '拒绝跨站写入')
     return undefined
   }
   try {
-    return await readJson(request)
+    return limit === undefined ? await readJson(request) : await readJson(request, limit)
   } catch (error) {
     fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
     return undefined
@@ -151,7 +191,7 @@ function imageBytesOf(value) {
 /**
  * Build the prefix handler for the plugin's routes.
  * @param {{ libraryDir: string, fragmentDir: string, artifactDir: string, coverDir: string, indexPath: string, statePath: string, resumeRatio?: number, toolsDir?: string }} config - resolved paths and behavior (the profile's library is the fallback).
- * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, installToolkit?: (libraryDir: string) => Promise<object>, aiTranslate?: (choice: object) => Promise<object> }} [options] - host capabilities the routes expose.
+ * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, translationMigration?: () => Promise<object>, revealFile?: (path: string) => void, installToolkit?: (libraryDir: string) => Promise<object>, aiTranslate?: (choice: object) => Promise<object> }} [options] - host capabilities the routes expose.
  * @returns {(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<void>} the handler.
  */
 export function createHandler(config, options = {}) {
@@ -314,6 +354,46 @@ async function activeLibrary() {
   }
 
   /**
+   * The active library, or a 409 answer when the user has not added one.
+   * @param {import('node:http').ServerResponse} response - outbound response.
+   * @returns {Promise<object | null>} the library, or null after answering.
+   */
+  async function requireLibrary(response) {
+    const library = await activeLibrary()
+    if (library === null || typeof library.libraryDir !== 'string' || library.libraryDir === '') {
+      fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
+      return null
+    }
+    return library
+  }
+
+  /**
+   * Wait for the one-time move of the old global translation cache. Routes that
+   * read or write a chapter's cache call this first, so they never look in the
+   * new folder before the migration put the old pages there.
+   * @returns {Promise<void>}
+   */
+  async function ensureTranslationCache() {
+    if (typeof options.translationMigration !== 'function') return
+    try {
+      await options.translationMigration()
+    } catch {
+      // The migration reports its own failures; a broken migration must not take
+      // every cache route down with it.
+    }
+  }
+
+  /**
+   * Resolve a staged wizard upload token to its temp path.
+   * @param {unknown} token - `stage-<uuid>.zip`.
+   * @returns {string | null} absolute path, or null when the token is malformed.
+   */
+  function stagedPath(token) {
+    if (typeof token !== 'string' || !/^stage-[0-9a-f-]{36}\.zip$/.test(token)) return null
+    return join(config.dataDir, 'tmp', token)
+  }
+
+  /**
    * The bundled sample library's manifest, when the package ships one.
    * @returns {Promise<object | null>} `{ book, files }` or null.
    */
@@ -324,6 +404,17 @@ async function activeLibrary() {
     } catch {
       return null
     }
+  }
+
+  /**
+   * Drop the short-lived catalog copy. Every write that adds, removes or
+   * renames books calls this, otherwise the client's immediate reload after a
+   * delete is answered from the cache and the deleted book keeps showing up.
+   * @returns {void}
+   */
+  function invalidateCatalog() {
+    cachedCatalog = null
+    cachedAt = 0
   }
 
   /**
@@ -401,9 +492,29 @@ async function activeLibrary() {
         || path === `${PREFIX}/ai-probe`
         || path === `${PREFIX}/clear-translation-cache`
         || path === `${PREFIX}/purge`
+        || path === `${PREFIX}/imports`
+        || path === `${PREFIX}/exports`
+        || path === `${PREFIX}/reveal`
+        || path === `${PREFIX}/imports/stage`
+        || path === `${PREFIX}/storage`
+        || path === `${PREFIX}/storage/clean`
+        || path === `${PREFIX}/exports/delete`
+        || path === `${PREFIX}/storage/prune`
       if (!libraryFree && (libraries === undefined || (await libraries.active()) === null)) {
         fail(response, 409, 'no-library', '还没有书库，请先在书库页添加一个')
         return
+      }
+
+      // The translation cache moved from the plugin data folder into the library
+      // (DEC-0014 §5). Every route that reads or writes it waits for the one-time
+      // migration first, so the new folder is never read half-migrated.
+      if (path === `${PREFIX}/blocks`
+        || path === `${PREFIX}/translate-chapter`
+        || path === `${PREFIX}/clear-translation-cache`
+        || path === `${PREFIX}/rebuild-overlay`
+        || path === `${PREFIX}/realign-overlay`
+        || path === `${PREFIX}/rebuild-translated`) {
+        await ensureTranslationCache()
       }
 
       if (path === `${PREFIX}/backup`) {
@@ -411,12 +522,15 @@ async function activeLibrary() {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
           return
         }
-        const body = await mutationBody(request, response)
+        // Browser settings are a portable JSON blob; the old 16 KB cap rejected a
+        // profile once it carried a few preference keys and killed the socket
+        // (the page showed net::ERR_UNEXPECTED instead of a readable error).
+        const body = await mutationBody(request, response, 16 * 1024 * 1024)
         if (body === undefined) return
         const record = body !== null && typeof body === 'object' ? body : {}
         const action = typeof record.action === 'string' ? record.action : ''
         try {
-          if (action === 'create') {
+          if (action === 'create' || action === 'create-async') {
             const source = record.include !== null && typeof record.include === 'object' ? record.include : {}
             const include = {
               sessions: source.sessions !== false,
@@ -427,22 +541,36 @@ async function activeLibrary() {
               fonts: source.fonts === true,
               projcache: source.projcache === true,
             }
-            let list = []
-            if (libraries !== undefined && typeof libraries.list === 'function') {
-              const rows = await libraries.list().catch(() => [])
-              list = (Array.isArray(rows) ? rows : []).map(row => ({ id: row.id, name: row.name, libraryDir: row.libraryDir }))
-            } else {
-              const active = await activeLibrary()
-              list = [{ id: active.id, name: active.name, libraryDir: active.libraryDir }]
+            const runCreate = async () => {
+              let list = []
+              if (libraries !== undefined && typeof libraries.list === 'function') {
+                const rows = await libraries.list().catch(() => [])
+                list = (Array.isArray(rows) ? rows : []).map(row => ({ id: row.id, name: row.name, libraryDir: row.libraryDir }))
+              } else {
+                const active = await activeLibrary()
+                list = [{ id: active.id, name: active.name, libraryDir: active.libraryDir }]
+              }
+              return createBackup({
+                dataDir: config.dataDir,
+                libraries: list,
+                include,
+                settings: include.settings && record.settings !== null && typeof record.settings === 'object' ? record.settings : undefined,
+                pluginVersion: PLUGIN_VERSION,
+                machine: { platform: process.platform, oldHome: process.env.USERPROFILE ?? process.env.HOME ?? '' },
+              })
             }
-            const backup = await createBackup({
-              dataDir: config.dataDir,
-              libraries: list,
-              include,
-              settings: include.settings && record.settings !== null && typeof record.settings === 'object' ? record.settings : undefined,
-              pluginVersion: PLUGIN_VERSION,
-              machine: { platform: process.platform, oldHome: process.env.USERPROFILE ?? process.env.HOME ?? '' },
-            })
+            if (action === 'create-async') {
+              // A real profile's sessions make packing take long enough that a
+              // synchronous request can be cut by the transport; return the job
+              // and let the settings page poll `GET /exports`.
+              try {
+                sendJson(response, 200, { ok: true, job: startExportJob('backup', runCreate) })
+              } catch (error) {
+                fail(response, 409, 'busy', String(error && error.message ? error.message : error))
+              }
+              return
+            }
+            const backup = await runCreate()
             sendJson(response, 200, {
               ok: true,
               name: backup.name,
@@ -460,19 +588,7 @@ async function activeLibrary() {
               return
             }
             const verified = await readBackup(source)
-            const included = verified.manifest.included ?? {}
-            sendJson(response, 200, {
-              ok: true,
-              manifest: {
-                format: verified.manifest.format,
-                createdAt: verified.manifest.createdAt,
-                plugin: verified.manifest.plugin ?? null,
-                machine: verified.manifest.machine ?? null,
-                included,
-                paths: verified.manifest.paths ?? null,
-                files: Array.isArray(verified.manifest.files) ? verified.manifest.files.length : 0,
-              },
-            })
+            sendJson(response, 200, { ok: true, manifest: backupSummary(verified) })
             return
           }
           if (action === 'import') {
@@ -488,6 +604,10 @@ async function activeLibrary() {
               libraryRoots: Object.fromEntries(Object.entries(roots).filter(([, value]) => typeof value === 'string' && value !== '')),
               strategy: typeof record.strategy === 'string' ? record.strategy : 'merge',
             })
+            // An uploaded package lives in tmp/ only until its import finishes.
+            if (/^import-[0-9a-f-]+\.zip$/.test(basename(source)) && source.startsWith(join(config.dataDir, 'tmp'))) {
+              await rm(source, { force: true }).catch(() => {})
+            }
             sendJson(response, 200, { ok: true, report })
             return
           }
@@ -512,7 +632,7 @@ async function activeLibrary() {
 
       if (path === `${PREFIX}/backup/file`) {
         const name = url.searchParams.get('name') ?? ''
-        if (!/^dsh-workbench-backup-[0-9-]+\.zip$/.test(name)) {
+        if (!isExportName(name)) {
           fail(response, 400, 'invalid-name', '迁移包名称不合法')
           return
         }
@@ -525,7 +645,20 @@ async function activeLibrary() {
         return
       }
 
-      if (path === `${PREFIX}/library-import`) {
+      if (path === `${PREFIX}/exports`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        sendJson(response, 200, {
+          ok: true,
+          items: await listExports(config.dataDir),
+          jobs: listJobs(),
+        })
+        return
+      }
+
+      if (path === `${PREFIX}/reveal`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
           return
@@ -533,32 +666,261 @@ async function activeLibrary() {
         const body = await mutationBody(request, response)
         if (body === undefined) return
         const record = body !== null && typeof body === 'object' ? body : {}
-        const source = typeof record.path === 'string' ? record.path : ''
-        if (source === '') {
-          fail(response, 400, 'invalid-path', '请选择书籍包 ZIP 文件')
+        const name = typeof record.name === 'string' ? record.name : ''
+        if (!isExportName(name)) {
+          fail(response, 400, 'invalid-name', '不是插件的打包文件')
           return
         }
-        const parts = typeof record.subdir === 'string'
-          ? record.subdir.split(/[\\/]+/).filter(part => part !== '' && part !== '.' && part !== '..')
-          : []
-        if (typeof record.subdir === 'string' && /(^|[\\/])\.\.([\\/]|$)/.test(record.subdir)) {
-          fail(response, 400, 'invalid-subdir', '子目录不能包含 ..')
+        const file = join(config.dataDir, 'backup', name)
+        const info = await stat(file).catch(() => null)
+        if (info === null || !info.isFile()) {
+          fail(response, 404, 'missing-file', '找不到这个文件')
           return
         }
         try {
-          const library = await activeLibrary()
-          const base = record.target === 'whole'
-            ? join(library.libraryDir, '整本')
-            : (typeof library.fragmentDir === 'string' && library.fragmentDir !== '' ? library.fragmentDir : join(library.libraryDir, '分片'))
-          const targetDir = parts.length === 0 ? base : join(base, ...parts)
-          const report = await importBookArchive({
-            archivePath: source,
-            targetDir,
-            strategy: typeof record.strategy === 'string' ? record.strategy : 'merge',
-          })
-          sendJson(response, 200, { ok: true, report })
+          const reveal = typeof options.revealFile === 'function' ? options.revealFile : revealInFileManager
+          reveal(file)
+          sendJson(response, 200, { ok: true })
         } catch (error) {
-          fail(response, 500, 'library-import-failed', String(error && error.message ? error.message : error))
+          fail(response, 500, 'reveal-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // Settings → 数据 shows where the space went. Reading is always safe and
+      // costs nothing at startup: the panel asks when it opens (DEC-0014 §4).
+      if (path === `${PREFIX}/storage`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        try {
+          const listed = libraries === undefined ? { items: [] } : await libraries.list().catch(() => ({ items: [] }))
+          const report = await measureStorage({
+            dataDir: config.dataDir,
+            libraries: Array.isArray(listed.items) ? listed.items : [],
+          })
+          sendJson(response, 200, { ok: true, ...report })
+        } catch (error) {
+          fail(response, 500, 'storage-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // Only what an interrupted run left behind: upload scratch, stale stage
+      // packages and a half-packed staging tree. A running packing job owns its
+      // staging tree, so nothing under `backup/` is touched while one runs.
+      if (path === `${PREFIX}/storage/clean`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        try {
+          const busy = listJobs().some(job => job.status === 'running')
+          const result = await cleanTemporary({ dataDir: config.dataDir, busy })
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 500, 'storage-clean-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // The user asked for a way off the packing history: a package is only a
+      // file in `backup/`, so deleting removes exactly that one file and the
+      // record disappears with it (the history is a directory scan).
+      if (path === `${PREFIX}/exports/delete`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const name = typeof record.name === 'string' ? record.name : ''
+        if (!isExportName(name)) {
+          fail(response, 400, 'invalid-name', '不是插件的打包文件')
+          return
+        }
+        const file = join(config.dataDir, 'backup', name)
+        const info = await stat(file).catch(() => null)
+        if (info === null || !info.isFile()) {
+          fail(response, 404, 'missing-file', '找不到这个打包文件')
+          return
+        }
+        try {
+          await rm(file, { force: true })
+          sendJson(response, 200, { ok: true })
+        } catch (error) {
+          fail(response, 500, 'export-delete-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // Opens one library's folder in the OS file manager. The card already
+      // shows the path; this saves the user from copying it into Explorer.
+      if (path === `${PREFIX}/library/reveal`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const wanted = typeof record.library === 'string' ? record.library : ''
+        const library = await requireLibrary(response)
+        if (library === null) return
+        let target = library
+        if (wanted !== '' && libraries !== undefined) {
+          const listed = await libraries.list().catch(() => ({ items: [] }))
+          const found = (Array.isArray(listed.items) ? listed.items : [])
+            .find(item => item !== null && typeof item === 'object' && item.id === wanted)
+          if (found !== undefined && typeof found.libraryDir === 'string' && found.libraryDir !== '') target = found
+        }
+        try {
+          const reveal = typeof options.revealDirectory === 'function' ? options.revealDirectory : revealDirectory
+          reveal(target.libraryDir)
+          sendJson(response, 200, { ok: true, path: target.libraryDir })
+        } catch (error) {
+          fail(response, 500, 'reveal-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // Retention is a button, not a timer: the three windows below only ever run
+      // because the user pressed one, and each one is explicit about its target.
+      if (path === `${PREFIX}/storage/prune`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const target = record.target === 'trash' || record.target === 'translation' || record.target === 'jobs' ? record.target : ''
+        const days = Math.max(1, Math.min(3650, Math.round(Number(record.days) || 90)))
+        if (target === '') {
+          fail(response, 400, 'bad-target', '未知的清理目标')
+          return
+        }
+        try {
+          let result = { removed: 0, bytes: 0 }
+          if (target === 'jobs') {
+            result = await pruneStaleJobs({ dataDir: config.dataDir, days })
+          } else if (target === 'translation') {
+            const listed = libraries === undefined ? { items: [] } : await libraries.list().catch(() => ({ items: [] }))
+            result = await pruneTranslationIdle({
+              libraries: Array.isArray(listed.items) ? listed.items : [],
+              days,
+            })
+          } else {
+            const library = await requireLibrary(response)
+            if (library === null) return
+            result = await pruneTrash({ library, days })
+          }
+          sendJson(response, 200, { ok: true, target, days, ...result })
+        } catch (error) {
+          fail(response, 500, 'storage-prune-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      // Content-duplicate report. Read-only by design: the PDFs belong to the
+      // user, so the panel only tells them which files are the same.
+      if (path === `${PREFIX}/duplicates`) {
+        if (request.method !== 'GET') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const library = await requireLibrary(response)
+        if (library === null) return
+        try {
+          sendJson(response, 200, { ok: true, ...(await scanDuplicates({ library })) })
+        } catch (error) {
+          fail(response, 500, 'duplicates-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/library-export`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const library = await requireLibrary(response)
+        if (library === null) return
+        const runExport = () => exportLibrary({
+          library,
+          dataDir: config.dataDir,
+          includeArtifacts: record.includeArtifacts === true,
+        })
+        if (record.async === true) {
+          try {
+            sendJson(response, 200, { ok: true, job: startExportJob('library-export', runExport) })
+          } catch (error) {
+            fail(response, 409, 'busy', String(error && error.message ? error.message : error))
+          }
+          return
+        }
+        try {
+          const result = await runExport()
+          sendJson(response, 200, {
+            ok: true,
+            ...result,
+            download: `${PREFIX}/backup/file?name=${encodeURIComponent(result.name)}`,
+          })
+        } catch (error) {
+          fail(response, 500, 'library-export-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/pdf-export`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const library = await requireLibrary(response)
+        if (library === null) return
+        const runExport = () => exportPdfPack({
+          library,
+          dataDir: config.dataDir,
+          scope: record.scope === 'fragments' || record.scope === 'whole' ? record.scope : 'both',
+        })
+        if (record.async === true) {
+          try {
+            sendJson(response, 200, { ok: true, job: startExportJob('pdf-pack', runExport) })
+          } catch (error) {
+            fail(response, 409, 'busy', String(error && error.message ? error.message : error))
+          }
+          return
+        }
+        try {
+          const result = await runExport()
+          sendJson(response, 200, { ok: true, ...result, download: `${PREFIX}/backup/file?name=${encodeURIComponent(result.name)}` })
+        } catch (error) {
+          fail(response, 500, 'pdf-export-failed', String(error && error.message ? error.message : error))
         }
         return
       }
@@ -591,6 +953,58 @@ async function activeLibrary() {
         } catch (error) {
           const code = error !== null && error !== undefined && error.code ? String(error.code) : 'install-failed'
           fail(response, code === 'unsupported' ? 400 : 502, code, String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/split`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        let body
+        try {
+          body = await readJson(request, 1024 * 1024)
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
+        const book = typeof body.book === 'string' ? body.book : ''
+        const ranges = typeof body.ranges === 'string' ? body.ranges : ''
+        if (book === '' || ranges === '') {
+          fail(response, 400, 'invalid-body', '缺少 book 或 ranges')
+          return
+        }
+        const current = await loadCatalog(config)
+        const row = Array.isArray(current.books) ? current.books.find(item => item.id === book) : undefined
+        if (row === undefined) {
+          fail(response, 404, 'unknown-book', '没有这本书')
+          return
+        }
+        const chapters = Array.isArray(row.chapters) ? row.chapters : []
+        const chapter = chapters.find(item => item.whole === true) ?? chapters[0]
+        if (chapter === undefined) {
+          fail(response, 404, 'unknown-chapter', '这本书没有可拆分的 PDF')
+          return
+        }
+        const library = await activeLibrary()
+        const source = chapterPdfPath(library, row, chapter)
+        if (source.ok !== true || typeof source.path !== 'string') {
+          fail(response, 404, 'not-found', '找不到整本 PDF')
+          return
+        }
+        // 输出按书库规则写进 `分片/<书id>/`，命名交给 split_pdf.py（与书库同一套规则）。
+        const outDir = join(library.fragmentDir, book)
+        try {
+          const output = await runTool('split_pdf.py', [source.path, outDir, '--id', book, '--ranges', ranges])
+          invalidateCatalog()
+          sendJson(response, 200, { ok: true, outDir, output })
+        } catch (error) {
+          fail(response, 502, 'split-failed', String(error && error.message ? error.message : error))
         }
         return
       }
@@ -698,6 +1112,8 @@ async function activeLibrary() {
             indexPath: '',
             covers: [],
             target: { workspaceId: null, cwd: '' },
+            // Read-only display value: the settings page shows it and never writes it.
+            dataDir: config.dataDir,
             environment: { ...detectEnvironment(), apiKey: (await deepseekKey()) !== '' },
             workspaces: typeof options.listWorkspaces === 'function' ? await options.listWorkspaces() : [],
             resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
@@ -762,6 +1178,8 @@ async function activeLibrary() {
           indexPath: library.indexPath,
           covers: await coverIds(library.coverDir),
           target,
+          // Read-only display value: the settings page shows it and never writes it.
+          dataDir: config.dataDir,
           environment: { ...detectEnvironment(), apiKey: (await deepseekKey()) !== '' },
           workspaces: typeof options.listWorkspaces === 'function' ? await options.listWorkspaces() : [],
           resumeRatio: typeof config.resumeRatio === 'number' ? config.resumeRatio : 0.85,
@@ -904,7 +1322,7 @@ async function activeLibrary() {
           let pageSize = null
           try {
             const layout = JSON.parse(await readFile(
-              join(config.dataDir, 'translation', String(book), code, `page-${String(page).padStart(3, '0')}.layout.json`),
+              join(chapterCacheDir(library, book, code), `page-${String(page).padStart(3, '0')}.layout.json`),
               'utf8'))
             const rows = layout !== null && typeof layout === 'object' && Array.isArray(layout.blocks) ? layout.blocks : []
             if (layout !== null && typeof layout === 'object' && layout.page !== null && typeof layout.page === 'object'
@@ -1074,7 +1492,18 @@ async function activeLibrary() {
         try {
           let removed = 0
           let skipped = 0
-          for (const root of [join(config.dataDir, 'translation'), join(config.dataDir, 'translate-jobs')]) {
+          // Every registered library owns its own cache now; the legacy global
+          // folder is still cleared so a pre-migration leftover cannot linger.
+          const roots = []
+          const listed = libraries === undefined ? { items: [] } : await libraries.list()
+          for (const item of Array.isArray(listed.items) ? listed.items : []) {
+            if (item !== null && typeof item === 'object' && typeof item.libraryDir === 'string' && item.libraryDir !== '') {
+              roots.push(translationRoot(item))
+            }
+          }
+          roots.push(legacyTranslationRoot(config.dataDir))
+          roots.push(join(config.dataDir, 'translate-jobs'))
+          for (const root of roots) {
             const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
             for (const entry of entries) {
               const target = join(root, entry.name)
@@ -1132,7 +1561,7 @@ async function activeLibrary() {
           }
           const jobId = await startChapterJob({
             jobDir: join(config.dataDir, 'translate-jobs'),
-            cacheDir: join(config.dataDir, 'translation', body.book, body.code),
+            cacheDir: chapterCacheDir(library, body.book, body.code),
             toolsDir: config.toolsDir,
             overlayPath: join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`),
             rasterScript: join(config.toolsDir, 'pdf_raster.py'),
@@ -1606,7 +2035,7 @@ async function activeLibrary() {
             fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
             return
           }
-          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          const cacheDir = chapterCacheDir(library, body.book, body.code)
           const outPath = join(dirname(source), `${basename(source, '.pdf')}_overlay.pdf`)
           await runTool(join(config.toolsDir, 'rebuild_overlay.py'), [source, cacheDir, outPath, config.toolsDir],
             engineToolEnv(options))
@@ -1630,7 +2059,7 @@ async function activeLibrary() {
             fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
             return
           }
-          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          const cacheDir = chapterCacheDir(library, body.book, body.code)
           let pages = []
           try {
             pages = (await readdir(cacheDir)).filter(name => /^page-\d+\.md$/.test(name))
@@ -1667,7 +2096,7 @@ async function activeLibrary() {
             fail(response, 404, 'missing-file', '找不到这一章的 PDF 文件')
             return
           }
-          const cacheDir = join(config.dataDir, 'translation', body.book, body.code)
+          const cacheDir = chapterCacheDir(library, body.book, body.code)
           let pages = []
           try {
             pages = (await readdir(cacheDir)).filter(name => /^page-\d+\.md$/.test(name)).sort()
@@ -1953,6 +2382,7 @@ async function activeLibrary() {
         await mkdir(trash, { recursive: true })
         const target = join(trash, `${Date.now()}-${book}`)
         await rename(source, target)
+        invalidateCatalog()
         sendJson(response, 200, { ok: true, path: target })
         return
       }
@@ -1984,67 +2414,251 @@ async function activeLibrary() {
         return
       }
 
-      if (path === `${PREFIX}/import`) {
+      // Empties one library's `回收站`. Deleting a book only moves it there, so
+      // the folder is the one place where user documents pile up; it is emptied
+      // only on an explicit, confirmed click.
+      if (path === `${PREFIX}/trash/empty`) {
         if (request.method !== 'POST') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
           return
         }
-        const wanted = basename(url.searchParams.get('name') ?? '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 160)
-        if (wanted === '' || !/\.(md|markdown|txt|pdf)$/i.test(wanted)) {
-          fail(response, 400, 'bad-name', '只接受 md / markdown / txt / pdf 文件')
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
           return
         }
-        const library = await activeLibrary()
-        const dir = join(library.libraryDir, '整本')
-        await mkdir(dir, { recursive: true })
-        const chunks = []
-        let total = 0
-        for await (const chunk of request) {
-          total += chunk.length
-          if (total > 64 * 1024 * 1024) {
-            fail(response, 413, 'too-large', '单个文件不能超过 64 MB')
-            return
-          }
-          chunks.push(chunk)
-        }
-        const extension = extname(wanted).toLowerCase()
-        const stem = wanted.slice(0, wanted.length - extension.length)
-        const unique = async () => {
-          let target = join(dir, `${stem}.pdf`)
-          for (let n = 2; n < 1000; n += 1) {
-            try {
-              await stat(target)
-            } catch {
-              return target
-            }
-            target = join(dir, `${stem}-${n}.pdf`)
-          }
-          return target
-        }
-        if (extension === '.pdf') {
-          const target = await unique()
-          await writeFile(target, Buffer.concat(chunks))
-          sendJson(response, 200, { ok: true, path: target, pdf: target, bytes: total })
-          return
-        }
-        if (options.md2texScript === undefined) {
-          fail(response, 503, 'render-unavailable', '导入 md 需要 Python 与 TeX Live（xelatex）')
-          return
-        }
-        const temporary = join(config.dataDir, 'tmp', `${Date.now()}-${wanted}`)
-        await mkdir(join(config.dataDir, 'tmp'), { recursive: true })
-        await writeFile(temporary, Buffer.concat(chunks))
-        const target = await unique()
+        const library = await requireLibrary(response)
+        if (library === null) return
         try {
-          await renderMarkdown(options.md2texScript, temporary, target, engineToolEnv(options))
+          const result = await emptyTrash(library)
+          sendJson(response, 200, { ok: true, ...result })
         } catch (error) {
-          fail(response, 503, 'render-failed', `渲染失败：${String(error && error.message ? error.message : error).slice(-400)}`)
-          return
+          fail(response, 500, 'trash-empty-failed', String(error && error.message ? error.message : error))
         }
-        sendJson(response, 200, { ok: true, path: target, pdf: target, bytes: total })
         return
       }
 
+      if (path === `${PREFIX}/imports`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const kind = url.searchParams.get('kind') ?? ''
+        const name = url.searchParams.get('name') ?? ''
+        const target = url.searchParams.get('target') === 'whole' ? 'whole' : 'fragment'
+        const wantedStrategy = url.searchParams.get('strategy') ?? ''
+        const strategy = wantedStrategy === 'overwrite' || wantedStrategy === 'skip' ? wantedStrategy : 'merge'
+        const subdir = url.searchParams.get('subdir') ?? ''
+        let received = null
+        try {
+          if (kind === 'pdf' || kind === 'md') {
+            const library = await requireLibrary(response)
+            if (library === null) return
+            const extension = extname(String(name)).toLowerCase()
+            // A whole-book PDF over the normal ceiling is allowed only when the
+            // user already accepted the "split it first" warning: the client
+            // sends allowLarge=1 after the second confirmation.
+            const allowLarge = kind === 'pdf' && url.searchParams.get('allowLarge') === '1'
+            const uploadLimit = allowLarge ? MAX_ARCHIVE_FILE_BYTES : MAX_UPLOAD_BYTES
+            received = await receiveUpload(request, {
+              dataDir: config.dataDir,
+              limit: uploadLimit,
+              extension: kind === 'pdf' ? '.pdf' : (['.md', '.markdown', '.txt'].includes(extension) ? extension : ''),
+            })
+            const report = await importSingle({
+              targetDir: join(library.libraryDir, '整本'),
+              dataDir: config.dataDir,
+              name,
+              kind,
+              sourcePath: received.path,
+              maxBytes: uploadLimit,
+              render: options.md2texScript === undefined
+                ? undefined
+                : (source, out) => renderMarkdown(options.md2texScript, source, out, engineToolEnv(options)),
+            })
+            received = null
+            invalidateCatalog()
+            const first = report.imported[0] ?? null
+            const duplicate = report.duplicates[0] ?? null
+            sendJson(response, 200, {
+              ok: true,
+              report,
+              ...(first === null ? {} : { path: first.path, pdf: first.path, bytes: first.bytes }),
+              ...(first === null && duplicate !== null
+                ? { path: join(report.targetDir, duplicate.existing), pdf: join(report.targetDir, duplicate.existing), bytes: 0, duplicate: true }
+                : {}),
+            })
+            return
+          }
+          if (kind === 'book-zip') {
+            const library = await requireLibrary(response)
+            if (library === null) return
+            if (/(^|[\\/])\.\.([\\/]|$)/.test(subdir)) {
+              fail(response, 400, 'invalid-subdir', '子目录不能包含 ..')
+              return
+            }
+            const parts = subdir.split(/[\\/]+/).filter(part => part !== '' && part !== '.' && part !== '..')
+            const base = target === 'whole'
+              ? join(library.libraryDir, '整本')
+              : (typeof library.fragmentDir === 'string' && library.fragmentDir !== '' ? library.fragmentDir : join(library.libraryDir, '分片'))
+            received = await receiveUpload(request, { dataDir: config.dataDir, limit: MAX_ARCHIVE_TOTAL_BYTES, extension: '.zip' })
+            const report = await importArchive({
+              archivePath: received.path,
+              targetDir: parts.length === 0 ? base : join(base, ...parts),
+              strategy,
+            })
+            invalidateCatalog()
+            sendJson(response, 200, { ok: true, report })
+            return
+          }
+          if (kind === 'migration') {
+            received = await receiveUpload(request, { dataDir: config.dataDir, limit: MAX_ARCHIVE_TOTAL_BYTES, extension: '.zip' })
+            await checkArchiveFile(received.path)
+            const verified = await readBackup(received.path)
+            const path = received.path
+            const bytes = received.bytes
+            // The client imports it next through /backup; that route deletes the file.
+            received = null
+            sendJson(response, 200, { ok: true, path, bytes, manifest: backupSummary(verified) })
+            return
+          }
+          fail(response, 400, 'bad-kind', '未知的导入类型（kind 应为 pdf / md / book-zip / migration）')
+        } catch (error) {
+          const code = error instanceof RejectError ? error.code : (kind === 'migration' ? 'bad-archive' : 'import-failed')
+          const status = error instanceof RejectError ? rejectStatus(code) : (kind === 'migration' ? 400 : 500)
+          fail(response, status, code, String(error && error.message ? error.message : error))
+        } finally {
+          if (received !== null) await rm(received.path, { force: true }).catch(() => {})
+        }
+        return
+      }
+
+      // Book-import wizard: stage each package once, inspect it, then apply the
+      // ticked books. Staging keeps the raw uploads out of the request that does
+      // the work, so a slow inspect cannot cut the upload short.
+      if (path === `${PREFIX}/imports/stage`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        const tmpDir = join(config.dataDir, 'tmp')
+        await mkdir(tmpDir, { recursive: true })
+        // Two hours are plenty to finish a wizard; older stage files are dead.
+        for (const name of await readdir(tmpDir).catch(() => [])) {
+          if (!/^stage-[0-9a-f-]{36}\.zip$/.test(name)) continue
+          const info = await stat(join(tmpDir, name)).catch(() => null)
+          if (info !== null && Date.now() - info.mtimeMs > 2 * 60 * 60 * 1000) {
+            await rm(join(tmpDir, name), { force: true }).catch(() => {})
+          }
+        }
+        let received = null
+        try {
+          received = await receiveUpload(request, { dataDir: config.dataDir, limit: MAX_ARCHIVE_TOTAL_BYTES, extension: '.zip' })
+          await checkArchiveFile(received.path)
+          const token = `stage-${randomUUID()}.zip`
+          await rename(received.path, join(tmpDir, token))
+          received = null
+          sendJson(response, 200, { ok: true, token })
+        } catch (error) {
+          const code = error instanceof RejectError ? error.code : 'stage-failed'
+          fail(response, error instanceof RejectError ? rejectStatus(code) : 400, code, String(error && error.message ? error.message : error))
+        } finally {
+          if (received !== null) await rm(received.path, { force: true }).catch(() => {})
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/book-import/inspect`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const library = await requireLibrary(response)
+        if (library === null) return
+        const pdfPath = stagedPath(record.pdf)
+        if (pdfPath === null) {
+          fail(response, 400, 'bad-package', '请先选择 PDF 包')
+          return
+        }
+        const notesPath = record.notes === undefined || record.notes === null || record.notes === '' ? null : stagedPath(record.notes)
+        if (notesPath === null && record.notes !== undefined && record.notes !== null && record.notes !== '') {
+          fail(response, 400, 'bad-notes', '笔记包无效，请重新选择')
+          return
+        }
+        if (await stat(pdfPath).catch(() => null) === null) {
+          fail(response, 404, 'missing-package', 'PDF 包已过期，请重新选择')
+          return
+        }
+        if (notesPath !== null && await stat(notesPath).catch(() => null) === null) {
+          fail(response, 404, 'missing-notes', '笔记包已过期，请重新选择')
+          return
+        }
+        try {
+          const result = await inspectBookPack({
+            archivePath: pdfPath,
+            ...(notesPath === null ? {} : { notesPath }),
+            libraryDir: library.libraryDir,
+          })
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 400, 'bad-package', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/book-import/apply`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        const body = await mutationBody(request, response)
+        if (body === undefined) return
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const library = await requireLibrary(response)
+        if (library === null) return
+        const pdfPath = stagedPath(record.pdf)
+        if (pdfPath === null) {
+          fail(response, 400, 'bad-package', '请先选择 PDF 包')
+          return
+        }
+        const notesPath = record.notes === undefined || record.notes === null || record.notes === '' ? null : stagedPath(record.notes)
+        if (notesPath === null && record.notes !== undefined && record.notes !== null && record.notes !== '') {
+          fail(response, 400, 'bad-notes', '笔记包无效，请重新选择')
+          return
+        }
+        try {
+          const result = await applyBookPack({
+            archivePath: pdfPath,
+            ...(notesPath === null ? {} : { notesPath }),
+            libraryDir: library.libraryDir,
+            selection: Array.isArray(record.books) ? record.books : [],
+          })
+          invalidateCatalog()
+          sendJson(response, 200, { ok: true, ...result })
+        } catch (error) {
+          fail(response, 500, 'book-import-failed', String(error && error.message ? error.message : error))
+        } finally {
+          await discardStage(pdfPath)
+          if (notesPath !== null) await discardStage(notesPath)
+        }
+        return
+      }
+
+      // One version of compatibility: the old browser-upload route forwards to
+      // the unified pipeline and keeps its response shape for older pages.
+      // `/import` and `/library-import` were the pre-v1.5 upload routes, kept one
+      // release as thin wrappers. The client has used `/imports` since v1.5 and
+      // the compatibility window is over: both routes are gone in this release.
       if (path === `${PREFIX}/samples`) {
         if (request.method !== 'GET') {
           fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
@@ -2093,6 +2707,7 @@ async function activeLibrary() {
             skipped += 1
           }
         }
+        invalidateCatalog()
         sendJson(response, 200, { ok: true, book: bookId, dir: target, copied, skipped })
         return
       }
@@ -2437,12 +3052,19 @@ async function activeLibrary() {
           return
         }
         for (const [extension, contentType] of Object.entries(COVER_TYPES)) {
+          const path = join((await activeLibrary()).coverDir, `${bookId}.${extension}`)
+          const info = await stat(path).catch(() => null)
+          if (info === null || !info.isFile()) continue
+          // Cover images repeat on every shelf render, so they get an entity tag
+          // and a short private cache instead of the server's usual `no-store`.
+          const etag = `"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`
+          if (sendNotModified(request, response, etag)) return
           try {
-            const body = await readFile(join((await activeLibrary()).coverDir, `${bookId}.${extension}`))
-            sendBytes(response, 200, body, contentType)
+            const body = await readFile(path)
+            sendBytes(response, 200, body, contentType, undefined, { etag, maxAge: 300 })
             return
           } catch {
-            // Try the next extension; a missing cover is normal.
+            // A cover that vanished between stat and read is simply absent.
           }
         }
         fail(response, 404, 'no-cover', '这本书没有自定义封面')

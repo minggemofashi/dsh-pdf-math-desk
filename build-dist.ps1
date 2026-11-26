@@ -47,6 +47,13 @@ foreach ($wrapper in @('tools\py.cmd', 'tools\node.cmd')) {
 $localTypst = Join-Path $pkg 'tools\typst'
 if (Test-Path $localTypst) { Remove-Item $localTypst -Recurse -Force }
 
+# Release cleanup: strip any dev-only marked blocks out of the copied client.js
+# and refuse debug leftovers (old ENV_GUIDE_ALWAYS switch, developer-mode
+# artifacts), then fail the build when the result does not parse.
+$guard = Join-Path $root 'scripts\prepare-release-client.mjs'
+& node $guard (Join-Path $pkg 'client.js')
+if ($LASTEXITCODE -ne 0) { throw '分发副本的调试遗留物清理失败，已中止打包' }
+
 $leaks = Get-ChildItem $pkg -Recurse -File -Include *.md, *.yml, *.yaml, *.json, *.js, *.mjs, *.py, *.cmd |
     Select-String -Pattern 'C:\\Users\\' -ErrorAction SilentlyContinue
 if ($leaks) {

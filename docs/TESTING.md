@@ -107,3 +107,19 @@
 ## 五、备注
 - 截图与路径均为本机示例；
 - 测试完成后可把快照导出为 OVA，发给其他人复现。
+
+
+## 成本基线（T-08，2026-11-26）
+
+- **启动（插件 apply 耗时）**：每次 DSH 启动由 `index.js` 往 `~/.dsh/pdfdesk/startup.json` 追加一条 `{at, applyMs, engine}`（保留最近 30 条）。测法：同一机器、同一 DSH 版本，插件**启用**与**禁用**各冷启动 3 次，取 `applyMs` 中位数；禁用时该文件不新增记录。
+- **客户端包**：`client.js` 1,080,918 B（`package.json` 的 `dsh.client.immediately = true`，每次启动都要加载与解析）；`vendor/katex` 约 273 KB，只在叠加层首个公式时加载。
+- **上下文 token**：章节会话的首条上下文读 `~/.dsh/pdfdesk/pressure.json` 里该会话的 `tokens`。2026-11-26 实测：最小 11,521、常见 20k–40k（window 1,000,000–1,048,576）；`sessionSeedText` 本身只有几百字符，成本主体是整章文本前缀（基础会话）。
+- **判定值（待拍板）**：`applyMs` ≤ 300；章节会话首条 ≤ 15,000 tokens；关闭方式 = DSH 插件管理整插件禁用、数据保留。
+
+
+## 成本基线（T-08，2026-11-26）
+
+- **启动（插件 apply 耗时）**：每次 DSH 启动由 `index.js` 往 `~/.dsh/pdfdesk/startup.json` 追加一条 `{at, applyMs, engine}`（保留最近 30 条）。测法：同一机器、同一 DSH 版本，插件**启用**与**禁用**各冷启动 3 次，取 `applyMs` 中位数；禁用时该文件不新增记录。
+- **客户端包**：`client.js` 1,080,918 B（`package.json` 的 `dsh.client.immediately = true`，每次启动都要加载与解析）；`vendor/katex` 约 273 KB，只在叠加层首个公式时加载。
+- **上下文 token**：章节会话的首条上下文读 `~/.dsh/pdfdesk/pressure.json` 里该会话的 `tokens`。2026-11-26 实测：最小 11,521、常见 20k–40k（window 1,000,000–1,048,576）；`sessionSeedText` 本身只有几百字符，成本主体是整章文本前缀（基础会话）。
+- **判定值（待拍板）**：`applyMs` ≤ 300；章节会话首条 ≤ 15,000 tokens；关闭方式 = DSH 插件管理整插件禁用、数据保留。

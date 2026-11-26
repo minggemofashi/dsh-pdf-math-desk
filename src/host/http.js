@@ -69,7 +69,7 @@ export function sendJson(response, status, payload) {
  * @param {string} [disposition] - optional `content-disposition` value.
  * @returns {void}
  */
-export function sendBytes(response, status, body, contentType, disposition) {
+export function sendBytes(response, status, body, contentType, disposition, cache) {
   if (response.writableEnded || response.destroyed) return
   const headers = {
     'content-type': contentType,
@@ -78,8 +78,35 @@ export function sendBytes(response, status, body, contentType, disposition) {
     'content-length': body.length,
   }
   if (disposition !== undefined) headers['content-disposition'] = disposition
+  // A small, rarely-changing file (a cover image) may be reused: without an
+  // entity tag the browser re-downloads it on every mount, because the default
+  // for this server is `no-store`.
+  if (cache !== undefined && typeof cache.etag === 'string' && cache.etag !== '') {
+    headers.etag = cache.etag
+    headers['cache-control'] = `private, max-age=${Number(cache.maxAge) || 300}`
+  }
   response.writeHead(status, headers)
   response.end(body)
+}
+
+/**
+ * Answer a conditional GET with `304 Not Modified` when the client already has
+ * this version, so a cached cover is not downloaded again.
+ * @param {import('node:http').IncomingMessage} request - inbound request.
+ * @param {import('node:http').ServerResponse} response - outbound response.
+ * @param {string} etag - current entity tag.
+ * @returns {boolean} true when a 304 was written (the caller must then stop).
+ */
+export function sendNotModified(request, response, etag) {
+  const header = request.headers['if-none-match']
+  if (typeof header !== 'string' || header === '') return false
+  const wanted = header.trim()
+  const matched = wanted === '*' || wanted.split(',').some(part => part.trim() === etag)
+  if (!matched) return false
+  if (response.writableEnded || response.destroyed) return true
+  response.writeHead(304, { etag, 'cache-control': 'private, max-age=300' })
+  response.end()
+  return true
 }
 
 /**

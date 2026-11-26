@@ -7,14 +7,22 @@
 
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { promisify } from 'node:util'
+import { createWriteStream } from 'node:fs'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { Writable } from 'node:stream'
+import { promisify } from 'node:util'
 import { dirname, join } from 'node:path'
 
-import { readZip, safeZipName, writeZip } from './zip.js'
+import { listZipEntries, pipeZipEntry, readZipEntryBuffer, safeZipName, writeZipFile, ZipError } from './zip.js'
 
 /** Version of the manifest schema. */
 export const BACKUP_FORMAT = 1
+
+/**
+ * Largest single entry a migration package may carry when it is read into
+ * memory; anything bigger is refused instead of buffered.
+ */
+export const MAX_BACKUP_ENTRY_BYTES = 512 * 1024 * 1024
 
 /** Plugin-state files that travel with a backup (never credentials). */
 export const PLUGIN_STATE_FILES = ['libraries.json', 'state.json', 'pending.json', 'links.json', 'pressure.json', 'shelves.json', 'qa-persona.md']
@@ -31,6 +39,27 @@ async function copyIfExists(source, target) {
   await mkdir(dirname(target), { recursive: true })
   await cp(source, target, { recursive: info.isDirectory() })
   return true
+}
+
+/**
+ * Copy one library's `.pdfdesk` without its translation cache: per-page caches
+ * are rebuildable and can be large, so a migration package never carries them
+ * (they now live inside the library, see DEC-0014 §5).
+ * @param {string} source - the library's `.pdfdesk` folder.
+ * @param {string} target - the staging destination.
+ * @returns {Promise<boolean>} whether anything was copied.
+ */
+async function copyLibraryData(source, target) {
+  const info = await stat(source).catch(() => null)
+  if (info === null || !info.isDirectory()) return false
+  await mkdir(target, { recursive: true })
+  let copied = false
+  for (const name of await readdir(source).catch(() => [])) {
+    if (name === 'translation') continue
+    await cp(join(source, name), join(target, name), { recursive: true })
+    copied = true
+  }
+  return copied
 }
 
 /**
@@ -76,7 +105,7 @@ export async function collectBackup(options) {
     for (const library of libraries) {
       if (library === null || typeof library !== 'object' || typeof library.libraryDir !== 'string') continue
       const id = safeZipName(String(library.id ?? 'library'))
-      const ok = await copyIfExists(join(library.libraryDir, '.pdfdesk'), join(root, 'libraries', id, '.pdfdesk'))
+      const ok = await copyLibraryData(join(library.libraryDir, '.pdfdesk'), join(root, 'libraries', id, '.pdfdesk'))
       if (ok) {
         included.libraryData.push(id)
         copied.push(`libraries/${id}/.pdfdesk`)
@@ -161,7 +190,7 @@ export async function walkFiles(root, base = '') {
 
 /**
  * Write `manifest.json` for a staging tree and return it.
- * @param {{ root: string, meta?: object }} options - staging root and extra fields (plugin version, machine, included items).
+ * @param {{ root: string, meta?: object, format?: number | string }} options - staging root, extra fields, and an optional format label (defaults to the migration backup format).
  * @returns {Promise<object>} the manifest.
  */
 export async function buildManifest(options) {
@@ -172,7 +201,7 @@ export async function buildManifest(options) {
     files.push({ path: name, bytes: bytes.length, sha256: sha256(bytes) })
   }
   const manifest = {
-    format: BACKUP_FORMAT,
+    format: options.format === undefined ? BACKUP_FORMAT : options.format,
     createdAt: Date.now(),
     ...(options.meta === undefined ? {} : options.meta),
     files,
@@ -231,38 +260,51 @@ async function packWithPython(options) {
 
 /**
  * Pack a staging tree into a ZIP, manifest first.
- * @param {{ root: string, outPath: string, compress?: boolean, meta?: object }} options - source tree and destination.
+ *
+ * Entries are described by path, never by bytes: Python's `zipfile` reads them
+ * from disk when it is available, and the Node fallback streams them through
+ * `writeZipFile`, so packing a staging tree never holds it in memory.
+ *
+ * @param {{ root: string, outPath: string, compress?: boolean, meta?: object, format?: number | string }} options - source tree, destination and the optional manifest format.
  * @returns {Promise<{ outPath: string, bytes: number, files: number }>} the archive.
  */
 export async function packDirectory(options) {
-  const manifest = await buildManifest({ root: options.root, meta: options.meta })
+  const manifest = await buildManifest({ root: options.root, meta: options.meta, format: options.format })
   const entries = [{ name: 'manifest.json', data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8') }]
-  for (const file of manifest.files) {
-    entries.push({ name: file.path, data: await readFile(join(options.root, file.path)) })
-  }
+  for (const file of manifest.files) entries.push({ name: file.path, path: join(options.root, file.path) })
   const python = await packWithPython({ root: options.root, outPath: options.outPath, compress: options.compress })
   if (python !== null) return { outPath: options.outPath, bytes: python.bytes, files: entries.length }
-  const bytes = writeZip({ entries, compress: options.compress !== false })
   await mkdir(dirname(options.outPath), { recursive: true })
   const temporary = `${options.outPath}.${process.pid}.tmp`
-  await writeFile(temporary, bytes)
-  await rename(temporary, options.outPath)
-  return { outPath: options.outPath, bytes: bytes.length, files: entries.length }
+  try {
+    const packed = await writeZipFile(temporary, { entries, compress: options.compress !== false })
+    await rename(temporary, options.outPath)
+    return { outPath: options.outPath, bytes: packed.bytes, files: packed.files }
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {})
+    throw error
+  }
+}
+
+/** A writable that keeps nothing; used to checksum an entry without buffering it. */
+function nullSink() {
+  return new Writable({ write(_chunk, _encoding, callback) { callback() } })
 }
 
 /**
- * Read a backup archive and verify every checksum before the caller touches it.
+ * List the archive and parse its manifest without buffering any file.
  * @param {string} archivePath - zip path.
- * @returns {Promise<{ manifest: object, entries: Map<string, Buffer> }>} verified content.
+ * @returns {Promise<{ manifest: object, listing: Array<object>, byName: Map<string, object> }>} the manifest and entry lookup.
  */
-export async function readBackup(archivePath) {
-  const bytes = await readFile(archivePath)
-  const entries = readZip(bytes)
-  const manifestBytes = entries.get('manifest.json')
-  if (manifestBytes === undefined) throw new Error('迁移包缺少 manifest.json')
+async function inspectBackup(archivePath) {
+  const listing = await listZipEntries(archivePath)
+  const byName = new Map(listing.map(entry => [entry.name, entry]))
+  const manifestEntry = byName.get('manifest.json')
+  if (manifestEntry === undefined) throw new Error('迁移包缺少 manifest.json')
+  const bytes = await readZipEntryBuffer(archivePath, manifestEntry, MAX_BACKUP_ENTRY_BYTES)
   let manifest
   try {
-    manifest = JSON.parse(manifestBytes.toString('utf8'))
+    manifest = JSON.parse(bytes.toString('utf8'))
   } catch {
     throw new Error('迁移包的 manifest.json 不是有效 JSON')
   }
@@ -270,18 +312,60 @@ export async function readBackup(archivePath) {
     throw new Error(`不支持的迁移包版本：${manifest === null ? '?' : manifest.format}`)
   }
   if (!Array.isArray(manifest.files)) throw new Error('迁移包 manifest 缺少文件清单')
+  return { manifest, listing, byName }
+}
+
+/**
+ * Compare every manifest record with what the archive actually contains.
+ * @param {object} manifest - parsed manifest.
+ * @param {Map<string, object>} byName - archive entries by name.
+ * @param {(name: string, entry: object) => Promise<{ sha256: string, bytes: number }>} measure - reads one entry, buffered or streamed.
+ * @returns {Promise<string[]>} one problem per mismatch, in manifest order.
+ */
+async function verifyManifestFiles(manifest, byName, measure) {
   const problems = []
   for (const file of manifest.files) {
     const name = safeZipName(file.path)
-    const data = entries.get(name)
-    if (data === undefined) {
+    const entry = byName.get(name)
+    if (entry === undefined) {
       problems.push(`缺少文件：${name}`)
       continue
     }
-    const actual = sha256(data)
-    if (file.sha256 !== undefined && actual !== file.sha256) problems.push(`校验失败：${name}`)
-    if (file.bytes !== undefined && data.length !== file.bytes) problems.push(`大小不符：${name}`)
+    let actual
+    try {
+      actual = await measure(name, entry)
+    } catch (error) {
+      if (!(error instanceof ZipError)) throw error
+      problems.push(`读取失败：${error.message}`)
+      continue
+    }
+    if (file.sha256 !== undefined && actual.sha256 !== file.sha256) problems.push(`校验失败：${name}`)
+    if (file.bytes !== undefined && actual.bytes !== file.bytes) problems.push(`大小不符：${name}`)
   }
+  return problems
+}
+
+/**
+ * Read a backup archive and verify every checksum before the caller touches it.
+ *
+ * The package is listed once and then read entry by entry through
+ * `readZipEntryBuffer`, so it is never held as a single buffer; a single entry
+ * above `MAX_BACKUP_ENTRY_BYTES` is refused with `ZipError` `too-large`. The
+ * returned shape stays the map-of-buffers callers already rely on.
+ *
+ * @param {string} archivePath - zip path.
+ * @returns {Promise<{ manifest: object, entries: Map<string, Buffer> }>} verified content.
+ */
+export async function readBackup(archivePath) {
+  const { manifest, listing, byName } = await inspectBackup(archivePath)
+  const entries = new Map()
+  for (const entry of listing) {
+    entries.set(entry.name, await readZipEntryBuffer(archivePath, entry, MAX_BACKUP_ENTRY_BYTES))
+  }
+  const problems = await verifyManifestFiles(manifest, byName, async name => {
+    const data = entries.get(name)
+    return { sha256: sha256(data), bytes: data.length }
+  })
   if (problems.length > 0) throw new Error(`迁移包校验失败：${problems.slice(0, 5).join('；')}`)
   return { manifest, entries }
 }
@@ -394,12 +478,44 @@ async function prunePreImports(backupDir, keep = 3) {
  * Import a verified archive with explicit conflict strategies. `merge` never
  * overwrites: an existing file keeps its place and the imported copy becomes
  * `<name>.imported-<ts>`. `overwrite` replaces after a pre-import snapshot.
+ *
+ * Every checksum is checked first through `pipeZipEntry` into a null sink, so a
+ * damaged package still changes nothing on disk; the write pass then streams one
+ * entry at a time into a temporary file beside its destination and renames it,
+ * comparing the streamed sha256 with the manifest again.
+ *
  * @param {{ archivePath: string, dataDir: string, dshHome?: string,
  *   libraryRoots?: Record<string, string>, strategy?: 'merge'|'overwrite'|'skip' }} options - archive and destinations.
  * @returns {Promise<object>} the import report.
  */
 export async function importBackup(options) {
-  const { manifest, entries } = await readBackup(options.archivePath)
+  const archivePath = options.archivePath
+  const { manifest, listing, byName } = await inspectBackup(archivePath)
+  // One ceiling for both sides: `readBackup` refuses an entry above this, so the
+  // import must refuse it too instead of streaming something inspect would reject.
+  const oversized = listing.find(entry => entry.size > MAX_BACKUP_ENTRY_BYTES || entry.compressedSize > MAX_BACKUP_ENTRY_BYTES)
+  if (oversized !== undefined) {
+    throw new ZipError('too-large', `迁移包里有超过 ${Math.round(MAX_BACKUP_ENTRY_BYTES / 1048576)} MB 的文件：${oversized.name}`)
+  }
+  const verified = new Set()
+  const problems = await verifyManifestFiles(manifest, byName, async (name, entry) => {
+    verified.add(name)
+    return pipeZipEntry(archivePath, entry, nullSink())
+  })
+  // The buffered reader inflated every entry before touching the disk, so a
+  // damaged extra entry aborted the import too. Keep that guarantee: entries the
+  // manifest never mentions are streamed once for integrity, not remembered.
+  for (const entry of listing) {
+    if (entry.name === 'manifest.json' || verified.has(entry.name)) continue
+    try {
+      await pipeZipEntry(archivePath, entry, nullSink())
+    } catch (error) {
+      if (!(error instanceof ZipError)) throw error
+      problems.push(`读取失败：${error.message}`)
+    }
+  }
+  if (problems.length > 0) throw new Error(`迁移包校验失败：${problems.slice(0, 5).join('；')}`)
+  const declared = new Map(manifest.files.map(file => [safeZipName(file.path), file]))
   const dataDir = options.dataDir
   const dshHome = typeof options.dshHome === 'string' && options.dshHome !== '' ? options.dshHome : dirname(dataDir)
   const libraryRoots = options.libraryRoots !== null && typeof options.libraryRoots === 'object' ? options.libraryRoots : {}
@@ -424,7 +540,32 @@ export async function importBackup(options) {
     await mkdir(dirname(copy), { recursive: true })
     await cp(target, copy, { recursive: true }).catch(() => {})
   }
-  for (const [name, bytes] of entries) {
+  /**
+   * Stream one entry to its final path: temporary sibling, checksum check
+   * against the manifest, then an atomic rename. The temporary file is always
+   * removed when anything goes wrong.
+   */
+  const place = async (entry, finalPath) => {
+    const directory = dirname(finalPath)
+    await mkdir(directory, { recursive: true })
+    const temporary = join(directory, `.import-${randomUUID()}.tmp`)
+    try {
+      const streamed = await pipeZipEntry(archivePath, entry, createWriteStream(temporary))
+      const expected = declared.get(entry.name)
+      if (expected !== undefined && expected.sha256 !== undefined && streamed.sha256 !== expected.sha256) {
+        throw new Error(`迁移包校验失败：${entry.name}（写入后 sha256 不符）`)
+      }
+      if (expected !== undefined && expected.bytes !== undefined && streamed.bytes !== expected.bytes) {
+        throw new Error(`迁移包校验失败：${entry.name}（写入后大小不符）`)
+      }
+      await rename(temporary, finalPath)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => {})
+      throw error
+    }
+  }
+  for (const entry of listing) {
+    const name = entry.name
     if (name === 'manifest.json') continue
     const target = destinationOf(name, { dataDir, dshHome, libraryRoots })
     if (target === null) {
@@ -438,14 +579,12 @@ export async function importBackup(options) {
     }
     if (exists !== null && strategy === 'merge') {
       const alternative = `${target}.imported-${stamp}`
-      await mkdir(dirname(alternative), { recursive: true })
-      await writeFile(alternative, bytes)
+      await place(entry, alternative)
       report.renamed.push(`${name} → ${alternative}`)
       continue
     }
     if (exists !== null && strategy === 'overwrite') await snapshot(target)
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, bytes)
+    await place(entry, target)
     report.imported.push(name)
   }
   const rewritten = await rewriteLibraryRoots({ dataDir, manifest, libraryRoots })

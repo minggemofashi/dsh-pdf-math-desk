@@ -9,7 +9,7 @@
  *
  * @module dsh-pdf-workbench/index-source
  */
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 /** A chapter code is `c` plus two or three digits; the title part is optional. */
@@ -489,6 +489,68 @@ async function scanWholeBooks(libraryDir, fragmentDir) {
  * @param {{ indexPath: string, fragmentDir: string, libraryDir?: string }} config - resolved paths.
  * @returns {Promise<{ source: 'index.json' | 'scan', indexIgnored: boolean, books: object[], skipped: object[], warnings: string[], problem: { code: string, message: string } | null }>} the catalog, how it was obtained, and any blocking problem.
  */
+/**
+ * Whether a book listed in `索引.json` still has files on disk.
+ *
+ * The index is a cache: deleting a book moves its folder or PDF into `回收站/`
+ * but no code rewrites the index, and the user can also delete files in
+ * Explorer. Trusting an entry without checking leaves a ghost book that the
+ * shelf lists and the split picker offers, but nothing can open.
+ * @param {object} config - resolved paths.
+ * @param {object} book - one index entry.
+ * @returns {Promise<boolean>} true when at least one layout is still present.
+ */
+async function bookStillPresent(config, book) {
+  if (book === null || typeof book !== 'object') return false
+  const libraryDir = config.libraryDir
+  if (typeof libraryDir !== 'string' || libraryDir === '') return true
+  const chapters = Array.isArray(book.chapters) ? book.chapters : []
+  const whole = chapters.find(chapter => chapter !== null && typeof chapter === 'object' && chapter.whole === true)
+  if (book.whole === true || whole !== undefined) {
+    const file = String((whole ?? {}).file ?? book.id ?? '').trim()
+    if (file === '') return false
+    for (const dir of [join(libraryDir, '整本'), libraryDir, join(libraryDir, '分片')]) {
+      try {
+        const info = await stat(join(dir, `${file}.pdf`))
+        if (info.isFile()) return true
+      } catch {
+        // try the next layout
+      }
+    }
+    // A whole entry may also be a folder of chapters that were split later.
+  }
+  const fragmentRoot = typeof config.fragmentDir === 'string' && config.fragmentDir !== ''
+    ? config.fragmentDir
+    : join(libraryDir, '分片')
+  const candidates = [book.dir, book.id]
+    .filter(value => typeof value === 'string' && value !== '' && !/[\\/]/.test(value))
+  for (const name of candidates) {
+    try {
+      const info = await stat(join(fragmentRoot, name))
+      if (info.isDirectory()) return true
+    } catch {
+      // try the next candidate
+    }
+  }
+  return false
+}
+
+/**
+ * Drop the index entries whose files are gone.
+ * @param {object} config - resolved paths.
+ * @param {object[]} books - index entries.
+ * @returns {Promise<{ books: object[], missing: number }>} what survived.
+ */
+async function dropMissingBooks(config, books) {
+  const kept = []
+  let missing = 0
+  for (const book of Array.isArray(books) ? books : []) {
+    if (await bookStillPresent(config, book)) kept.push(book)
+    else missing += 1
+  }
+  return { books: kept, missing }
+}
+
 export async function loadCatalog(config) {
   const fromIndex = await readIndexFile(config.indexPath)
   const scanned = await scanFragments(config.fragmentDir)
@@ -504,12 +566,20 @@ export async function loadCatalog(config) {
     ...(scanned.missing === true && whole.readable ? ['没有分片目录，只显示整本 PDF。'] : []),
   ]
   if (fromIndex.status === 'ok') {
+    // The index may name books that are no longer on disk (trashed or deleted in
+    // Explorer). Verifying costs one stat per book and stops ghost entries from
+    // reaching the shelf and the split picker.
+    const verified = await dropMissingBooks(config, fromIndex.books)
     return {
       source: 'index.json',
       indexIgnored: false,
-      books: assignUniqueIds([...fromIndex.books, ...whole.books]),
+      books: assignUniqueIds([...verified.books, ...whole.books]),
       skipped: scanned.skipped,
-      warnings: [...fromIndex.warnings, ...warnings],
+      warnings: [
+        ...fromIndex.warnings,
+        ...(verified.missing > 0 ? [`索引.json 里有 ${verified.missing} 本已经不存在的书，已忽略；重新扫描书库可清理。`] : []),
+        ...warnings,
+      ],
       problem: null,
     }
   }
