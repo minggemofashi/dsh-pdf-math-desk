@@ -805,11 +805,179 @@
 - 报告：`docs/reviews/T-20261124-10.md`（Round 1）· `docs/tests/T-20261124-10.md`（Round 1）
 - 发布规模：patch
 
+## 2026-11-27 拆分路由修复（用户报告）
+
+- 用户报告：拆分工具里“明明有书”，点「开始拆分」仍提示「没有这本书」；F12 里 `POST /pdfdesk/split` 返回 404。活动书库与插件配置的库（profile 未配置时是默认的 `~/数学书库`）不是同一个，后者没有 `分片/`、`整本/`。
+- 根因①（404 的直接原因）：`src/host/routes.js` 的 `/split` 用 `loadCatalog(config)` 查书，`config` 是启动时的默认库；书架/拆分下拉来自 `catalog()`（活动书库）。两者不是同一个库时，任何书都查不到，所以“有书也提示没有这本书”。修法：改用 `catalog(true)`（活动书库、强制重扫）。
+- 根因②（修掉 ① 后的下一个失败）：`runTool('split_pdf.py', …)` 用相对脚本名；Host 进程 cwd 是工作区根，Python 报 `can't open file '…\split_pdf.py'`（`runTool` 会把这类失败吞成「没有可用的 Python」）。修法：`runTool(join(config.toolsDir, 'split_pdf.py'), …)`，与导出/叠加等其它工具调用一致。
+- 改动：仅 `src/host/routes.js`（2 处 + 3 行注释）；未动 `/pdfdesk/*` 路由形状、配置结构、数据 schema、locale。
+- 验证（exit 0）：新增 `.dsh-scratch/split-active-library-test.mjs`（9 条：默认库与活动库分离 → `/imports` 导入进活动库 → bootstrap 能看到书 → `/split` 200 → 分片写进活动库；默认库无写入）；该脚本要 spawn Python，workspace-write 下 `spawn EPERM`，用 danger-full-access 跑；`split-ui-test`（断言更新为绝对工具路径 + 活动书库目录）、`host-test`、`split-import-test`、`split-entries-test`、`ghost-book-test`、`routes-e2e-test`、`base-route-test`、`empty-library-test`、`loose-books-test`、`book-wizard-test`、`imports-test` 全过；`node --check` client/index/全部 host 模块 0；`check-keys`、`check-deps` 0。
+- 未覆盖 / 需用户手测：真实 DSH 重启后，在真实书库任选一本整本书点「开始拆分」，确认缩略图、开始拆分、拆分后书库刷新的完整链路；未改 `client.js`，拆分面板视觉与交互不变。
+- 同批修复（用户 2026-11-27 明确要求）：`/render`、`/trash-book` 改用活动书库目录；`runTool` 在解释器存在但脚本失败时回报真实 stderr，不再吞成「没有可用的 Python」。详见下一节。
+- 状态：待用户验收
+
+## 2026-11-27 活动书库路由补齐 + 工具错误（用户报告）
+
+- 用户引用上一轮“同类未修”后要求修复。
+- `/render`：`loadCatalog(config)` → `catalog()`；并修正 `resolveChapter` 的返回判断（它返回 `{ok:false}` 而不是 `null`，旧代码会把失败当成章继续去查产物文件，把“书/章不存在”误报成“文件不存在”）。
+- `/trash-book`：`loadCatalog(config)` → `catalog()`，书 id 与目录名不同时也能按活动书库的 `row.dir` 找到并移走。
+- `runTool`：保留 `python`→`py` 回退；只有全部候选都 ENOENT 才报「没有可用的 Python」，否则把最后一次真实 stderr（截 2000 字）抛给路由。
+- 验证（exit 0）：新增 `.dsh-scratch/active-library-routes-test.mjs` 9 条（活动库与默认库分离；render 到 missing-file 而非 no-chapter；未知书仍 no-chapter；split 非法范围返回“页码范围超出文档”而不是“没有可用的 Python”；trash 按目录名移走并进回收站）；`split-active-library-test`、`split-ui-test`、`split-import-test`、`split-entries-test`、`host-test`、`routes-e2e-test`、`base-route-test`、`empty-library-test`、`loose-books-test`、`book-wizard-test`、`imports-test`、`question-seed-test`、`question-ui-test`、`questions-test`、`ai-mode-test`、`ai-session-route-test`、`chapter-sessions-test` 全过；`node --check` client/index/全部 host 模块 0；`check-keys`、`check-deps` 0。
+- 未覆盖 / 需用户手测：真实书库里的「产物转 PDF」（render 成功路径需要真实排版引擎）、删除一本目录名与 id 不同的书；`runTool` 的 `py` 回退在 Windows Store Python 别名环境下未实测。
+- 状态：待用户验收
+
+## 2026-11-27 疑问标记对 AI 不可见（用户报告）
+
+- 用户报告：使用「疑问」功能后问「看到疑问一」，AI 在章节正文、`产物\...\c18\` 里搜不到，回「没有标着疑问一的东西，这个编号应该是你自己记的」。实际标记在 `<书库>\.pdfdesk\questions\卓里奇数分二\c18.json`（疑问 1，第 13 页）。
+- 根因：疑问标记只存隐藏的 `.pdfdesk/questions`；会话 seed 只给书库/书目录/PDF/产物路径，没有标记列表；右侧预览新建时注入的 `看到疑问：<名称>` 也没有页码。AI 的 grep 看不到隐藏目录，正文/产物里又没有这个词，于是把标记当成用户虚构的编号。
+- 修法（`client.js`）：新增 `questionsSeedText` / `chapterQuestionsBrief`，新会话与恢复空白会话的 seed 增加本章疑问标记（名称 + 页码）；新增 `question-crop` / `question-crops` Host 路由，把每个标记的 `{page, rect}` 渲染成**无损 WebP**，seed 带图片绝对路径；右侧预览新建疑问时先截图，注入行带 `图片（框选区域）：<path>` 和 `请先 read_image` 指令。通用会话仍只给地址，不塞章节标记。
+- 验证（exit 0）：`question-seed-test` 13 条（空列表、缺页码、单/多标记、图片路径、真实 `readQuestions` 存取、seed 接线、注入行页码）；`question-ui-test`、`questions-test`、`ai-mode-test`、`ai-session-route-test`、`chapter-sessions-test`、`host-test`、`split-ui-test`、`split-active-library-test`、`question-crop-test`（单个/批量截图、真实 WebP、越界失败）全过；`node --check` client/index/全部 host 模块 0；`check-keys`、`check-deps` 0。
+- 未覆盖 / 需用户手测：真实 c18 的「疑问 1」在第 13 页；已用 `crop_question.py` 对真实 PDF 渲染出 1401×349 的**无损 WebP（84 KB；同图 PNG 167 KB）**，肉眼确认正是「命题…完备的充要条件」那一段。重启后新建疑问或从右侧「疑问跳转」选已有疑问，确认注入行带图片路径且 AI 会 `read_image`。**已经开过的会话**若没注入过图片，需重新选一次疑问或新开会话；seed 在创建时固定。
+- 已知无关失败：`.dsh-scratch/session-seed-test.mjs` 在 v1.5.0 删掉 `WHOLE_CHAPTER_LINE` 后未更新，测试自身过期（并非本次改动引入）。
+- 状态：待用户验收
+
+## 2026-11-27 右侧预览疑问工具无效（用户报告）
+
+- 用户报告：右侧预览点疑问框后光标不变、不能在 PDF 上框选；并指出页码实际与显示不一致。
+- 根因①：疑问层用 `displayPage`（翻译件页数不足时 `min(count, page)` 的 clamp 结果）作为过滤/落盘页号；标注用章节页 `page`。两者不一致时，右侧显示页、工具栏页码和标记归属页错位，疑问层可能落在不是用户正在看的那一页，表现为光标不变、拖不出框。
+- 根因②：右侧预览在 `tool === 'question'` 时仍挂载整页 `editLayer`（`md-annot-edit`），它的 `editDown` 对 question 也执行 `preventDefault/stopPropagation`；主阅读器早已把 question 排除在编辑层外。不同 WebView/缩放下不能依赖层叠顺序来绕开它，已按主阅读器移除。
+- 修法（`client.js`）：`editLayer` 条件加 `tool === 'question'`；`createQuestion` 的 `page` 改用章节页 `page`；`questionLayer` 过滤改用 `page`。`PdfViewer` 仍用 `displayPage` 渲染，`overlayPage` 仍为 `displayPage`。
+- 验证（exit 0）：新增 `.dsh-scratch/side-question-tool-test.mjs` 7 条；`question-ui-test`、`questions-test`、`question-seed-test`、`ai-mode-test`、`ai-session-route-test`、`chapter-sessions-test`、`node --check client.js` 全过。
+- 未覆盖 / 需用户手测：右侧预览单页/连续、源文件/翻译件、页码一致/不一致四种组合下点疑问框 → 光标变十字 → 拖出框 → 保存 → 主阅读器同页出现；以及右侧已有疑问的拖动/缩放/右键删除。无头环境无法模拟真实指针拖拽，需桌面手测。
+- 状态：待用户验收
+
+## 2026-11-27 右侧预览页码差一页（用户报告）
+
+- 用户报告：右侧预览页码乱飘，总定位到上一页/下一页。
+- 根因：连续模式靠 `ReaderPage` 的 `IntersectionObserver` 50% 可见比例发布页码；页面高过视口时，下一页刚过半就报下一页，而视口顶部还在上一页。主阅读器已改用“视口顶部 + 24px 所在页”，右侧仍用 50% 规则，差一页。
+- 修法（`client.js`）：右侧不再把 `onVisible` 交给观察者；新增连续模式滚动监听，按与主阅读器相同的“视口顶部 + 24px”规则发布 `reportChapterPage`，180 ms 去抖，程序化滚动（`jumping`）期间不发布。双语右栏保留观察者规则（它有自己的列）。
+- 验证（exit 0）：新增 `.dsh-scratch/side-page-drift-test.mjs` 9 条；`question-ui-test`、`questions-test`、`question-seed-test`、`side-question-tool-test`、`host-test`、`split-ui-test`、`check-keys`、`check-deps` 全过；`node --check client.js` 0。
+- 未覆盖 / 需手测：右侧预览单页/连续、源文件/翻译件、滚动/翻页/点疑问跳转，确认页码与视口顶部页一致，不再差一页。无头环境无法模拟真实滚动。
+- 状态：待用户验收
+
+## 2026-11-27 拆分完成后的两个选择（用户需求）
+
+- 用户要求：整本拆完后询问「是否移除整本形式的书？」与「是否打开拆分后的书？」并让功能真实可用。
+- 客户端（`client.js`）：`SplitDialog` 成功后不再直接关面板，改为保留 `splitResult` 并弹出 `SplitResultDialog`；两个复选框（移除整本默认不勾、打开拆分后的书默认勾）+「完成 / 以后再说」；移除调用 `POST /pdfdesk/trash-book { book, file, whole: true }`，成功后 `reload()`；打开调用 `openBook(book.id)` 进入章节列表。
+- Host（`routes.js`）：`/trash-book` 新增可选 `whole: true` + `file`；只在 `整本/`、库根、`分片/` 里找**单个** `<file>.pdf` 并移进 `回收站`，绝不碰同名的 `分片/<书id>/` 目录；`file` 缺省回退书 id；移动后 `invalidateCatalog()`。
+- 验证（exit 0）：新增 `.dsh-scratch/split-result-route-test.mjs` 7 条（`book` 为 `id@hash` 时按 `file` 找到原 PDF；整本移走、同名分片保留；重复移除 404；缺 file 回退）；新增 `.dsh-scratch/split-result-ui-test.mjs` 14 条（两个问题、实际动作、默认值、中英键）；`split-ui`、`split-import`、`split-entries`、`ghost-book`、`host-test`、`routes-e2e`、`active-library-routes`、`check-keys`、`check-deps` 全过。
+- 未覆盖 / 需手测：真实整本拆分后两个复选框的实际效果；移除后回收站可恢复；打开后章节列表出现；无头环境无法点真实弹窗。
+- 状态：待用户验收
+
+## 2026-11-27 疑问框选区域截图给 AI（用户需求）
+
+- 用户澄清：不要“给疑问起问题名”的功能，要 AI 精确看到被框住的地方。
+- 做法：Host 新增 `tools/crop_question.py`（PyMuPDF 渲染 + Pillow 编码为无损 WebP）和 `/pdfdesk/question-crop`（单个）、`/pdfdesk/question-crops`（批量）路由；图片存 `<书库>/.pdfdesk/questions/<书>/<章>/crops/<疑问id>.webp`。
+- 新建疑问：右侧预览先调 `/question-crop` 截取框选区域，再注入 `看到疑问：名称（第 N 页）\n图片（框选区域）：<绝对路径>\n请先 read_image 这张图片…`。
+- 已有疑问：从右侧「疑问跳转」选中某个疑问时会补截图并注入；新会话 seed 会批量给所有疑问补图（最多 40 个，缓存复用）。
+- 验证（exit 0）：`question-crop-test` 8 条（单个 200、写入 crops、.webp、真实 WebP、批量包含已有疑问、批量落盘、越界失败）；`question-seed-test`（seed 带图片路径）、`question-ui-test`、`side-question-tool-test`、`side-page-drift-test`、`split-result-ui`、`check-keys`、`check-deps`、`node --check` 全过。
+- 已用真实 c18「疑问 1」验证：`crop_question.py` 输出 1401×349 无损 WebP（84 KB；同图 PNG 167 KB），内容正是第 13 页「命题…完备的充要条件」那一段。
+- 未覆盖 / 需手测：重启后新建疑问 → 注入行带图片路径 → AI 调 `read_image` 能读到；已有疑问从「疑问跳转」选一次 → 当前会话注入；新会话 seed 的图片路径；翻译件/旋转页的框选坐标（当前按源 PDF 页面渲染，旋转页未单测）。
+- 状态：待用户验收
+
+## 2026-11-27 拆分提示：手动拆分仍属整本（用户需求）
+
+- 用户要求：给拆分增加提示——手动拆开的文件仍属于整本，只有在拆分会话里处理之后才有章节名和分片显示。
+- 文案（中英各一条，`splitStaysWhole`）：显示在书库「拆分会话」卡片和「拆分与命名」指南；未改任何拆分/目录/会话逻辑。
+- 验证（exit 0）：`check-keys`、`split-ui-test`（新增 3 条：中英文案、两处显示）、`node --check client.js` 全过。
+- 状态：待用户验收
+
+## 2026-11-27 书库使用提示：删除 PDF（用户需求）
+
+- 用户要求：在书库页的「使用提示」里写清楚如何删除 PDF。
+- 文案（中英各一条，`tipsDelete`）：显示在书库/书本页底部的「使用提示」详情；路径为 单击书卡选中 →「隐藏所选」→ 打开「隐藏书籍」→ 选中该书 →「删除所选（移入回收站）」；彻底删除去 设置 → 数据 → 清空回收站。
+- 未改删除逻辑；只补可发现性。
+- 验证（exit 0）：`check-keys`、新增 `.dsh-scratch/library-tips-test.mjs` 10 条、`node --check client.js` 全过。
+- 状态：待用户验收
+
+## 2026-11-27 拆分结果回到书架 + 导入拆分记忆 + 右侧工具栏让开滚动条 + 连续模式远滚空白
+
+- 用户报告四事：拆分后的 PDF 不出现在书架；导入后的「是否拆分」要能记住；右侧竖排工具栏压住滚动条；连续模式下滑过多后一片空白（主阅读器与右侧预览都有）。
+- **拆分不出现在书架**：根因是旧版 `/pdfdesk/trash-book` 忽略 `whole`，在「拆分完成 → 移除整本形式的书」时把同名的 `分片/<书id>/` 目录移进回收站，整本 PDF 却留在原地；目录没了，书架自然只剩整本。现场：`回收站/1795744134213-Abstract…`（23 个分片）、`1795745088343`、`1795745114557-Asymptotic…` 全是拆分产物，`分片/` 里没有同名目录。Host 修复（`whole:true` + `file` 只移原始整本 PDF）前一会话已落码，但当时运行的 Host 是 08:40 起动的旧模块。本次复核该修复（`split-result-route-test` 7 条 + 新增 `split-catalog-flow-test` 16 条），把被误删的 Abstract 拆分目录移回 `分片/`（Asymptotic 已在 10:21 重新拆分，未重复恢复）；「打开拆分后的书」改为按目录名解析分片书，不再打开整本。
+- **导入后是否拆分带记忆**：`pdfdesk:import-split` 存 `ask|split|later`；对话框新增「记住这个选择」，选「现在拆分」→ 以后导入直接开拆分面板，选「以后再说」→ 不再弹窗；设置 → 阅读新增「导入后是否拆分」下拉，可改回每次询问。中英文案各 5 条。
+- **右侧工具栏压滚动条**：`.md-rail-wrap/.md-rail-tab[data-side=right]` 内移 20px（Windows 原生滚动条 17px），面板右距 28→48，右侧预览阅读区 padding-right 40→48；主阅读器 58px 不变。栅格断言见 `rail-scrollbar-test`；本会话沙箱禁止 Chromium（mojo 拒绝访问），未生成截图，需重启后手测。
+- **连续模式远滚空白**：两个叠加根因——(1) 挂载窗口 ±12 外的幽灵槽只有 240px，窗口移动时离开窗口的页塌陷，把列高拉走几千像素；(2) 窗口只跟已挂载页的 observer 报告走，滚动条拖拽/甩动落到带外后没有任何页报告，窗口永不跟。修法：幽灵槽按已量到的真实页高预留（`pageHeightCache` + 量到后触发重渲）；连续列在视口离开挂载带时按“顶边上方/下方”的页数发布目标页（`onFollow`，右侧预览经 `reportSide` 接住）；翻页/切模式/缩放这类程序化滚动期间用 `isSettling` 静默。
+- 验证（exit 0）：`node --check` client/index/全部 host 模块；`check-keys`、`check-deps`、`host-test`；新增 `continuous-far-scroll-test`（12+3）、`import-split-memory-test`（14+3）、`rail-scrollbar-test`（7+反证）、`split-catalog-flow-test`（16）、`split-after-import-test`（环境限制，见下）；`split-ui`、`split-result-ui`（按新解析改断言）、`split-result-route`、`continuous-preload`、`continuous-page-indicator`、`ghost-book`、`library-tips` 全过。
+- 环境限制：本会话沙箱内 Node 子进程管道被拒（`spawn EPERM`），`split-active-library-test`、`active-library-routes-test` 中真正执行 `split_pdf.py` 的两条断言无法在会话内跑；Chromium 无法启动（mojo 命名管道拒绝），UI 截图改由栅格断言 + 手测覆盖。
+- 未覆盖 / 需用户手测：重启 DSH 后——(1) 书架出现 Abstract（23 章）与 Asymptotic（11 章）两本分片书；(2) 导入一本 PDF，勾「记住这个选择」选一次，再导入确认不再按原样询问、设置项可恢复；(3) 左右两种工具栏位置下拖动主阅读器与右侧预览的滚动条；(4) 连续模式用滚动条一路拖到底/顶、滚轮连甩，确认不再空白。
+- 状态：待用户验收
+
+## 2026-11-27 整本显示按书设置 + 拆分出的书归入「未按命名拆分」
+
+- 用户要求：(1) 整本是否显示要能对「选中的书」单独设置，入口和「隐藏所选」同位置，避免一开整本书总开关就冒出一堆重复卡片；**全局「整本书」开关保留**。(2) 拆分后的书应归到「未按命名拆分」（用户先写「未重命名的书」，随后明确为「未按拆分命名」）。
+- **修正（同日第二轮）**：第一版做成「不显示整本」黑名单被用户否决——一旦隐藏就选不中，没法改回来；且「隐藏书籍」里的书不应再被整本/未按命名开关过滤。改成**白名单**：默认跟随全局开关，选中的书可设「一直显示整本」，卡片始终可见、随时可取消。
+- **整本按书显示（白名单）**：`pdfdesk:whole-always:<书库id>` 存 base id 列表（视图偏好，localStorage，**不动 `shelves.json` 的 hidden 结构**）。选中后工具条「隐藏所选」右侧出现「一直显示整本 / 取消一直显示」：整本卡与分片卡经 `wholeFormKey`（整本取自身 id、分片取 `dir`，都去掉 `@hash` 后缀）归一到同一个 key；选中里没有整本 PDF 的书时按钮置灰。全局「整本书显示/隐藏」只管未被固定的整本（`(n)` 也按这个数）；切换行在有固定项时多一个「取消固定整本（{n}）」全部清除。
+- **隐藏书籍页永远全部显示**：`group === 'hidden'` 时跳过整本/未按命名两个过滤器，并隐藏那排开关（那一页是你主动去的地方，放进去的书不该再被开关藏掉）。
+- **拆分后归入未按命名拆分**：`src/host/index-source.js` 新增占位标题判定 `UNRENAMED_TITLE = /^(?:未命名|untitled)$/i`；一本分片书的每一章都还是占位标题 ⇒ `loose: true`（`bookRow` 接受书级 loose），即落入书架默认隐藏的「未按命名拆分」开关。章名有真实标题、或只改了一部分的书不受影响；切分工具按书签命名（`--bookmarks`）的书也照旧正常显示。
+- 验证（exit 0）：`shelf-whole-form-test` 23 条（白名单/隐藏页/置灰，含 pin、hidden-bypass、toggle、reset、disable 五条反证）、`split-unrenamed-loose-test` 9 条（真实 PDF 目录：全占位/已命名/只改一章/英文 Untitled）；`loose-books-test`、`empty-library-test`、`ghost-book-test`、`library-tips-test`、`split-*`、`host-test`、`routes-e2e-test`、连续模式三套、`check-keys`、`check-deps`、`node --check` client/index/全部 host 模块全过。
+- 另：真实书库现有 4 本分片书因章名仍是「未命名」被判为未按命名（Abstract 23、Asymptotic 11、do Carmo 8、ppt 22——ppt 原本就是 loose）；10:42/10:44 的「移除整本」已只移动 `.pdf` 到回收站、分片目录保留，说明上一轮 Host 修复在真机生效。
+- 未覆盖 / 需用户手测：重启 DSH 后——(1) 选中一本已拆分的书（或它的整本卡）→「一直显示整本」→ 关掉整本书总开关，确认它仍在；再选中它「取消一直显示」后随总开关消失；「取消固定整本（n）」清空。(2) 打开「隐藏书籍」，确认里面的整本/未命名书都显示、没有被开关藏掉。(3) 新拆一本书，确认它出现在「未按命名拆分」开关下而不是主书架；在拆分会话里改名后回到主书架。
+- 状态：待用户验收
+
+## 2026-11-27 拆分面板页码跳转 + 加入书架 + 书架内添加 PDF
+
+- 用户要求：(1) 拆分面板右侧「拆分结果」那行的页码可点击跳转（先问效果，用户选：滚到该页 + 短暂高亮）；(2) 选中书后除「新建书架」外还能「加入书架」；(3) 自定义书架内部也要有外面书库页同款「添加 PDF」（用户选：顶部常驻开关，按书架记忆；书架内导入自动加入当前书架）。
+- **拆分面板页码跳转**：`SplitDialog` 新增 `jumpToPage(number)`——夹到 1..总页数，按 `attach` 里的画布节点算偏移，`scrollTo({ behavior: 'smooth' })` 到该页顶部，`flashPage` 状态让该页描边 1.2 秒后自动消失；时长期间再点会重置计时器，卸载时清计时器。范围行改成「每个页码一个按钮」（单页范围也只有一个按钮），`splitJumpTo` 提供 `跳到第 {n} 页` 的无障碍标题。不动任何切点。
+- **加入书架**：新增 `ShelfPickDialog`（复用 `md-picker-list/md-picker-row`），列出现有书架及各自本数；选中工具条「新建书架」右侧加「加入书架」，没有书架时置灰并在标题说明，隐藏书籍页不提供。加入时按 `Set` 去重，只把真正新增的书报进提示，已全在书架里则提示「已经有这些书」，成功后关闭选择器并清空选中。
+- **书架内添加 PDF**：`Shelf.importTile` 从「仅主书架」改为「主书架，或开关打开的自定义书架」；顶部面包屑行右端加常驻开关「添加 PDF：开/关」（`aria-pressed`，按书架记忆，存 `pdfdesk:shelf-add-pdf-off:<书库id>`）；空书架的空态也给同一个添加入口。书架内导入成功后把新书 id（文件 stem）并入当前书架（文件本身仍落 `整本\`），重复导入同一个文件也会并入；隐藏书籍页不提供该卡片。
+- 验证（exit 0）：新增 `split-jump-test`（16 条 + 3 条反证）、`shelf-add-to-test`（16 条 + 3 条反证）、`shelf-add-pdf-test`（18 条 + 3 条反证）；`split-ui`、`split-result-*`、`shelf-whole-form`、`split-unrenamed-loose`、`loose-books`、`empty-library`、`ghost-book`、`library-tips`、`import-split-memory`、`rail-scrollbar`、连续模式三套、`host-test`、`routes-e2e-test`、`check-keys`、`check-deps`、`node --check` client/index/全部 host 模块全过。
+- 未覆盖 / 需用户手测：重启 DSH 后——(1) 打开拆分面板，点右侧范围内的页码（含首尾页）确认滚到该页并亮一下、切点未变；(2) 选中几本书 →「加入书架」→ 选一个书架，确认书进入且计数正确，再加一次提示「已经有这些书」；(3) 进入「高等代数学」，顶部开关关掉后加号卡片消失、重进仍记住，打开后恢复；在书架内导入一本 PDF，确认它自动出现在当前书架，同时 整本\ 里有文件。
+- 状态：待用户验收
+
+## 2026-11-27 上线前检查：导入功能归属、版权声明、外部依赖声明
+
+- 用户提问：(1) 导入 PDF 的功能是不是只有本机有；(2) 可以上线，但要补版权风险声明；(3) 检查有没有需要单独安装却没声明、没下载渠道的东西（如 Typst）。
+- **导入功能归属**：是正式功能，不是本机独有。v1.5.0 的「导入导出统一」与 v1.5.1 已发布：`git show v1.5.1:src/host/imports.js` 存在，`git show v1.5.1:client.js` 有 `importTileTitle` 与 `/pdfdesk/imports`；npm `dsh-pdf-workbench@1.5.1` 已上线（370 个文件）。本机多出来的是工作树里**尚未提交**的这批改进（疑问截图、拆分结果对话框、整本固定、拆分跳转、加入书架、书架内添加 PDF、导入拆分记忆等），它们还没有发版。
+- **版权声明（新增，三处）**：README 新增「使用与版权声明」（不提供/不内置/不分发书籍内容、不破解 DRM、只处理有权文件、结果仅个人学习、PDF 仅本机处理、MIT 与侵权联系渠道）；`安装与分发.md` 新增「版权」一节（分发包不含书籍 PDF、演示截图也要用自有文件、Typst 不随包分发）；插件内「设置 → 关于」与书库「使用提示」各一条中英文声明（`aboutCopyright` / `tipsCopyright`）。
+- **依赖声明与渠道盘点**：
+  - **PyMuPDF（fitz）**：拆分/取文字/栅格化/叠加都依赖，此前**完全没声明**。README 环境要求与 `安装与分发.md` 新增 `py -m pip install pymupdf pillow` 与 PyMuPDF 安装链接；环境检查与设置页提示补上包名（中英）。
+  - **Pillow**：此前只在安装文档给 `pdfkit.py` 提过一句；现在与 PyMuPDF 一起声明，覆盖 `crop_question.py`。
+  - **缺包提示归到 Host 一处**：`routes.js` 新增 `dependencyHint()`，`runTool` / `toolOutput` 把 `ModuleNotFoundError: No module named 'fitz' / 'PIL'` 映射成「请运行 py -m pip install …」；`toolOutput` 遇到缺包不再重试解释器后误报「没有可用的 Python」。
+  - 已确认有声明和渠道的：Python（python.org）、Typst（设置页一键下载，`TYPST_VERSION` 0.15.1 + SHA-256 + GitHub Release；文档另给 `winget install --id Typst.Typst`）、TeX Live（可选，tug.org；装了 Typst 就不需要）、PowerPoint/LibreOffice（补了 libreoffice.org 链接）、手写字体（插件内下载/导入）、pdf.js / KaTeX / rough.js / 两款 OFL 字体（随包，`vendor/` 与 README 致谢）。
+  - **未做**：没有在启动时真正探测 PyMuPDF/Pillow 是否可导入（环境检查仍只判断 python 是否存在）；缺包时由工具执行路径给出 pip 提示。若要做成「环境页显示 PyMuPDF ✓/✗」需要一次 Python 子进程探测，留待下一轮。
+- 验证（exit 0）：新增 `missing-package-hint-test` 9 条（真实 `dependencyHint` 映射 + 两处接线 + 单一来源）、`copyright-and-deps-test` 19 条（三处声明、pip 命令与链接、Typst/Python/TeX/LibreOffice 渠道；含 3 条反证）；`check-keys`、`check-deps`、`split-*`、`shelf-*`、连续模式三套、`host-test`、`routes-e2e-test`、`node --check` client/index/全部 host 模块全过。
+- 发布边界：版本号、tag、push、npm、市场条目仍归 ci；本轮没有改版本号，也没有提交。
+- 状态：待用户验收
+
+## 2026-11-27 环境安装项在选择书库页与设置里齐备
+
+- 用户追问：需要安装的环境和东西，选择书库页与设置菜单都要有。此前状态：设置 → 环境已有 Python / Typst（一键安装）/ TeX / API Key；选择书库页的「环境」卡片只有 Python / TeX 两行状态与下载入口，**两处都没有 PyMuPDF + Pillow**，选择书库页也没有 Typst 状态与安装入口。
+- 改动（`client.js`）：新增共享组件 `PipPackagesRow()`——显示 `py -m pip install pymupdf pillow`、一句用途说明（拆分/翻译/导出需要，只阅读不需要 Python）与「复制命令」按钮（复制失败时把命令直接显示出来）。两处入口都渲染它：
+  - **选择书库页**（LibrariesPage 的「环境」卡片）：pip 行 + `EngineStatusRow`（Typst 状态与一键下载）+ 原有 Python / TeX 下载按钮；
+  - **设置 → 环境**：pip 行插在 Python 与 TeX 之间，其余（Typst 一键安装、检查入口）不变。
+- 文案：中英各 5 条（`envPipPackages` / `envPipHint` / `envPipCommand` / `envPipCopy` / `envPipCopied`）。
+- 验证（exit 0）：新增 `env-surfaces-test` 12 条（两处入口、共享行、复制回退、Typst 一键安装；含 library/settings/copy 三条反证）；`copyright-and-deps-test`、`missing-package-hint-test`、`split-*`、`shelf-*`、连续模式三套、`host-test`、`routes-e2e-test`、`check-keys`、`check-deps`、`node --check` client/index/全部 host 模块全过。
+- 未覆盖 / 需用户手测：重启 DSH 后——(1) 选择书库页（没有书库或点「书库」面包屑）的「环境」卡片能看到 Python、PyMuPDF+Pillow 命令与复制、Typst 状态与「下载 Typst」、TeX 入口；(2) 设置 → 环境同样有 PyMuPDF+Pillow 行，「开始前检查」仍可重开。
+- 状态：待用户验收
+
+## 2026-11-27 书架隐藏 / 拆分回当前书架 / 拆分会话 + 勾选记忆
+
+- 用户直接指令：自定义书架内的书无法隐藏（近世代数基础可复现）；拆分后的书不自动进入当前书架（傅里叶分析）；拆分结果框的「打开拆分后的书」没有作用，功能应改为打开最初的「拆分文件」对话；这里需要记忆功能。用户拍板：**记忆 = 记住结果框两个勾选**；**没有拆分会话时自动新建**；**本轮只修 bug，重构下一轮**。
+- 根因：
+  - 自定义书架分支只按 `activeShelf.books` 取书，没有减去 `shelves.json.hidden`；隐藏只写 `hidden`，不把书移出书架，所以书继续显示。
+  - `/pdfdesk/split` 只写 `分片/<书id>/`，不写书架；拆分书 id 由拆分文件名截断产生（傅里叶为 `FourierAnalysis(T.W.Körner)(z-library.sk`），与整本 id 不同；且章节全为「未命名」使书为 `loose`，即使加入书架也会被「未按命名拆分」开关藏掉。
+  - 结果框用旧的 `books` 快照找拆分书，`reload()` 不等刷新完成；刷新未完成时 target 为空，点击只关闭弹窗。
+  - 两个勾选是 `useState` 默认值，没有存储。
+- 改动（只 `client.js`）：
+  - 自定义书架成员先排除 hidden；自定义/隐藏书架作为「显式位置」不再被整本/未命名开关二次过滤（否则刚加入的拆分书仍不可见）；集合卡计数同步排除 hidden。
+  - `reload()` 返回刷新后的书目（`reloadWaiters`）；拆分完成后等刷新，按 `dir === 整本书id && whole !== true` 找新书并 `await saveShelfGroups` 加入拆分时所在的自定义书架。
+  - `SplitResultDialog` 第二项改为「打开拆分会话」，调用 `startSplitSession()`；没有会话时自动新建；失败留在弹窗提示。`startSplitSession` 返回 boolean，`saveShelfGroups` 返回写入 Promise。
+  - 新增 `pdfdesk:split-result` 记忆两个勾选；点「完成」写入，「以后再说」不写。默认「不移除整本 / 打开拆分会话」。
+- 文案：zh/en 改写 `splitResultOpenAsk` / `splitResultOpenHint`，新增 `splitResultOpenFailed`；locale 键结构不变。
+- 契约：无新路由、无 `shelves.json` schema 变化、无 `package.json`/接口变化；新增 localStorage 键。
+- 验证（全部 exit 0）：`node --check client.js` / `index.js` / `src/host/*.js`；`check-keys`；`check-deps`（531 条）；`host-test`；新增 `shelf-visibility-test`、`split-result-flow-test`；更新并跑 `split-result-ui-test`、`shelf-whole-form-test`、`shelf-add-pdf-test`、`shelf-add-to-test`、`split-ui-test`、`split-session-test`、`split-jump-test`、`split-unrenamed-loose-test`、`loose-books-test`、`empty-library-test`、`ghost-book-test`、`library-tips-test`、`import-split-memory-test`、`split-result-route-test`、`split-import-test`、`split-entries-test`、`split-catalog-flow-test`。
+- 未覆盖 / 需手测：`split-active-library-test`、`split-after-import-test` 在本会话沙箱内 `spawn EPERM`（真实 Python 拆分未跑）；重启 DSH 后手测——自定义书架隐藏/取消隐藏、傅里叶拆分后自动出现在「数学分析」、结果框打开/新建拆分会话、两个勾选记忆。
+- 状态：待用户验收
+
 ## 待拆解入口
 
 - 新需求规格：`docs/requirements/`
 - 角色调整提案：`docs/feedback/`
 - 用户直接指令：由用户在对话中给出，boss 拆解后写入本表
+- **下一轮（2026-11-27 用户指令，未拆解）**：大文件拆分面板性能——打开慢、滚动卡、有闪退风险；需虚拟化/释放缩略图位图/简略模式兜底。规格与验收待拍板项见 [`docs/requirements/2026-11-27-大文件拆分性能.md`](requirements/2026-11-27-大文件拆分性能.md)。
+  - **状态（2026-11-27）：待用户验收**。用户选方案 B（WPS 式 Host 缩略图）并批准新增路由/缓存；已实现 `/pdfdesk/pdf-layout`、`/pdfdesk/pdf-thumb`、`tools/pdf_thumbs.py` 与拆分面板图片网格（pdf.js 降级保留）。记录见 `docs/changes/next.md` 第十二节；未提交、未发布。
+- **重构（2026-11-27 用户拍板，下一轮）**：先只修 bug，重构不与本轮同批；下轮抽出 `shelfView`（主/自定义/隐藏书架的成员与计数单一来源）和拆分收尾流程（等待刷新、按目录定位拆分书、加入书架、打开拆分会话），纯重构不得改行为，并补回归测试。
+  - **状态（2026-11-27）：待用户验收**。已抽出 `shelfView` / `shelfAddBooks` / `splitShelfTarget` / `splitBookIds` / `fileSplitBooks`（`client.js`），行为等价对照与回归测试见 `docs/changes/next.md` 第九节；未提交、未发布。
 
 ## 单元模板
 

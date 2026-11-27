@@ -6,6 +6,8 @@
  *   GET  /pdfdesk/artifact         one produced file's text, for the preview
  *   GET  /pdfdesk/pdf              one chapter's PDF, or a produced PDF, for the reader
  *   GET  /pdfdesk/pdf-ref          that PDF as a workspace-relative path
+ *   GET  /pdfdesk/pdf-thumb        one cached page thumbnail for the split panel
+ *   POST /pdfdesk/pdf-layout       page geometry + render one thumbnail range
  *   GET  /pdfdesk/cover            a user-provided book cover image
  *   GET  /pdfdesk/context          how full one session's context is
  *   GET  /pdfdesk/questions        one chapter's page-mark questions
@@ -27,7 +29,7 @@
  * @module dsh-pdf-workbench/routes
  */
 import { execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
@@ -189,9 +191,28 @@ function imageBytesOf(value) {
 }
 
 /**
+ * Turn Python's "No module named 'fitz'" into the pip command a user can run.
+ * Every bundled tool runs through runTool/toolOutput, so one mapping covers the
+ * split, text, translate and export paths instead of showing a traceback that
+ * looks like a plugin crash.
+ * @param {unknown} stderr - the failed tool's stderr.
+ * @returns {string | null} a human hint, or null when this is not a missing package.
+ */
+export function dependencyHint(stderr) {
+  const text = String(stderr ?? '')
+  if (/No module named ['"]?fitz['"]?/.test(text) || /No module named ['"]?pymupdf['"]?/i.test(text)) {
+    return '缺少 Python 包 PyMuPDF：请运行 py -m pip install pymupdf（只阅读 PDF 不需要它）'
+  }
+  if (/No module named ['"]?PIL['"]?/.test(text) || /No module named ['"]?Pillow['"]?/i.test(text)) {
+    return '缺少 Python 包 Pillow：请运行 py -m pip install pillow'
+  }
+  return null
+}
+
+/**
  * Build the prefix handler for the plugin's routes.
  * @param {{ libraryDir: string, fragmentDir: string, artifactDir: string, coverDir: string, indexPath: string, statePath: string, resumeRatio?: number, toolsDir?: string }} config - resolved paths and behavior (the profile's library is the fallback).
- * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, translationMigration?: () => Promise<object>, revealFile?: (path: string) => void, installToolkit?: (libraryDir: string) => Promise<object>, aiTranslate?: (choice: object) => Promise<object> }} [options] - host capabilities the routes expose.
+ * @param {{ resolveTarget?: () => Promise<{ workspaceId: string | null, cwd: string }>, listWorkspaces?: () => Promise<Array<{ id: string, title: string, path: string }>>, pending?: { list: Function, put: Function, remove: Function }, links?: { list: Function, add: Function, remove: Function }, contextPressure?: (sessionId: string) => Promise<object | null>, libraries?: { list: Function, active: Function, add: Function, setActive: Function, remove: Function }, translationMigration?: () => Promise<object>, revealFile?: (path: string) => void, installToolkit?: (libraryDir: string) => Promise<object>, aiTranslate?: (choice: object) => Promise<object>, renderThumbs?: (job: { path: string, root: string, width: number, first: number, last: number }) => Promise<void> }} [options] - host capabilities the routes expose.
  * @returns {(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) => Promise<void>} the handler.
  */
 export function createHandler(config, options = {}) {
@@ -217,17 +238,34 @@ export function createHandler(config, options = {}) {
  * @param {string} code - chapter code.
  * @returns {Promise<string|null>} absolute path, or null when missing.
  */
+
+
 function runTool(script, args, env = {}) {
   const pythons = [process.env.MATH_DESK_PYTHON, 'python', 'py'].filter(Boolean)
   return new Promise((resolve, reject) => {
+    let lastFailure = null
     const next = index => {
       if (index >= pythons.length) {
-        reject(new Error('没有可用的 Python'))
+        // No interpreter at all is the only case where "没有可用的 Python" is
+        // true. If one ran and the tool failed, repeat that error: the old
+        // message hid real failures (bad ranges, a bad script path) as a
+        // missing Python.
+        reject(lastFailure ?? new Error('没有可用的 Python'))
         return
       }
-      execFile(pythons[index], [script, ...args], { timeout: 240000, windowsHide: true, env: { ...process.env, ...env } }, error => {
-        if (error === null) resolve()
-        else next(index + 1)
+      execFile(pythons[index], [script, ...args], { timeout: 240000, windowsHide: true, env: { ...process.env, ...env } }, (error, stdout, stderr) => {
+        if (error === null) {
+          resolve()
+          return
+        }
+        // ENOENT means this interpreter is absent; keep trying the next one.
+        // Other failures are kept and reported after the last candidate.
+        if (error.code !== 'ENOENT') {
+          const missing = dependencyHint(stderr)
+          const detail = missing ?? (String(stderr ?? '').trim() || String(error.message ?? error))
+          lastFailure = Object.assign(new Error(detail.slice(0, 2000)), { code: error.code ?? 'tool-failed' })
+        }
+        next(index + 1)
       })
     }
     next(0)
@@ -270,14 +308,67 @@ function toolOutput(script, args, env = {}) {
         pythons[index],
         [script, ...args],
         { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } },
-        (error, stdout) => {
-          if (error === null) resolve(stdout)
-          else next(index + 1)
+        (error, stdout, stderr) => {
+          if (error === null) {
+            resolve(stdout)
+            return
+          }
+          // A missing Python package fails on every interpreter: report the pip
+          // command instead of retrying and then claiming no Python exists.
+          const missing = dependencyHint(stderr)
+          if (missing !== null) {
+            reject(Object.assign(new Error(missing), { code: 'missing-package' }))
+            return
+          }
+          next(index + 1)
         }
       )
     }
     next(0)
   })
+}
+
+/**
+ * Render one question mark's framed region to a PNG beside the question store.
+ * The picture is what a scanned page can give the model: text extraction is
+ * empty there, and “page 13” alone does not tell it what was framed.
+ * @param {object} config - resolved plugin paths.
+ * @param {object} library - the active library.
+ * @param {{ book: object, chapter: object }} match - the catalog rows.
+ * @param {object} question - `{ id, page, rect }`.
+ * @returns {Promise<string>} the absolute PNG path.
+ */
+async function renderQuestionCrop(config, library, match, question) {
+  const source = chapterPdfPath(library, match.book, match.chapter)
+  if (source.ok !== true || typeof source.path !== 'string') {
+    throw Object.assign(new Error('找不到这一章的 PDF'), { code: 'no-pdf' })
+  }
+  const id = question !== null && typeof question === 'object' && typeof question.id === 'string' ? question.id : ''
+  const page = Math.round(Number(question !== null && typeof question === 'object' ? question.page : 0))
+  if (!/^q-[A-Za-z0-9._-]{1,64}$/.test(id) || !Number.isFinite(page) || page < 1) {
+    throw Object.assign(new Error('疑问不合法'), { code: 'bad-question' })
+  }
+  const rect = question.rect !== null && typeof question.rect === 'object' ? question.rect : {}
+  const outDir = join(library.libraryDir, '.pdfdesk', 'questions', match.book.id, match.chapter.code, 'crops')
+  const out = join(outDir, `${id}.webp`)
+  await mkdir(outDir, { recursive: true })
+  // Drop a PNG left by the first build of this feature: the model now reads the
+  // lossless WebP, and the old file would only take space.
+  await unlink(join(outDir, `${id}.png`)).catch(() => {})
+  await runTool(join(config.toolsDir, 'crop_question.py'), [
+    source.path,
+    String(page),
+    String(Number(rect.x) || 0),
+    String(Number(rect.y) || 0),
+    String(Number(rect.w) || 0),
+    String(Number(rect.h) || 0),
+    out,
+  ])
+  const info = await stat(out).catch(() => null)
+  if (info === null || !info.isFile() || info.size === 0) {
+    throw Object.assign(new Error('框选区域渲染失败'), { code: 'crop-failed' })
+  }
+  return out
 }
 
 async function chapterPdf(library, bookId, code) {
@@ -448,6 +539,162 @@ async function activeLibrary() {
     const match = resolveChapter(await catalog(), url.searchParams.get('book') ?? '', (url.searchParams.get('code') ?? '').toLowerCase())
     if (match.ok) return match
     return { ...match, status: match.code === 'unknown-chapter' ? 404 : 400 }
+  }
+
+  /* ---------------------------------------------------------- thumbnails -- */
+
+  /** Thumbnail widths the split panel may ask for, in CSS pixels. */
+  const THUMB_WIDTH_MIN = 80
+  const THUMB_WIDTH_MAX = 480
+  const THUMB_WIDTH_DEFAULT = 240
+  /** One Python run renders at most this many pages; the panel scrolls in batches. */
+  const THUMB_BATCH_MAX = 60
+  /** A cached thumbnail is immutable: its directory key contains the file mtime. */
+  const THUMB_CACHE_SECONDS = 31536000
+
+  /**
+   * Per-PDF render jobs, so a fast scroll cannot start two Python renders for
+   * the same file at once. Later requests wait for the one already running.
+   * @type {Map<string, Promise<unknown>>}
+   */
+  const thumbJobs = new Map()
+
+  /**
+   * Clamp a requested thumbnail width to the supported range.
+   * @param {unknown} value - the query/body value.
+   * @returns {number} an integer CSS width.
+   */
+  function thumbWidth(value) {
+    const width = Math.round(Number(value))
+    if (!Number.isFinite(width)) return THUMB_WIDTH_DEFAULT
+    return Math.min(THUMB_WIDTH_MAX, Math.max(THUMB_WIDTH_MIN, width))
+  }
+
+  /**
+   * Cache root of one PDF identity.
+   * @param {string} key - identity hash.
+   * @returns {string} absolute directory.
+   */
+  function thumbRoot(key) {
+    return join(config.dataDir, 'thumbs', key)
+  }
+
+  /**
+   * The geometry file of one PDF identity.
+   * @param {string} key - identity hash.
+   * @returns {string} absolute path.
+   */
+  function thumbInfoFile(key) {
+    return join(thumbRoot(key), 'info.json')
+  }
+
+  /**
+   * One cached page image.
+   * @param {string} key - identity hash.
+   * @param {number} width - CSS width.
+   * @param {number} page - 1-based page number.
+   * @returns {string} absolute path.
+   */
+  function thumbImageFile(key, width, page) {
+    return join(thumbRoot(key), String(width), `p${String(page).padStart(4, '0')}.jpg`)
+  }
+
+  /**
+   * Read the cached page geometry, or null when nothing was rendered yet.
+   * @param {string} key - identity hash.
+   * @returns {Promise<{ pages: number, pageWidth: number, pageHeight: number } | null>} the geometry.
+   */
+  async function readThumbInfo(key) {
+    try {
+      const parsed = JSON.parse(await readFile(thumbInfoFile(key), 'utf8'))
+      if (parsed === null || typeof parsed !== 'object') return null
+      if (!Number.isInteger(parsed.pages) || parsed.pages <= 0) return null
+      if (!(Number(parsed.pageWidth) > 0) || !(Number(parsed.pageHeight) > 0)) return null
+      return { pages: parsed.pages, pageWidth: Number(parsed.pageWidth), pageHeight: Number(parsed.pageHeight) }
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Resolve a chapter match to its PDF and a cache key that changes with the
+   * file's bytes (path + size + mtime), so a re-import never serves old pages.
+   * @param {{ ok: true, book: object, chapter: object }} match - resolved chapter.
+   * @returns {Promise<{ ok: true, path: string, key: string } | { ok: false, status: number, code: string, message: string }>} the source or the refusal.
+   */
+  async function thumbSource(match) {
+    const library = await activeLibrary()
+    const source = chapterPdfPath(library, match.book, match.chapter)
+    if (!source.ok) {
+      return { ok: false, status: 400, code: source.reason, message: '这个文件不能作为 PDF 打开' }
+    }
+    let info
+    try {
+      info = await stat(source.path)
+    } catch {
+      info = null
+    }
+    if (info === null || !info.isFile()) {
+      return { ok: false, status: 404, code: 'not-found', message: '找不到这个 PDF' }
+    }
+    const key = createHash('sha1')
+      .update(`${source.path}|${info.size}|${Math.floor(info.mtimeMs)}`)
+      .digest('hex')
+      .slice(0, 16)
+    return { ok: true, path: source.path, key }
+  }
+
+  /**
+   * Serialize render jobs per PDF, so overlapping scroll batches do not run
+   * several Python processes over the same file.
+   * @param {string} key - identity hash.
+   * @param {() => Promise<unknown>} task - the job.
+   * @returns {Promise<unknown>} the job's result.
+   */
+  function runThumbJob(key, task) {
+    const previous = thumbJobs.get(key) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(task)
+    thumbJobs.set(key, next)
+    next.then(
+      () => { if (thumbJobs.get(key) === next) thumbJobs.delete(key) },
+      () => { if (thumbJobs.get(key) === next) thumbJobs.delete(key) },
+    )
+    return next
+  }
+
+  /**
+   * Ensure the requested page range is in the thumbnail cache.
+   * @param {{ path: string, key: string }} source - the PDF.
+   * @param {number} width - CSS width.
+   * @param {number} first - first page (1-based).
+   * @param {number} last - last page (inclusive).
+   * @returns {Promise<{ info: object, rendered: number[] }>} geometry and rendered pages.
+   */
+  async function ensureThumbRange(source, width, first, last) {
+    const info = await readThumbInfo(source.key)
+    const total = info === null ? 0 : info.pages
+    if (total > 0 && first > total) return { info, rendered: [] }
+    const end = total > 0 ? Math.min(last, total) : last
+    const start = Math.max(1, Math.min(first, end))
+    const pages = []
+    for (let page = start; page <= end; page += 1) pages.push(page)
+    const missing = pages.filter(page => !existsSync(thumbImageFile(source.key, width, page)))
+    if (info !== null && missing.length === 0) return { info, rendered: pages }
+    const job = { path: source.path, root: thumbRoot(source.key), width, first: start, last: end }
+    if (typeof options.renderThumbs === 'function') {
+      await options.renderThumbs(job)
+    } else {
+      await runTool(join(config.toolsDir, 'pdf_thumbs.py'), [
+        job.path,
+        job.root,
+        String(job.width),
+        String(job.first),
+        String(job.last),
+      ])
+    }
+    const fresh = await readThumbInfo(source.key)
+    if (fresh === null) throw new Error('缩略图信息没有生成')
+    return { info: fresh, rendered: pages.filter(page => page <= fresh.pages) }
   }
 
   return async function handle(request, response) {
@@ -979,7 +1226,10 @@ async function activeLibrary() {
           fail(response, 400, 'invalid-body', '缺少 book 或 ranges')
           return
         }
-        const current = await loadCatalog(config)
+        // Resolve the book against the library the user is looking at: `config`
+        // still points at the profile's default library, so a book in any other
+        // active library was reported as missing.
+        const current = await catalog(true)
         const row = Array.isArray(current.books) ? current.books.find(item => item.id === book) : undefined
         if (row === undefined) {
           fail(response, 404, 'unknown-book', '没有这本书')
@@ -1000,7 +1250,7 @@ async function activeLibrary() {
         // 输出按书库规则写进 `分片/<书id>/`，命名交给 split_pdf.py（与书库同一套规则）。
         const outDir = join(library.fragmentDir, book)
         try {
-          const output = await runTool('split_pdf.py', [source.path, outDir, '--id', book, '--ranges', ranges])
+          const output = await runTool(join(config.toolsDir, 'split_pdf.py'), [source.path, outDir, '--id', book, '--ranges', ranges])
           invalidateCatalog()
           sendJson(response, 200, { ok: true, outDir, output })
         } catch (error) {
@@ -1211,9 +1461,9 @@ async function activeLibrary() {
         }
         try {
           const body = await readJson(request)
-          const catalog = await loadCatalog(config)
-          const chapter = resolveChapter(catalog, body.book, body.code)
-          if (chapter === null) {
+          const current = await catalog()
+          const chapter = resolveChapter(current, body.book, body.code)
+          if (chapter.ok !== true) {
             fail(response, 404, 'no-chapter', '找不到这一章')
             return
           }
@@ -1821,6 +2071,67 @@ async function activeLibrary() {
         return
       }
 
+      if (path === `${PREFIX}/question-crop` || path === `${PREFIX}/question-crops`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        let body
+        try {
+          body = await readJson(request, 2 * 1024 * 1024)
+        } catch (error) {
+          fail(response, 400, 'invalid-body', String(error && error.message ? error.message : error))
+          return
+        }
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(await catalog(), record.book, String(record.code ?? '').toLowerCase())
+        if (match.ok !== true) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        const library = await activeLibrary()
+        if (path === `${PREFIX}/question-crop`) {
+          try {
+            sendJson(response, 200, { ok: true, path: await renderQuestionCrop(config, library, match, record) })
+          } catch (error) {
+            const reason = error !== null && error !== undefined ? error.code : ''
+            fail(
+              response,
+              reason === 'no-pdf' || reason === 'bad-question' ? 400 : 502,
+              reason === 'no-pdf' ? 'no-pdf' : reason === 'bad-question' ? 'bad-question' : 'crop-failed',
+              String(error && error.message ? error.message : error),
+            )
+          }
+          return
+        }
+        // Batch: session seed wants a picture for every existing mark, including
+        // ones created before this feature. Cached crops are reused until the
+        // PDF itself changes.
+        const stored = await readQuestions(library.libraryDir, match.book.id, match.chapter.code)
+        const questions = Array.isArray(stored.questions) ? stored.questions : []
+        const source = chapterPdfPath(library, match.book, match.chapter)
+        const pdfInfo = source.ok === true ? await stat(source.path).catch(() => null) : null
+        const items = []
+        for (const question of questions.slice(0, 40)) {
+          const out = join(library.libraryDir, '.pdfdesk', 'questions', match.book.id, match.chapter.code, 'crops', `${question.id}.webp`)
+          const existing = await stat(out).catch(() => null)
+          if (existing === null || existing.isFile() !== true || (pdfInfo !== null && existing.mtimeMs < pdfInfo.mtimeMs)) {
+            try {
+              await renderQuestionCrop(config, library, match, question)
+            } catch {
+              continue
+            }
+          }
+          items.push({ id: question.id, path: out })
+        }
+        sendJson(response, 200, { ok: true, items, total: questions.length, truncated: questions.length > 40 })
+        return
+      }
+
       if (path === `${PREFIX}/annotations`) {
         try {
           const library = await activeLibrary()
@@ -2324,14 +2635,50 @@ async function activeLibrary() {
           return
         }
         const body = await readJson(request)
-        const book = typeof body.book === 'string' ? body.book : ''
+        const record = body !== null && typeof body === 'object' ? body : {}
+        const book = typeof record.book === 'string' ? record.book : ''
+        const file = typeof record.file === 'string' ? record.file.trim() : ''
+        const wholeOnly = record.whole === true
         if (book === '' || /[\\/:*?"<>|]/.test(book)) {
           fail(response, 400, 'bad-book', '书名不合法')
           return
         }
+        if (file !== '' && /[\\/:*?"<>|]/.test(file)) {
+          fail(response, 400, 'bad-file', '整本文件名不合法')
+          return
+        }
         const library = await activeLibrary()
-        const catalog = await loadCatalog(config)
-        const row = catalog.books.find(item => item.id === book)
+        // "Remove the whole-book form" must never touch the split folder that
+        // shares the book id: look only for the original whole PDF.
+        if (wholeOnly) {
+          const stem = (file === '' ? book : file).replace(/\.pdf$/i, '')
+          let source = ''
+          for (const dir of [join(library.libraryDir, '整本'), library.libraryDir, join(library.libraryDir, '分片')]) {
+            const candidate = join(dir, `${stem}.pdf`)
+            try {
+              const info = await stat(candidate)
+              if (info.isFile()) {
+                source = candidate
+                break
+              }
+            } catch {
+              // try the next layout
+            }
+          }
+          if (source === '') {
+            fail(response, 404, 'missing', `找不到整本 PDF（${stem}.pdf）`)
+            return
+          }
+          const trashDir = join(library.libraryDir, '回收站')
+          await mkdir(trashDir, { recursive: true })
+          const target = join(trashDir, `${Date.now()}-${basename(source)}`)
+          await rename(source, target)
+          invalidateCatalog()
+          sendJson(response, 200, { ok: true, path: target })
+          return
+        }
+        const current = await catalog()
+        const row = current.books.find(item => item.id === book)
         const fragmentRoot = join(library.libraryDir, '分片')
         let source = ''
         const candidates = []
@@ -2898,6 +3245,98 @@ async function activeLibrary() {
           return
         }
         sendJson(response, 200, { ok: true, ...preview })
+        return
+      }
+
+      if (path === `${PREFIX}/pdf-layout`) {
+        if (request.method !== 'POST') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 POST')
+          return
+        }
+        if (!isSameOrigin(request)) {
+          fail(response, 403, 'cross-origin', '拒绝跨站写入')
+          return
+        }
+        let body
+        try {
+          body = await readJson(request)
+        } catch (error) {
+          fail(response, 400, 'bad-json', String(error && error.message ? error.message : error))
+          return
+        }
+        const payload = body !== null && typeof body === 'object' ? body : {}
+        const match = resolveChapter(
+          await catalog(),
+          String(payload.book ?? ''),
+          String(payload.code ?? '').toLowerCase(),
+        )
+        if (!match.ok) {
+          fail(response, match.code === 'unknown-chapter' ? 404 : 400, match.code, match.message)
+          return
+        }
+        const source = await thumbSource(match)
+        if (!source.ok) {
+          fail(response, source.status, source.code, source.message)
+          return
+        }
+        const width = thumbWidth(payload.w)
+        const first = Math.max(1, Math.round(Number(payload.from) || 1))
+        const requestedLast = Math.round(Number(payload.to) || (first + 11))
+        const last = Math.max(first, Math.min(requestedLast, first + THUMB_BATCH_MAX - 1))
+        try {
+          const result = await runThumbJob(source.key, () => ensureThumbRange(source, width, first, last))
+          sendJson(response, 200, {
+            ok: true,
+            pages: result.info.pages,
+            pageWidth: result.info.pageWidth,
+            pageHeight: result.info.pageHeight,
+            aspect: result.info.pageHeight / result.info.pageWidth,
+            width,
+            v: source.key,
+            rendered: result.rendered,
+          })
+        } catch (error) {
+          fail(response, 503, 'thumbs-failed', String(error && error.message ? error.message : error))
+        }
+        return
+      }
+
+      if (path === `${PREFIX}/pdf-thumb`) {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          fail(response, 405, 'method-not-allowed', '这个接口只接受 GET')
+          return
+        }
+        const match = await chapterFromQuery(url)
+        if (!match.ok) {
+          fail(response, match.status, match.code, match.message)
+          return
+        }
+        const page = Math.round(Number(url.searchParams.get('page')))
+        if (!Number.isInteger(page) || page < 1 || page > 20000) {
+          fail(response, 400, 'bad-page', '页码不合法')
+          return
+        }
+        const width = thumbWidth(url.searchParams.get('w'))
+        const source = await thumbSource(match)
+        if (!source.ok) {
+          fail(response, source.status, source.code, source.message)
+          return
+        }
+        const version = url.searchParams.get('v') ?? ''
+        if (version !== '' && version !== source.key) {
+          fail(response, 409, 'stale-thumb', 'PDF 已更新，请重新载入缩略图')
+          return
+        }
+        let bytes
+        try {
+          bytes = await readFile(thumbImageFile(source.key, width, page))
+        } catch {
+          fail(response, 404, 'not-prepared', '缩略图还没生成')
+          return
+        }
+        const etag = `"${source.key}-${width}-${page}"`
+        if (sendNotModified(request, response, etag)) return
+        sendBytes(response, 200, bytes, 'image/jpeg', undefined, { etag, maxAge: THUMB_CACHE_SECONDS })
         return
       }
 

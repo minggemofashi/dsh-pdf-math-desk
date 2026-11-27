@@ -218,9 +218,12 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The split-tool conversation remembered for one library.
+     * The split-tool conversation remembered for one library. Only a pointer
+     * written by this version is trusted: older pointers cannot prove which
+     * conversation they name, and reopening one is how the tool could land in
+     * an unrelated conversation. `sessionId` alone is never enough to open.
      * @param {string} libraryId - library id.
-     * @returns {{ sessionId: string, workspaceId: string } | null} the stored pointer.
+     * @returns {{ sessionId: string, workspaceId: string, cwd: string } | null} the stored pointer.
      */
     function readStoredSplitSession(libraryId) {
       if (typeof libraryId !== 'string' || libraryId === '') return null
@@ -229,13 +232,65 @@ window.__ModuleLoader__.load({
         if (raw === null || raw === '') return null
         const parsed = JSON.parse(raw)
         if (parsed === null || typeof parsed !== 'object') return null
+        // A pre-marker pointer is discarded, not reused: the tool then creates
+        // a fresh conversation and stores a verifiable pointer instead.
+        if (parsed.kind !== 'split') return null
         if (typeof parsed.sessionId !== 'string' || parsed.sessionId === '') return null
         return {
           sessionId: parsed.sessionId,
           workspaceId: typeof parsed.workspaceId === 'string' ? parsed.workspaceId : '',
+          cwd: typeof parsed.cwd === 'string' ? parsed.cwd : '',
         }
       } catch {
         return null
+      }
+    }
+
+    /**
+     * Whether a remembered split conversation may be reopened. Four things must
+     * agree: the pointer is ours (a marker), it belongs to the chosen workspace
+     * and library folder, the session is not archived, and — once the catalog is
+     * ready — the session still exists. Anything else creates a fresh
+     * conversation instead of opening something unrelated.
+     * @param {{ stored: object | null, target: { workspaceId: string } | null, list: object | null, archived: Set<string> | string[], cwd: string }} input - the pointer and the current catalog state.
+     * @returns {boolean} true only when reopening is safe.
+     */
+    function splitSessionReusable(input) {
+      const source = input === null || input === undefined ? {} : input
+      const stored = source.stored
+      if (stored === null || stored === undefined) return false
+      if (typeof stored.sessionId !== 'string' || stored.sessionId === '') return false
+      const target = source.target
+      if (target === null || target === undefined || typeof target.workspaceId !== 'string' || target.workspaceId === '') return false
+      if (stored.workspaceId !== target.workspaceId) return false
+      // A pointer from another library folder is not this library's conversation.
+      const storedDir = typeof stored.cwd === 'string' ? stored.cwd : ''
+      const currentDir = typeof source.cwd === 'string' ? source.cwd : ''
+      if (storedDir !== '' && currentDir !== '' && !sameDirectory(storedDir, currentDir)) return false
+      const archived = source.archived
+      if (archived instanceof Set
+        ? archived.has(stored.sessionId)
+        : Array.isArray(archived) && archived.includes(stored.sessionId)) return false
+      const list = source.list
+      if (list !== null && list !== undefined && list.phase === 'ready') {
+        const row = list.byId === null || list.byId === undefined ? undefined : list.byId[stored.sessionId]
+        if (row === undefined) return false
+      }
+      return true
+    }
+
+    /**
+     * Forget one library's split conversation, so the next click creates one
+     * instead of retrying a session that could not be opened.
+     * @param {string} libraryId - library id.
+     * @returns {void}
+     */
+    function clearStoredSplitSession(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return
+      try {
+        window.localStorage.removeItem(`${SPLIT_SESSION_STORAGE}${libraryId}`)
+      } catch {
+        // storage unavailable: nothing was remembered anyway
       }
     }
 
@@ -270,6 +325,246 @@ window.__ModuleLoader__.load({
       } catch {
         // Storage unavailable: the choice still applies this visit.
       }
+    }
+
+    /**
+     * Per-library allowlist of whole-PDF forms that are always shown. An opt-in
+     * list, not a hide list: a card you pinned stays visible, so you can always
+     * select it again to unpin it — a hidden card could never be selected.
+     */
+    const WHOLE_ALWAYS_PREFIX = 'pdfdesk:whole-always:'
+
+    /**
+     * The base id a whole form and its split sibling share. A whole card can
+     * carry an `@hash` suffix when two books share a file name; the split card
+     * keeps the folder name, so both sides compare without the suffix.
+     * @param {unknown} id - book id (or folder name).
+     * @returns {string} the id without the `@hash` suffix.
+     */
+    function wholeBaseId(id) {
+      return String(id ?? '').replace(/@[a-z0-9]{1,8}$/, '')
+    }
+
+    /**
+     * The key one book remembers its whole-PDF form under: a whole card uses its
+     * own id, a split card the folder its whole sibling was imported as.
+     * @param {object} book - catalog row.
+     * @returns {string} the base id, or '' when the row is unusable.
+     */
+    function wholeFormKey(book) {
+      if (book === null || typeof book !== 'object') return ''
+      if (book.whole === true) return wholeBaseId(book.id)
+      return wholeBaseId(typeof book.dir === 'string' && book.dir !== '' ? book.dir : book.id)
+    }
+
+    /**
+     * Read one library's "always show this whole form" list.
+     * @param {string} libraryId - active library id.
+     * @returns {string[]} base ids.
+     */
+    function readWholeAlways(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return []
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(`${WHOLE_ALWAYS_PREFIX}${libraryId}`) ?? '[]')
+        if (!Array.isArray(parsed)) return []
+        return [...new Set(parsed.filter(id => typeof id === 'string' && id !== ''))].slice(0, 2000)
+      } catch {
+        return []
+      }
+    }
+
+    /**
+     * Save one library's list.
+     * @param {string} libraryId - active library id.
+     * @param {string[]} ids - base ids.
+     * @returns {void}
+     */
+    function writeWholeAlways(libraryId, ids) {
+      if (typeof libraryId !== 'string' || libraryId === '') return
+      try {
+        window.localStorage.setItem(`${WHOLE_ALWAYS_PREFIX}${libraryId}`, JSON.stringify([...new Set(ids)]))
+      } catch {
+        // Storage unavailable: the choice still applies this visit.
+      }
+    }
+
+    /** Per-library shelves whose "add PDF" card is turned off in the header. */
+    const SHELF_ADD_PDF_PREFIX = 'pdfdesk:shelf-add-pdf-off:'
+
+    /**
+     * Read the shelf ids whose add-PDF card is off.
+     * @param {string} libraryId - active library id.
+     * @returns {string[]} shelf ids.
+     */
+    function readShelfAddPdfOff(libraryId) {
+      if (typeof libraryId !== 'string' || libraryId === '') return []
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(`${SHELF_ADD_PDF_PREFIX}${libraryId}`) ?? '[]')
+        if (!Array.isArray(parsed)) return []
+        return [...new Set(parsed.filter(id => typeof id === 'string' && id !== ''))].slice(0, 200)
+      } catch {
+        return []
+      }
+    }
+
+    /**
+     * Save the shelf ids whose add-PDF card is off.
+     * @param {string} libraryId - active library id.
+     * @param {string[]} ids - shelf ids.
+     * @returns {void}
+     */
+    function writeShelfAddPdfOff(libraryId, ids) {
+      if (typeof libraryId !== 'string' || libraryId === '') return
+      try {
+        window.localStorage.setItem(`${SHELF_ADD_PDF_PREFIX}${libraryId}`, JSON.stringify([...new Set(ids)]))
+      } catch {
+        // Storage unavailable: the choice still applies this visit.
+      }
+    }
+
+    /**
+     * One shelf's view: which books belong to it, which of them the grid shows,
+     * the collection cards under it, and the numbers on its switches. The main,
+     * custom and hidden shelves all answer through this one function, so
+     * membership and counts cannot drift between the grid, the cards and the
+     * breadcrumb.
+     *
+     * Reading, in this order: a hidden book is out of the main and custom
+     * shelves but *in* the hidden shelf (that is where "取消隐藏" finds it); a
+     * custom shelf holds exactly its ids minus hidden ones; the main shelf holds
+     * books that are neither hidden nor filed anywhere. Hidden and custom
+     * shelves are explicit places, so the whole/loose switches only filter the
+     * main shelf — a split book is `loose` until renamed, and it was just filed
+     * here on purpose.
+     *
+     * @param {object} input - catalog rows, stored groups, the open shelf and the view switches.
+     * @param {object[]} input.books - catalog rows.
+     * @param {{ hidden?: string[], shelves?: object[] }} input.groups - stored shelf groups.
+     * @param {string | null} input.group - null for the main shelf, 'hidden', or a custom shelf id.
+     * @param {boolean} input.showWhole - whether unpinned whole books are shown on the main shelf.
+     * @param {boolean} input.showLoose - whether hand-named split books are shown on the main shelf.
+     * @param {string[]} input.wholeAlways - whole-form keys pinned to always show.
+     * @param {string} input.hiddenLabel - localized name of the hidden shelf.
+     * @returns {{ group: string | null, scope: string, shelf: object | null, groupName: string | null, explicit: boolean, members: object[], visibleBooks: object[], collections: object[], counts: { whole: number, loose: number, pinned: number }, empty: boolean }} the shelf's view.
+     */
+    function shelfView(input) {
+      const source = input === null || input === undefined ? {} : input
+      const list = Array.isArray(source.books) ? source.books : []
+      const groups = source.groups === null || source.groups === undefined ? {} : source.groups
+      const hidden = Array.isArray(groups.hidden) ? groups.hidden : []
+      const shelves = Array.isArray(groups.shelves) ? groups.shelves : []
+      const group = source.group === undefined ? null : source.group
+      const showWhole = source.showWhole === true
+      const showLoose = source.showLoose === true
+      const wholeAlways = Array.isArray(source.wholeAlways) ? source.wholeAlways : []
+      const hiddenLabel = typeof source.hiddenLabel === 'string' ? source.hiddenLabel : ''
+      const hiddenIds = new Set(hidden)
+      const shelved = new Set()
+      for (const item of shelves) for (const id of Array.isArray(item.books) ? item.books : []) shelved.add(id)
+      const shelf = group === null || group === 'hidden'
+        ? null
+        : shelves.find(item => item.id === group) ?? null
+      const shelfBooks = shelf === null || !Array.isArray(shelf.books) ? [] : shelf.books
+      const explicit = group !== null
+      const members = group === 'hidden'
+        ? list.filter(item => hiddenIds.has(item.id))
+        : shelf !== null
+          ? list.filter(item => shelfBooks.includes(item.id) && !hiddenIds.has(item.id))
+          : list.filter(item => !hiddenIds.has(item.id) && !shelved.has(item.id))
+      const collections = [
+        ...(group !== null || hidden.length === 0
+          ? []
+          : [{
+            id: 'hidden',
+            name: hiddenLabel,
+            count: hidden.filter(id => list.some(item => item.id === id)).length,
+          }]),
+        ...shelves
+          .filter(item => (item.parent ?? null) === group)
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            count: (Array.isArray(item.books) ? item.books : [])
+              .filter(id => !hiddenIds.has(id) && list.some(book => book.id === id)).length,
+          })),
+      ]
+      const visibleBooks = explicit
+        ? members
+        : members.filter(book => {
+          // A pinned whole form shows whatever the switch says; the rest follow it.
+          if (book.whole === true) return showWhole || wholeAlways.includes(wholeBaseId(book.id))
+          if (book.loose === true) return showLoose
+          return true
+        })
+      return {
+        group,
+        scope: group === 'hidden' ? 'hidden' : group === null ? 'main' : 'custom',
+        shelf,
+        groupName: group === 'hidden' ? hiddenLabel : shelf === null ? null : shelf.name,
+        explicit,
+        members,
+        visibleBooks,
+        collections,
+        // The switches count every catalog book, not just this shelf's members:
+        // they describe the main shelf even while a book page is open.
+        counts: {
+          whole: list.filter(item => item.whole === true && !wholeAlways.includes(wholeBaseId(item.id))).length,
+          loose: list.filter(item => item.loose === true && item.whole !== true).length,
+          pinned: wholeAlways.length,
+        },
+        empty: members.length === 0 && collections.length === 0,
+      }
+    }
+
+    /**
+     * Put books into one shelf. Existing ids keep their order and are not
+     * repeated; the caller learns whether anything was added. Filing the
+     * selection, an imported PDF and the books a split just wrote all go
+     * through here, so those paths cannot disagree about membership.
+     * @param {{ hidden?: string[], shelves?: object[] }} groups - stored groups.
+     * @param {string} shelfId - target shelf id.
+     * @param {string[]} ids - book ids to add.
+     * @returns {{ groups: object, shelf: object, added: number } | null} the next groups, or null when the shelf is unknown or already holds every id.
+     */
+    function shelfAddBooks(groups, shelfId, ids) {
+      const current = groups === null || groups === undefined ? {} : groups
+      const shelves = Array.isArray(current.shelves) ? current.shelves : []
+      const shelf = shelves.find(item => item.id === shelfId)
+      if (shelf === undefined) return null
+      const held = Array.isArray(shelf.books) ? shelf.books : []
+      const next = [...new Set([...held, ...(Array.isArray(ids) ? ids : [])])]
+      if (next.length === held.length) return null
+      return {
+        shelf,
+        added: next.length - held.length,
+        groups: {
+          hidden: Array.isArray(current.hidden) ? current.hidden : [],
+          shelves: shelves.map(item => (item.id === shelfId ? { ...item, books: next } : item)),
+        },
+      }
+    }
+
+    /**
+     * Put the same books into several shelves with one resulting groups object,
+     * so a split can join every shelf that already held the whole book without
+     * writing the shelf file once per shelf.
+     * @param {{ hidden?: string[], shelves?: object[] }} groups - stored groups.
+     * @param {string[]} shelfIds - target shelf ids.
+     * @param {string[]} ids - book ids to add.
+     * @returns {{ groups: object, shelves: object[], added: number } | null} the next groups, or null when nothing was added anywhere.
+     */
+    function shelfAddBooksTo(groups, shelfIds, ids) {
+      let current = groups
+      let added = 0
+      const shelves = []
+      for (const shelfId of Array.isArray(shelfIds) ? shelfIds : []) {
+        const result = shelfAddBooks(current, shelfId, ids)
+        if (result === null) continue
+        current = result.groups
+        added += result.added
+        shelves.push(result.shelf)
+      }
+      return added > 0 ? { groups: current, added, shelves } : null
     }
 
     /** Opt-in for Host-created reader sessions (model at creation). */
@@ -392,18 +687,26 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Remember the split-tool conversation of one library.
+     * Remember the split-tool conversation of one library. The pointer carries
+     * its own kind and library folder so a later click can prove it names this
+     * library's conversation before reopening anything.
      * @param {string} libraryId - library id.
      * @param {string} sessionId - the conversation.
      * @param {string} workspaceId - its workspace.
+     * @param {string} [cwd] - the library folder the conversation serves.
      * @returns {void}
      */
-    function writeStoredSplitSession(libraryId, sessionId, workspaceId) {
+    function writeStoredSplitSession(libraryId, sessionId, workspaceId, cwd) {
       if (typeof libraryId !== 'string' || libraryId === '' || typeof sessionId !== 'string' || sessionId === '') return
       // Remember it even when storage is unavailable: this visit must not reuse it.
       splitSessionIds.add(sessionId)
       try {
-        window.localStorage.setItem(`${SPLIT_SESSION_STORAGE}${libraryId}`, JSON.stringify({ sessionId, workspaceId }))
+        window.localStorage.setItem(`${SPLIT_SESSION_STORAGE}${libraryId}`, JSON.stringify({
+          kind: 'split',
+          sessionId,
+          workspaceId,
+          cwd: typeof cwd === 'string' ? cwd : '',
+        }))
       } catch {
         // storage unavailable
       }
@@ -720,6 +1023,59 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One block that tells a new conversation which question marks already exist
+     * in the chapter. A mark stores a page and a rectangle; the picture is what
+     * lets the model see the framed region even on a scanned page.
+     * @param {object[]} questions - the chapter's marks.
+     * @returns {string} the block, or '' when the chapter has no marks.
+     */
+    function questionsSeedText(questions) {
+      const rows = (Array.isArray(questions) ? questions : [])
+        .map(question => {
+          const name = question !== null && question !== undefined ? question.name : ''
+          return {
+            name: String(name ?? '').trim(),
+            page: Math.max(0, Math.round(Number(question !== null && question !== undefined ? question.page : 0) || 0)),
+            image: typeof (question === null || question === undefined ? undefined : question.image) === 'string'
+              ? question.image.trim()
+              : '',
+          }
+        })
+        .filter(row => row.name !== '' && row.page > 0)
+      if (rows.length === 0) return ''
+      const list = rows.map(row => `- ${row.name}（第 ${row.page} 页）${row.image === '' ? '' : `\n  图片：${row.image}`}`).join('\n')
+      return `本章疑问标记（用户标在 PDF 上的位置，不是正文；用户说「看到疑问…」时指这些）：\n${list}`
+    }
+
+    /**
+     * The chapter's question marks as seed text. Missing or unreadable marks
+     * simply add nothing: the session must still open. The Host renders one
+     * crop per mark (and reuses cached ones), so existing marks get pictures too.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @returns {Promise<string>} the block, or ''.
+     */
+    async function chapterQuestionsBrief(bookId, code) {
+      try {
+        const payload = await loadChapterQuestions(bookId, code)
+        const images = new Map()
+        try {
+          const crops = await request('POST', 'question-crops', { book: bookId, code })
+          for (const item of Array.isArray(crops === null || crops === undefined ? undefined : crops.items) ? crops.items : []) {
+            if (typeof item.id === 'string' && typeof item.path === 'string') images.set(item.id, item.path)
+          }
+        } catch {
+          // No pictures is still better than failing the session seed.
+        }
+        return questionsSeedText(payload.questions.map(question => (
+          images.has(question.id) ? { ...question, image: images.get(question.id) } : question
+        )))
+      } catch {
+        return ''
+      }
+    }
+
+    /**
      * The session the main area currently shows, if any. The workspace keeps the
      * main session retained while a global panel (this workbench) is in front,
      * so this is the conversation a question line would be appended to.
@@ -741,11 +1097,13 @@ window.__ModuleLoader__.load({
     const injectedQuestions = new Set()
 
     /**
-     * Append `看到疑问：<name>` to the conversation that is open, if any. This
-     * writes the composer only: no session is created, opened or sent.
+     * Append `看到疑问：<name>（第 N 页）` to the conversation that is open, if
+     * any. The page is what lets the model find the mark: a mark is a position
+     * on the PDF, not a line of text in the chapter. This writes the composer
+     * only: no session is created, opened or sent.
      * @param {string} bookId - book id.
      * @param {string} code - chapter code.
-     * @param {{ id: string, name: string }} question - the created mark.
+     * @param {{ id: string, name: string, page?: number, image?: string }} question - the created mark.
      * @returns {Promise<boolean>} whether the line was written.
      */
     async function injectQuestionLine(bookId, code, question) {
@@ -755,7 +1113,12 @@ window.__ModuleLoader__.load({
       const key = `${sessionId}|${bookId}|${code}|${question.id}`
       if (injectedQuestions.has(key)) return false
       injectedQuestions.add(key)
-      const prefill = await beginPrefill(sessionId, `看到疑问：${question.name}`, 'append')
+      const page = Math.round(Number(question.page))
+      const where = Number.isFinite(page) && page > 0 ? `（第 ${page} 页）` : ''
+      const image = typeof question.image === 'string' && question.image !== ''
+        ? `\n图片（框选区域）：${question.image}\n请先 read_image 这张图片，看清框里的内容。`
+        : ''
+      const prefill = await beginPrefill(sessionId, `看到疑问：${question.name}${where}${image}`, 'append')
       if (prefill.reference !== null) {
         try { prefill.reference.release() } catch { /* already released */ }
       }
@@ -907,6 +1270,7 @@ window.__ModuleLoader__.load({
       aiPromptCopied: '提示词已复制',
       splitToolStart: '打开拆分会话',
       splitToolCardHint: '在当前书库中创建拆分会话，按命名规则整理章节。',
+      splitStaysWhole: '手动拆开的 PDF 仍属于整本：在「拆分会话」里处理（改名、校验）之前，不会生成章节名，也不会作为分片显示。',
       splitPdfTitle: '按页拆分整本 PDF',
       wholePdfCardTitle: '整本 PDF',
       wholePdfCardHint: '导入整本 PDF，或放进书库的「整本」目录。',
@@ -942,6 +1306,12 @@ window.__ModuleLoader__.load({
       importSplitAsk: '《{title}》已导入 整本\\。现在按页拆分成章节吗？',
       importSplitNow: '现在拆分',
       importSplitLater: '以后再说',
+      importSplitRemember: '记住这个选择，以后不再询问',
+      settingsImportSplit: '导入后是否拆分',
+      settingsImportSplitHint: '记住「现在拆分」后，导入 PDF 会直接打开拆分面板；记住「以后再说」则不再弹窗。在这里可以改回每次询问。',
+      importSplitChoiceAsk: '每次询问',
+      importSplitChoiceSplit: '直接拆分',
+      importSplitChoiceLater: '不询问',
       splitPrompt: '你是数学书库整理助手。**拆分由用户手动作，按章节拆**（一章一个 PDF，页范围看目录）；你的工作是按命名规则重命名、校验、整理目录，不要整本 OCR/拆分。\n书库根目录：{dir}\n目标目录：{dir}\\分片\\<书 id>\\（书 id 是这本书的简写，例如 概率论）\n工具：{dir}\\工具\\ 下的 rename_chapters.py（批量改名）、pdfkit.py（split/verify/render）、auto_chapters.py；规则：{dir}\\工具\\README.md 与 {dir}\\工具\\规范\\。\n要点：目录页必须在 c00；一章一个 PDF，命名 <书 id>_cNN_第X章_章名_p起-止.pdf；缺目录就先请用户补，不要自己猜。\n流程：确认书 id 与已有分片 → 改名/校验 → 报告结果和缺的章。',
       splitFailed: '拆分工具没启动：确认库目录可写后重试',
       librariesTitleHint: '双击标题回到书库',
@@ -1159,6 +1529,7 @@ window.__ModuleLoader__.load({
       splitFragmentDir: '分片/<书id>/',
       splitUntitled: '未命名',
       splitCutHint: '在这里切开',
+      splitJumpTo: '跳到第 {n} 页',
       splitUncutHint: '取消这个拆点',
       splitCutMarked: '已切开',
       splitRestored: '已恢复上次的 {n} 个拆点',
@@ -1166,6 +1537,18 @@ window.__ModuleLoader__.load({
       splitStart: '开始拆分',
       splitBusy: '正在拆分…',
       splitDone: '已拆成 {files} 份',
+      splitResultTitle: '拆分完成',
+      splitResultBody: '已拆成 {files} 份，结果在 分片\\{book}\\。',
+      splitResultRemoveAsk: '是否移除整本形式的书？',
+      splitResultRemoveHint: '原始整本 PDF 移到 回收站\\，拆分出的章节保留。',
+      splitResultOpenAsk: '是否打开拆分会话？',
+      splitResultOpenHint: '回到这个书库的拆书对话，继续核对和重命名章节。',
+      splitResultOpenFailed: '打开拆分会话失败，请确认工作区可用后重试。',
+      splitPromptMissing: '拆分会话已打开，但提示词没有自动填入；请关掉后重新点一次，或直接把书库需求告诉它。',
+      splitResultFinish: '完成',
+      splitResultLater: '以后再说',
+      splitResultFailed: '操作失败',
+      splitResultRemoved: '已移除整本 PDF，可在 回收站\\ 恢复',
       splitFailed: '拆分失败',
       translateStorageHint: '另外，每一页的图会存进 DSH 附件库作为模型输入（约 0.3 MB/页；本章 {pages} 页约 {mb} MB），目前不会自动清理。',
       translating: '翻译中…',
@@ -1272,6 +1655,8 @@ window.__ModuleLoader__.load({
       hideLocalPath: '隐藏本机路径',
       tipsLeftClick: '左键：书卡单击选中/取消，双击打开；章节名单击展开/收起。',
       tipsRightClick: '右键：产物可转 PDF/删除，会话可归档；书卡与章节没有右键菜单。',
+      tipsDelete: '删除 PDF：单击书卡选中 →「隐藏所选」→ 打开「隐藏书籍」→ 选中该书 →「删除所选（移入回收站）」；要彻底删除，去 设置 → 数据 → 清空回收站。',
+      tipsCopyright: '版权：本插件不提供任何书籍内容；请只导入你有权使用的 PDF，拆分与翻译结果仅供个人学习，请勿传播或商用。',
       tipsTitle: '使用提示',
       splitToolTitle: '分片工具',
       importToolTitle: '导入文件',
@@ -1282,6 +1667,11 @@ window.__ModuleLoader__.load({
       envOff: '未安装（点击下载）',
       envPython: 'Python 3',
       envPythonSize: '约 25 MB',
+      envPipPackages: 'PyMuPDF + Pillow',
+      envPipHint: '拆分 / 翻译 / 导出需要，只阅读不需要 Python',
+      envPipCommand: 'py -m pip install pymupdf pillow',
+      envPipCopy: '复制命令',
+      envPipCopied: '已复制',
       envTex: 'TeX Live（xelatex + ctex）',
       envTexSize: '约 5 GB',
       envEngine: '排版引擎',
@@ -1351,7 +1741,12 @@ window.__ModuleLoader__.load({
       shelfShown: '：显示',
       shelfHidden: '：隐藏',
       shelfWholeHint: '点一下切换：整本、未拆分的 PDF 是否出现在书库',
-      shelfLooseHint: '点一下切换：已拆成多份但文件名不规范的 PDF 是否出现在书库',
+      shelfLooseHint: '点一下切换：已拆成多份但书名/章名尚未按拆分规则命名的 PDF 是否出现在书库',
+      shelfWholePinForm: '一直显示整本',
+      shelfWholeUnpinForm: '取消一直显示',
+      shelfWholeFormHint: '对选中的书：它的整本 PDF 形式一直显示，不受「整本书」总开关影响；再点一次取消',
+      shelfWholeReset: '取消固定整本（{n}）',
+      shelfWholeResetHint: '清除所有「一直显示整本」的设置，整本 PDF 重新跟随总开关',
       settingsNotesTitle: '笔记与备份',
       sharedPrefixClear: '清除章节共享前缀',
       sharedPrefixClearHint: '删除各章提取文本、基础会话与模式分支映射（.pdfdesk/cache）；PDF、笔记和已有会话不受影响',
@@ -1556,7 +1951,7 @@ window.__ModuleLoader__.load({
       envGuideOk: '知道了',
       envGuideSettings: '打开设置',
       envInlineMissing: '翻译不可用：缺 Python / TeX 或可读图的模型',
-      envGuideWhyPython: '用来把 PDF 转文字、整理块、生成读版/叠加 PDF',
+      envGuideWhyPython: '用来把 PDF 转文字、整理块、生成读版/叠加 PDF；需要 PyMuPDF 与 Pillow（py -m pip install pymupdf pillow）',
       envGuideWhyTex: '没有 Typst 时用它排版；导出与旧缓存回退也要它',
       envGuideWhyTypst: '默认排版引擎：叠加与读版 PDF，比 TeX 快约 9 倍',
       envGuideWhyModel: '整章翻译要读页面图，必须选一个支持图片输入的模型',
@@ -1628,13 +2023,14 @@ window.__ModuleLoader__.load({
       workspaceCreateFailed: '创建工作区失败',
       workspaceRequired: '请先选择或新建一个工作区，再开始会话。',
       envDownload: '下载 TeX Live（约 5 GB）',
-      envHint: '需要 TeX Live（xelatex、ctex）与 Python 3；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
+      envHint: '需要 TeX Live（xelatex、ctex）与 Python 3，并执行 py -m pip install pymupdf pillow；装好后把 TeX 的 bin 加进 PATH 并重启 DSH',
       updateChecking: '检查中…',
       updateHint: '只在你点击时访问 GitHub releases',
       updateLatest: '已是最新版本（v{version}）',
       updateNew: '发现新版本 {version}（当前 {current}），可以立即更新',
       updateNow: '立即更新',
       updateDownloadOnly: '市场未管理这个插件，点击会下载 zip；解压后在 DSH 插件页更新',
+      aboutCopyright: '本插件只提供阅读、拆分与翻译工具：不提供、不内置、不分发任何书籍内容。导入的 PDF 需由你确认有权使用；拆分、翻译与导出结果仅供个人学习研究，请勿传播或商用。',
       updateMarketStarting: '正在通过插件市场更新…',
       updateMarketProgress: '正在更新：{state}',
       updateMarketDone: '已更新到 v{version}；重启 DSH 后生效',
@@ -1653,6 +2049,18 @@ window.__ModuleLoader__.load({
       shelfCount: '{n} 本',
       shelfSelected: '已选 {n} 本',
       shelfNew: '新建书架',
+      shelfAddTo: '加入书架',
+      shelfAddToTitle: '加入哪个书架',
+      shelfAddToHint: '把选中的 {n} 本书加入：',
+      shelfAddToEmpty: '还没有书架，先点「新建书架」',
+      shelfBookCount: '{n} 本',
+      shelfAddedTo: '已加入「{name}」：{n} 本',
+      shelfAlreadyIn: '「{name}」里已经有这些书了',
+      shelfAddPdf: '添加 PDF',
+      shelfAddPdfOn: '：开',
+      shelfAddPdfOff: '：关',
+      shelfAddPdfOnHint: '书架里显示「添加 PDF」卡片；点一下关闭',
+      shelfAddPdfOffHint: '书架里不显示「添加 PDF」卡片；点一下打开',
       shelfName: '书架名称',
       shelfCreate: '创建',
       shelfHide: '隐藏所选',
@@ -1824,6 +2232,7 @@ window.__ModuleLoader__.load({
       aiPromptCopied: 'Prompt copied',
       splitToolStart: 'Open the split conversation',
       splitToolCardHint: 'Start a split conversation in this library and arrange chapters by the naming rule.',
+      splitStaysWhole: 'Manually split PDFs still belong to the whole book: until the split conversation processes them (rename + verify), they have no chapter names and do not appear as fragments.',
       splitPdfTitle: 'Split a whole PDF by page',
       wholePdfCardTitle: 'Whole PDF',
       wholePdfCardHint: 'Import a whole PDF, or drop it into the 整本/ folder of the library.',
@@ -1859,6 +2268,12 @@ window.__ModuleLoader__.load({
       importSplitAsk: '《{title}》 was imported into 整本\\. Split it into chapters by page now?',
       importSplitNow: 'Split now',
       importSplitLater: 'Not now',
+      importSplitRemember: 'Remember this choice and do not ask again',
+      settingsImportSplit: 'Split after import',
+      settingsImportSplitHint: 'Remembering "Split now" opens the split panel right after an import; "Not now" stops the question. Reset it to asking here.',
+      importSplitChoiceAsk: 'Ask every time',
+      importSplitChoiceSplit: 'Split automatically',
+      importSplitChoiceLater: 'Do not ask',
       splitPrompt: 'You organize a math library. **The user splits by hand, one chapter per PDF** (page ranges from the contents); your job is renaming, verifying and organizing — never OCR or split the whole book.\nLibrary root: {dir}\nTarget: {dir}\\分片\\<book id>\\ (a short id like 概率论)\nTools: {dir}\\工具\\ with rename_chapters.py (batch rename), pdfkit.py (split/verify/render), auto_chapters.py; rules: {dir}\\工具\\README.md and {dir}\\工具\\规范\\.\nPoints: the contents must be in c00; one PDF per chapter, named <book id>_cNN_第X章_章名_p起-止.pdf; if the contents are missing, ask the user — do not guess.\nFlow: confirm the book id and existing splits → rename/verify → report the result and missing chapters.',
       splitFailed: 'The split conversation did not start — check that the library folder is writable',
       librariesTitleHint: 'Double-click the title for the libraries',
@@ -2077,6 +2492,7 @@ window.__ModuleLoader__.load({
       splitFragmentDir: '分片/<book id>/',
       splitUntitled: 'Untitled',
       splitCutHint: 'Cut here',
+      splitJumpTo: 'Jump to page {n}',
       splitUncutHint: 'Remove this cut',
       splitCutMarked: 'Cut added',
       splitRestored: 'Restored {n} saved cut(s)',
@@ -2084,6 +2500,18 @@ window.__ModuleLoader__.load({
       splitStart: 'Start splitting',
       splitBusy: 'Splitting…',
       splitDone: 'Split into {files} files',
+      splitResultTitle: 'Split finished',
+      splitResultBody: 'Split into {files} files in 分片\\{book}\\.',
+      splitResultRemoveAsk: 'Remove the whole-book copy?',
+      splitResultRemoveHint: 'Moves the original whole PDF to 回收站\\; the split chapters stay.',
+      splitResultOpenAsk: 'Open the split conversation?',
+      splitResultOpenHint: 'Return to this library\'s split conversation to verify and rename chapters.',
+      splitResultOpenFailed: 'Could not open the split conversation — check the workspace and try again.',
+      splitPromptMissing: 'The split conversation opened, but the prompt could not be inserted; close it and try again, or tell it about the library directly.',
+      splitResultFinish: 'Done',
+      splitResultLater: 'Later',
+      splitResultFailed: 'Action failed',
+      splitResultRemoved: 'Whole PDF moved to 回收站\\ and can be restored',
       splitFailed: 'Splitting failed',
       translating: 'Translating…',
       translateDone: 'Created',
@@ -2190,6 +2618,8 @@ window.__ModuleLoader__.load({
       hideLocalPath: 'Hide local path',
       tipsLeftClick: 'Left click: a cover selects/deselects, double click opens the book; a chapter row expands/collapses',
       tipsRightClick: 'Right click: artifacts can convert or delete, sessions can be archived; books and chapters have no menu',
+      tipsDelete: 'Delete a PDF: click its cover to select it → Hide selected → open Hidden books → select it → Delete selected (to recycle bin). To erase permanently, use Settings → Data → Empty recycle bin.',
+      tipsCopyright: 'Copyright: this plugin ships no book content. Import only PDFs you may use; split and translated output is for personal study—do not redistribute it.',
       tipsTitle: 'Interaction tips',
       splitToolTitle: 'Split toolkit',
       importToolTitle: 'Import files',
@@ -2200,6 +2630,11 @@ window.__ModuleLoader__.load({
       envOff: 'missing (click to download)',
       envPython: 'Python 3',
       envPythonSize: '~25 MB',
+      envPipPackages: 'PyMuPDF + Pillow',
+      envPipHint: 'needed for split / translate / export; reading needs no Python',
+      envPipCommand: 'py -m pip install pymupdf pillow',
+      envPipCopy: 'Copy command',
+      envPipCopied: 'Copied',
       envTex: 'TeX Live (xelatex + ctex)',
       envTexSize: '~5 GB',
       envEngine: 'Typesetting engine',
@@ -2269,7 +2704,12 @@ window.__ModuleLoader__.load({
       shelfShown: ': shown',
       shelfHidden: ': hidden',
       shelfWholeHint: 'Click to switch whether whole, unsplit PDFs appear in the library',
-      shelfLooseHint: 'Click to switch whether PDFs split into chapters but named by hand appear in the library',
+      shelfLooseHint: 'Click to switch whether PDFs split into chapters but not yet named per the split rule appear in the library',
+      shelfWholePinForm: 'Always show whole form',
+      shelfWholeUnpinForm: 'Stop always showing',
+      shelfWholeFormHint: 'For the selected books: keep their whole-PDF form visible whatever the "whole books" switch says; click again to stop',
+      shelfWholeReset: 'Unpin whole forms ({n})',
+      shelfWholeResetHint: 'Clear every "always show whole form" choice so whole PDFs follow the shelf switch again',
       settingsNotesTitle: 'Notes and backup',
       sharedPrefixClear: 'Clear chapter shared prefix',
       sharedPrefixClearHint: 'Delete extracted text, base-session and branch maps (.pdfdesk/cache). PDFs, notes and existing sessions stay.',
@@ -2474,7 +2914,7 @@ window.__ModuleLoader__.load({
       envGuideOk: 'Got it',
       envGuideSettings: 'Open settings',
       envInlineMissing: 'Translation unavailable: Python / TeX or an image-capable model is missing',
-      envGuideWhyPython: 'Turns PDFs into text, keeps block geometry, and builds the reading/overlay PDFs',
+      envGuideWhyPython: 'Turns PDFs into text, keeps block geometry, and builds the reading/overlay PDFs; needs PyMuPDF and Pillow (py -m pip install pymupdf pillow)',
       envGuideWhyTex: 'Typesets when Typst is absent; export and older caches still need it',
       envGuideWhyTypst: 'Default typesetter for the overlay and reading PDFs, about 9× faster than TeX',
       envGuideWhyModel: 'Chapter translation reads page images, so the model must accept images',
@@ -2546,13 +2986,14 @@ window.__ModuleLoader__.load({
       workspaceCreateFailed: 'Could not create the workspace',
       workspaceRequired: 'Choose or create a workspace before starting a conversation.',
       envDownload: 'Download TeX Live (~5 GB)',
-      envHint: 'Needs TeX Live (xelatex, ctex) and Python 3; add TeX bin to PATH and restart DSH',
+      envHint: 'Needs TeX Live (xelatex, ctex) and Python 3, then run py -m pip install pymupdf pillow; add TeX bin to PATH and restart DSH',
       updateChecking: 'Checking…',
       updateHint: 'Only contacts GitHub releases on click',
       updateLatest: 'Up to date (v{version})',
       updateNew: 'Version {version} is available (you have {current}) — update now',
       updateNow: 'Update now',
       updateDownloadOnly: 'The market does not manage this plugin; the button downloads the zip. Unzip it and update in the DSH plugin page.',
+      aboutCopyright: 'This plugin is a reading, splitting and translation tool: it ships and distributes no book content. Only import PDFs you have the right to use; split, translation and export output is for personal study—do not redistribute it.',
       updateMarketStarting: 'Updating through the plugin market…',
       updateMarketProgress: 'Updating: {state}',
       updateMarketDone: 'Updated to v{version}; restart DSH to apply',
@@ -2571,6 +3012,18 @@ window.__ModuleLoader__.load({
       shelfCount: '{n} books',
       shelfSelected: '{n} selected',
       shelfNew: 'New shelf',
+      shelfAddTo: 'Add to shelf',
+      shelfAddToTitle: 'Add to which shelf?',
+      shelfAddToHint: 'Add the {n} selected book(s) to:',
+      shelfAddToEmpty: 'No shelves yet — create one first',
+      shelfBookCount: '{n} book(s)',
+      shelfAddedTo: 'Added {n} book(s) to "{name}"',
+      shelfAlreadyIn: '"{name}" already has these books',
+      shelfAddPdf: 'Add PDF',
+      shelfAddPdfOn: ': on',
+      shelfAddPdfOff: ': off',
+      shelfAddPdfOnHint: 'Show the add-PDF card in this shelf; click to turn it off',
+      shelfAddPdfOffHint: 'Hide the add-PDF card in this shelf; click to turn it on',
       shelfName: 'Shelf name',
       shelfCreate: 'Create',
       shelfHide: 'Hide selected',
@@ -3635,17 +4088,18 @@ window.__ModuleLoader__.load({
      * it; the caller must release it.
      * @param {string} sessionId - the session that will hold the draft.
      * @param {string} text - the outline Markdown.
-     * @returns {Promise<{ applied: boolean, reference: object | null }>} the result and the held retention.
+     * @param {'append' | 'keep' | 'replace'} [whenDraftExists] - how an existing draft is treated.
+     * @returns {Promise<{ applied: boolean, status: 'applied' | 'preserved' | 'blocked' | 'unavailable', reference: object | null }>} the result and the held retention.
      */
     async function beginPrefill(sessionId, text, whenDraftExists = 'append') {
       const sessions = sessionService()
       const conversation = clientContext === null ? null : clientContext.get('conversation')
       if (sessions === null || sessions === undefined || conversation === null || conversation === undefined) {
-        return { applied: false, reference: null }
+        return { applied: false, status: 'unavailable', reference: null }
       }
       if (typeof sessions.retain !== 'function' || conversation.input === undefined
         || typeof conversation.input.requestDraftInitialization !== 'function') {
-        return { applied: false, reference: null }
+        return { applied: false, status: 'unavailable', reference: null }
       }
       let reference = null
       try {
@@ -3657,24 +4111,32 @@ window.__ModuleLoader__.load({
           // draft; resuming uses keep so an existing draft is never duplicated.
           whenDraftExists,
         })
-        return { applied: result === 'applied', reference }
+        const status = result === 'applied' || result === 'preserved' || result === 'blocked' ? result : 'blocked'
+        return { applied: status === 'applied', status, reference }
       } catch {
         if (reference !== null) {
           try { reference.release() } catch { /* already released */ }
         }
-        return { applied: false, reference: null }
+        return { applied: false, status: 'blocked', reference: null }
       }
     }
 
     /**
-     * Open a Session in the host Conversation, leaving the workbench.
+     * Open a Session in the host Conversation, leaving the workbench. An empty
+     * or malformed id is refused here: handing it to the host would reveal
+     * whatever conversation is current, which reads as "an unrelated session".
      * @param {string} sessionId - target Session.
-     * @returns {boolean} false when the workspace service is unavailable.
+     * @returns {boolean} false when the id is unusable, the workspace service is unavailable, or opening threw.
      */
     function openHostSession(sessionId) {
+      if (typeof sessionId !== 'string' || sessionId === '') return false
       const uiWorkspace = clientContext === null ? null : clientContext.get('uiWorkspace')
       if (uiWorkspace === null || uiWorkspace === undefined || typeof uiWorkspace.openSession !== 'function') return false
-      uiWorkspace.openSession(sessionId)
+      try {
+        uiWorkspace.openSession(sessionId)
+      } catch {
+        return false
+      }
       return true
     }
 
@@ -5185,7 +5647,9 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         void request('GET', 'engine').then(setEngine).catch(() => setEngine({ engine: '', source: 'missing' }))
       }, [])
-      const row = (label, ok, hint, action) => h('div', { className: 'md-settings-row' },
+      const row = (label, ok, hint, action) => h('div', {
+        className: `md-settings-row md-env-row ${ok ? 'md-env-row-ok' : 'md-env-row-missing'}`,
+      },
         h('span', null, `${ok ? '✓' : '✗'} ${label}`),
         h('span', { className: 'md-shelf-sub' }, hint),
         action === null ? null : action)
@@ -5198,6 +5662,7 @@ window.__ModuleLoader__.load({
       }
       return h(KitModal, {
         title: format('envGuideTitle'),
+        className: 'md-env-guide-modal',
         onClose: props.onClose,
         children: h('div', { className: 'md-env-guide' },
           h('p', { className: 'md-shelf-sub' }, format('envGuideIntro')),
@@ -5285,6 +5750,33 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The Python packages the bundled tools need, with the exact pip command and
+     * a copy button. Shown on the library page and in Settings → 环境: a missing
+     * package used to surface only as a traceback from a tool.
+     * @returns {import('react').ReactElement} the row.
+     */
+    function PipPackagesRow() {
+      const [note, setNote] = useState('')
+      const copy = () => {
+        const text = format('envPipCommand')
+        try {
+          void navigator.clipboard.writeText(text)
+            .then(() => setNote(format('envPipCopied')))
+            .catch(() => setNote(text))
+        } catch {
+          setNote(text)
+        }
+        window.setTimeout(() => setNote(''), 1800)
+      }
+      return h('div', { className: 'md-settings-row' },
+        h('span', null, `${format('envPipPackages')}：${format('envPipHint')}`),
+        h('code', { className: 'md-path' }, format('envPipCommand')),
+        h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: copy }, format('envPipCopy')),
+        note === '' ? null : h('span', { className: 'md-shelf-sub' }, note)
+      )
+    }
+
+    /**
      * One page thumbnail: paints on demand when it scrolls near the viewport.
      * The bitmap is sized in device pixels (CSS width × device pixel ratio) so a
      * 620px-wide page stays sharp on a HiDPI screen instead of being a 132px
@@ -5301,6 +5793,30 @@ window.__ModuleLoader__.load({
       canvas.width = Math.round(viewport.width)
       canvas.height = Math.round(viewport.height)
       await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+    }
+
+    /** Width of a split-panel thumbnail, in CSS pixels; 240 stays sharp at 2×. */
+    const SPLIT_THUMB_WIDTH = 240
+
+    /**
+     * One cached split-panel page image. `version` is the PDF identity hash the
+     * Host returned, so a re-imported file gets new URLs instead of old pages.
+     * @param {string} bookId - book id.
+     * @param {string} code - chapter code.
+     * @param {number} page - 1-based page.
+     * @param {number} width - CSS width.
+     * @param {string} version - Host cache version.
+     * @returns {string} absolute image URL.
+     */
+    function splitThumbUrl(bookId, code, page, width, version) {
+      const query = new URLSearchParams({
+        book: bookId,
+        code,
+        page: String(page),
+        w: String(width),
+      })
+      if (typeof version === 'string' && version !== '') query.set('v', version)
+      return new URL(`pdfdesk/pdf-thumb?${query.toString()}`, document.baseURI).href
     }
 
     /**
@@ -5558,8 +6074,18 @@ window.__ModuleLoader__.load({
       const book = props.book
       const chapters = Array.isArray(book.chapters) ? book.chapters : []
       const chapter = chapters.find(item => item.whole === true) ?? chapters[0]
+      const bookId = typeof book.id === 'string' ? book.id : ''
+      const chapterCode = chapter === undefined || typeof chapter.code !== 'string' ? '' : chapter.code
       const [doc, setDoc] = useState(null)
       const [count, setCount] = useState(0)
+      // The Host renders thumbnails with PyMuPDF in milliseconds and caches
+      // them, so the panel never has to parse a 90 MB PDF in the browser.
+      // `pdfjs` stays as the fallback when Python/PyMuPDF is unavailable.
+      const [thumbMode, setThumbMode] = useState('pending')
+      const [layout, setLayout] = useState(null)
+      const [thumbUrls, setThumbUrls] = useState({})
+      const thumbUrlsRef = useRef({})
+      thumbUrlsRef.current = thumbUrls
       const [cuts, setCuts] = useState(() => new Set())
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState('')
@@ -5602,6 +6128,100 @@ window.__ModuleLoader__.load({
       }
       const scroller = useRef(null)
       const attach = useRef(new Map())
+      // Host-thumbnail bookkeeping: pages waiting for their first image, and one
+      // debounced batch request at a time so scrolling cannot spawn a render
+      // per page.
+      const hostPending = useRef(new Set())
+      const hostTimer = useRef(null)
+      const hostBusy = useRef(false)
+      const [flashPage, setFlashPage] = useState(0)
+      const flashTimer = useRef(null)
+      useEffect(() => () => {
+        if (flashTimer.current !== null) clearTimeout(flashTimer.current)
+        if (hostTimer.current !== null) clearTimeout(hostTimer.current)
+      }, [])
+
+      /**
+       * Ask the Host for the page geometry and one thumbnail range. The first
+       * call also creates the cache; later calls for the same pages return
+       * immediately from disk.
+       * @param {number} from - first page.
+       * @param {number} to - last page.
+       * @returns {Promise<number | null>} page count, or null when the Host path is unavailable.
+       */
+      const prepareHostThumbs = useCallback(async (from, to) => {
+        if (bookId === '' || chapterCode === '') return null
+        try {
+          const payload = await request('POST', 'pdf-layout', {
+            book: bookId,
+            code: chapterCode,
+            from,
+            to,
+            w: SPLIT_THUMB_WIDTH,
+          }, 30000)
+          if (payload === null || typeof payload !== 'object' || payload.ok !== true) return null
+          const pages = Number(payload.pages)
+          if (!Number.isFinite(pages) || pages <= 0) return null
+          const version = typeof payload.v === 'string' ? payload.v : ''
+          const pageWidth = Number(payload.pageWidth)
+          const pageHeight = Number(payload.pageHeight)
+          setLayout(current => {
+            if (current !== null && current.v === version && current.pages === pages) return current
+            return {
+              pages,
+              v: version,
+              pageWidth: Number.isFinite(pageWidth) && pageWidth > 0 ? pageWidth : 0,
+              pageHeight: Number.isFinite(pageHeight) && pageHeight > 0 ? pageHeight : 0,
+            }
+          })
+          setCount(pages)
+          const rendered = Array.isArray(payload.rendered) ? payload.rendered : []
+          if (rendered.length > 0) {
+            setThumbUrls(current => {
+              let changed = false
+              const next = { ...current }
+              for (const page of rendered) {
+                if (!Number.isInteger(page) || page < 1) continue
+                const url = splitThumbUrl(bookId, chapterCode, page, SPLIT_THUMB_WIDTH, version)
+                if (next[page] !== url) {
+                  next[page] = url
+                  changed = true
+                }
+              }
+              return changed ? next : current
+            })
+          }
+          return pages
+        } catch {
+          return null
+        }
+      }, [bookId, chapterCode])
+
+      /** Debounce one batch for the pages that just scrolled into range. */
+      const scheduleHostThumbs = () => {
+        if (hostTimer.current !== null) clearTimeout(hostTimer.current)
+        hostTimer.current = window.setTimeout(() => {
+          hostTimer.current = null
+          void flushHostThumbs()
+        }, 120)
+      }
+
+      /** Render the pending page window (at most one batch in flight). */
+      const flushHostThumbs = async () => {
+        if (hostBusy.current) return
+        const pages = [...hostPending.current].sort((left, right) => left - right)
+        if (pages.length === 0) return
+        const from = pages[0]
+        const to = Math.min(from + 59, pages[pages.length - 1])
+        for (const page of pages) if (page <= to) hostPending.current.delete(page)
+        hostBusy.current = true
+        try {
+          await prepareHostThumbs(from, to)
+        } finally {
+          hostBusy.current = false
+        }
+        if (hostPending.current.size > 0) scheduleHostThumbs()
+      }
 
       useEffect(() => {
         if (typeof window === 'undefined') return undefined
@@ -5610,7 +6230,25 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener('keydown', onKey, true)
       }, [])
 
+      // Try the Host thumbnails first: page geometry arrives with the first
+      // visible images, no PDF parsing in the browser. When Python/PyMuPDF is
+      // missing the old in-browser pdf.js path takes over unchanged.
       useEffect(() => {
+        if (chapterCode === '') {
+          setThumbMode('pdfjs')
+          return undefined
+        }
+        let alive = true
+        void (async () => {
+          const pages = await prepareHostThumbs(1, 12)
+          if (!alive) return
+          setThumbMode(pages === null ? 'pdfjs' : 'host')
+        })()
+        return () => { alive = false }
+      }, [chapterCode, prepareHostThumbs])
+
+      useEffect(() => {
+        if (thumbMode !== 'pdfjs') return undefined
         let alive = true
         void (async () => {
           try {
@@ -5626,16 +6264,14 @@ window.__ModuleLoader__.load({
           }
         })()
         return () => { alive = false }
-      }, [])
+      }, [thumbMode])
 
-      // One canvas per page, painted once when it comes near the viewport. The
-      // ref callback is cached per page number: a fresh closure on every render
-      // made React detach and re-attach every canvas, and each re-attach built
-      // another IntersectionObserver that re-rasterised the visible column on
-      // every cut toggle — that was "thumbnails load too slowly".
+      // One page frame per page. In Host mode the frame is observed so its
+      // thumbnail can be requested; in the pdf.js fallback the canvas inside it
+      // is painted once when the frame comes near the viewport.
       const refCache = useRef(new Map())
       const observerRef = useRef(null)
-      const canvasRef = number => {
+      const thumbRef = number => {
         let callback = refCache.current.get(number)
         if (callback === undefined) {
           callback = node => {
@@ -5652,16 +6288,28 @@ window.__ModuleLoader__.load({
         return callback
       }
       useEffect(() => {
-        if (doc === null || typeof IntersectionObserver !== 'function') return undefined
+        if (typeof IntersectionObserver !== 'function') return undefined
+        if (thumbMode === 'pending') return undefined
+        if (thumbMode === 'pdfjs' && doc === null) return undefined
         const observer = new IntersectionObserver(entries => {
           for (const entry of entries) {
             if (!entry.isIntersecting) continue
             const node = entry.target
+            if (thumbMode === 'host') {
+              const page = Number(node.dataset.page)
+              if (!Number.isInteger(page) || page < 1) continue
+              if (thumbUrlsRef.current[page] !== undefined) continue
+              hostPending.current.add(page)
+              scheduleHostThumbs()
+              continue
+            }
             if (node.dataset.painted === '1') continue
+            const canvas = node.querySelector('canvas')
+            if (canvas === null) continue
             node.dataset.painted = '1'
             observer.unobserve(node)
             void doc.getPage(Number(node.dataset.page))
-              .then(page => paintSplitThumb(page, node))
+              .then(page => paintSplitThumb(page, canvas))
               .catch(() => { node.dataset.painted = '0' })
           }
         }, { root: scroller.current, rootMargin: '600px' })
@@ -5671,7 +6319,7 @@ window.__ModuleLoader__.load({
           observer.disconnect()
           observerRef.current = null
         }
-      }, [doc])
+      }, [doc, thumbMode])
 
       const sorted = [...cuts].sort((first, second) => first - second)
       const ranges = []
@@ -5685,7 +6333,12 @@ window.__ModuleLoader__.load({
       if (start <= count) ranges.push([start, count])
       const spec = ranges.map(([from, to]) => (from === to ? String(from) : `${from}-${to}`)).join(',')
       const preview = ranges.slice(0, 6).map(([from, to], index) => `${book.id}_c${String(index).padStart(2, '0')}_${format('splitUntitled')}_p${String(from).padStart(3, '0')}-${String(to).padStart(3, '0')}.pdf`)
-
+      // Reserve each cell's height before its image arrives: a grid that grows
+      // as thumbnails load re-lays out the whole book and is the main source of
+      // scroll jank on large files.
+      const pageAspect = layout !== null && layout.pageWidth > 0 && layout.pageHeight > 0
+        ? `${layout.pageWidth} / ${layout.pageHeight}`
+        : undefined
       const toggleCut = index => {
         const next = new Set(cuts)
         if (next.has(index)) next.delete(index)
@@ -5693,6 +6346,29 @@ window.__ModuleLoader__.load({
         saveSplitCuts(next)
         setCuts(next)
         setRestored(0)
+      }
+
+      /**
+       * Scroll the thumbnail grid to one page and outline it for a moment. The
+       * range line above the plans is the only place a long book's pages are
+       * named, so its numbers are the jump entry. Never touches the cut plan.
+       * @param {number} number - 1-based page to land on.
+       * @returns {void}
+       */
+      const jumpToPage = number => {
+        const target = Math.max(1, Math.min(count > 0 ? count : 1, Math.round(Number(number) || 1)))
+        const panel = scroller.current
+        const node = attach.current.get(target)
+        if (panel === null || node === undefined) return
+        const rect = node.getBoundingClientRect()
+        const top = rect.top - panel.getBoundingClientRect().top + panel.scrollTop - 8
+        panel.scrollTo({ top: Math.max(0, Math.round(top)), behavior: 'smooth' })
+        setFlashPage(target)
+        if (flashTimer.current !== null) clearTimeout(flashTimer.current)
+        flashTimer.current = window.setTimeout(() => {
+          flashTimer.current = null
+          setFlashPage(0)
+        }, 1200)
       }
 
       useEffect(() => {
@@ -5708,7 +6384,7 @@ window.__ModuleLoader__.load({
         try {
           const result = await request('POST', 'split', { book: book.id, ranges: spec }, 300000)
           setNote(format('splitDone', { files: ranges.length }))
-          if (typeof props.onDone === 'function') props.onDone(result)
+          if (typeof props.onDone === 'function') props.onDone({ ...(result ?? {}), files: ranges.length })
         } catch (error) {
           setNote(`${format('splitFailed')}：${String(error && error.message ? error.message : error)}`)
         } finally {
@@ -5747,9 +6423,36 @@ window.__ModuleLoader__.load({
                   : Array.from({ length: count }, (_, index) => {
                     const number = index + 1
                     const cut = cuts.has(number)
-                    return h('div', { key: number, className: 'md-split-item' },
-                      h('div', { className: 'md-split-page' },
-                        h('canvas', { ref: canvasRef(number) }),
+                    const hostGrid = thumbMode !== 'pdfjs'
+                    const thumbUrl = hostGrid ? thumbUrls[number] : undefined
+                    const frameClass = hostGrid ? 'md-split-page md-split-page-host' : 'md-split-page'
+                    return h('div', { key: number, className: number === flashPage ? 'md-split-item md-split-flash' : 'md-split-item' },
+                      h('div', {
+                        className: frameClass,
+                        ref: thumbRef(number),
+                        style: hostGrid && pageAspect !== undefined ? { aspectRatio: pageAspect } : undefined,
+                      },
+                        hostGrid
+                          ? (thumbUrl === undefined
+                            ? h('span', { className: 'md-split-thumb-wait', 'aria-hidden': true })
+                            : h('img', {
+                              className: 'md-split-thumb',
+                              src: thumbUrl,
+                              alt: '',
+                              loading: 'lazy',
+                              decoding: 'async',
+                              onError: () => {
+                                setThumbUrls(current => {
+                                  if (current[number] === undefined) return current
+                                  const next = { ...current }
+                                  delete next[number]
+                                  return next
+                                })
+                                hostPending.current.add(number)
+                                scheduleHostThumbs()
+                              },
+                            }))
+                          : h('canvas', null),
                         h('span', { className: cut ? 'md-split-num md-split-num-on' : 'md-split-num' }, number)),
                       number < count
                         ? h('button', {
@@ -5766,9 +6469,30 @@ window.__ModuleLoader__.load({
                   })),
               h('div', { className: 'md-split-side' },
             h('h4', { className: 'md-settings-heading' }, format('splitRanges')),
-            h('p', { className: 'md-shelf-sub' }, ranges.length === 0
+            // The numbers are the jump entry: clicking one scrolls the grid to
+            // that page and outlines it. Long books are only browsable this way.
+            h('p', { className: 'md-shelf-sub md-split-range' }, ranges.length === 0
               ? format('splitNeedCuts')
-              : ranges.map(([from, to]) => (from === to ? `${from}` : `${from}-${to}`)).join('  ')),
+              : ranges.map(([from, to], index) => h(React.Fragment, { key: `${from}-${to}-${index}` },
+                index > 0 ? '  ' : null,
+                h('button', {
+                  type: 'button',
+                  className: 'md-split-jump',
+                  title: format('splitJumpTo', { n: from }),
+                  onClick: () => jumpToPage(from),
+                }, String(from)),
+                to === from
+                  ? null
+                  : [
+                    h('span', { key: 'dash', className: 'md-split-range-dash', 'aria-hidden': true }, '–'),
+                    h('button', {
+                      key: 'to',
+                      type: 'button',
+                      className: 'md-split-jump',
+                      title: format('splitJumpTo', { n: to }),
+                      onClick: () => jumpToPage(to),
+                    }, String(to)),
+                  ]))),
             restored > 0
               ? h('p', { className: 'md-settings-note' }, format('splitRestored', { n: restored }))
               : null,
@@ -5792,6 +6516,90 @@ window.__ModuleLoader__.load({
                 disabled: busy || ranges.length === 0,
                 onClick: () => { void startSplit() },
               }, busy ? format('splitBusy') : format('splitStart'))))))))
+    }
+
+    /**
+     * Post-split choices: remove the original whole-book PDF and/or return to
+     * this library's split conversation. Both are real actions: the first moves
+     * the PDF to 回收站, the second reopens (or creates) the split assistant.
+     * @param {{ book: object, result: object, onClose: Function, onOpenConversation: Function, onRemoved: Function }} props - the whole book and the split result.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function SplitResultDialog(props) {
+      const book = props.book
+      const bookId = String(book === null || book === undefined ? '' : book.id ?? '')
+      const chapters = Array.isArray(book === null || book === undefined ? undefined : book.chapters) ? book.chapters : []
+      const whole = chapters.find(chapter => chapter.whole === true) ?? chapters[0]
+      const wholeFile = whole !== undefined && typeof whole.file === 'string' ? whole.file : bookId
+      const files = Number(props.result === null || props.result === undefined ? 0 : props.result.files) || 0
+      // The two answers survive a reload; a cancelled "以后再说" never writes.
+      const [removeWhole, setRemoveWhole] = useState(() => readSplitResultChoice().removeWhole)
+      const [openConversation, setOpenConversation] = useState(() => readSplitResultChoice().openConversation)
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+      const finish = async () => {
+        if (busy) return
+        setBusy(true)
+        setError('')
+        try {
+          if (removeWhole) {
+            await request('POST', 'trash-book', { book: bookId, file: wholeFile, whole: true })
+            if (typeof props.onRemoved === 'function') await props.onRemoved()
+          }
+          if (openConversation) {
+            const opened = typeof props.onOpenConversation === 'function'
+              ? await props.onOpenConversation()
+              : false
+            if (opened === false) {
+              setError(format('splitResultOpenFailed'))
+              setBusy(false)
+              return
+            }
+          }
+          writeSplitResultChoice({ removeWhole, openConversation })
+          props.onClose()
+        } catch (failure) {
+          setError(`${format('splitResultFailed')}：${String(failure && failure.message ? failure.message : failure)}`)
+          setBusy(false)
+        }
+      }
+      return h(KitModal, {
+        title: format('splitResultTitle'),
+        onClose: props.onClose,
+        children: h(React.Fragment, null,
+          h('p', { className: 'md-env-body' }, format('splitResultBody', { files, book: bookId })),
+          h('div', { className: 'md-settings-row' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: removeWhole,
+                disabled: busy,
+                onChange: event => setRemoveWhole(event.target.checked),
+              }),
+              ` ${format('splitResultRemoveAsk')}`)),
+          h('p', { className: 'md-shelf-sub' }, format('splitResultRemoveHint')),
+          h('div', { className: 'md-settings-row' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox',
+                checked: openConversation,
+                disabled: busy,
+                onChange: event => setOpenConversation(event.target.checked),
+              }),
+              ` ${format('splitResultOpenAsk')}`)),
+          h('p', { className: 'md-shelf-sub' }, format('splitResultOpenHint')),
+          error === '' ? null : h('p', { className: 'md-settings-note' }, error)),
+        footer: [
+          h(KitButton, {
+            key: 'later', variant: 'ghost', disabled: busy,
+            onClick: props.onClose,
+          }, format('splitResultLater')),
+          h(KitButton, {
+            key: 'done', variant: 'primary', disabled: busy,
+            onClick: () => { void finish() },
+          }, busy ? format('dataWorking') : format('splitResultFinish')),
+        ],
+      })
     }
 
     /**
@@ -5954,6 +6762,74 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Every shelf a split book belongs in. A shelf that already holds the whole
+     * book is where its split pieces belong, no matter where the split panel was
+     * opened from; the shelf the split started in is included too, and the
+     * hidden list is never a target (it is a filter, not a place).
+     * @param {{ hidden?: string[], shelves?: object[] }} groups - stored groups.
+     * @param {string} bookId - the whole book that was split.
+     * @param {string | null} group - the group that was open when the split started.
+     * @returns {string[]} target shelf ids, in shelf order.
+     */
+    function splitTargetShelves(groups, bookId, group) {
+      const shelves = groups !== null && groups !== undefined && Array.isArray(groups.shelves) ? groups.shelves : []
+      const base = typeof bookId === 'string' ? wholeBaseId(bookId) : ''
+      const targets = []
+      for (const shelf of shelves) {
+        if (shelf === null || shelf === undefined || shelf.id === 'hidden') continue
+        if (base === '') continue
+        const held = Array.isArray(shelf.books) ? shelf.books : []
+        // Both sides drop a possible `@hash` suffix: the whole card and its
+        // shelf entry can be the same file keyed slightly differently.
+        if (!held.some(id => typeof id === 'string' && wholeBaseId(id) === base)) continue
+        if (!targets.includes(shelf.id)) targets.push(shelf.id)
+      }
+      const started = group !== null && group !== undefined && group !== 'hidden' ? group : ''
+      if (started !== '' && !targets.includes(started)) targets.push(started)
+      return targets
+    }
+
+    /**
+     * The books one split wrote: split chapters whose `dir` is the whole book's
+     * id. A split book's own id comes from the file names, so the folder is the
+     * only reliable link back; the whole row carries `whole: true` and is not a
+     * split result.
+     * @param {object[]} books - catalog rows, freshly read.
+     * @param {string} wholeId - id of the book that was split.
+     * @returns {string[]} ids of the new split books.
+     */
+    function splitBookIds(books, wholeId) {
+      if (typeof wholeId !== 'string' || wholeId === '' || !Array.isArray(books)) return []
+      return books.filter(item => item.dir === wholeId && item.whole !== true).map(item => item.id)
+    }
+
+    /**
+     * The split completion: wait for the refresh that lists the new folders,
+     * find the books the split wrote, and file them into every shelf that held
+     * the whole book (plus the shelf the split started from). The result dialog
+     * opens only after this settles, so it never reads the stale catalog; a
+     * failed or empty refresh still settles, as [].
+     * @param {object} options - the whole book, its shelves and the workbench's refresh/store functions.
+     * @param {object} options.book - the whole book that was split.
+     * @param {string | null} options.group - the group that was open when the split started.
+     * @param {{ hidden?: string[], shelves?: object[] }} options.groups - shelf groups as the split started.
+     * @param {Function} options.reload - resolves with the refreshed catalog books.
+     * @param {Function} options.saveShelfGroups - persists the next groups.
+     * @returns {Promise<{ shelfIds: string[], ids: string[], added: number }>} the target shelves and what was filed.
+     */
+    async function fileSplitBooks(options) {
+      const freshBooks = await options.reload()
+      const bookId = options.book === null || options.book === undefined ? '' : options.book.id
+      const ids = splitBookIds(freshBooks, bookId)
+      const targets = splitTargetShelves(options.groups, bookId, options.group)
+      if (targets.length === 0 || ids.length === 0) return { shelfIds: targets, ids, added: 0 }
+      const result = shelfAddBooksTo(options.groups, targets, ids)
+      if (result === null) return { shelfIds: targets, ids, added: 0 }
+      await options.saveShelfGroups(result.groups)
+      return { shelfIds: targets, ids, added: result.added }
+    }
+
+    /**
      * The shared "split a whole PDF by page" entry: pick a whole-book PDF and open
      * the split panel, plus an optional "import a PDF and split it" shortcut. The
      * library page and Settings → Data render this same block, so the two entries
@@ -6007,6 +6883,9 @@ window.__ModuleLoader__.load({
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
       const [tab, setTab] = useState(props.initialTab ?? 'reading')
       const [pageCacheLimit, setPageCacheLimit] = useState(() => readPageCacheLimit())
+      // Same value the import dialog's "remember" checkbox writes; the row here
+      // is how the user gets the question back.
+      const [importSplitChoice, setImportSplitChoice] = useState(() => readImportSplitChoice())
       // Reading/AI mode: daily (short answers) or quality (expanded), plus the
       // editable style instruction each mode puts into a new session's seed.
       const [aiMode, setAiMode] = useState(() => readAiMode())
@@ -6555,6 +7434,19 @@ window.__ModuleLoader__.load({
             }, props.railSide === 'left' ? format('railLeft') : format('railRight'))
           ),
           h('div', { className: 'md-settings-row' },
+            h('span', { title: format('settingsImportSplitHint') }, format('settingsImportSplit')),
+            h('select', {
+              className: 'md-settings-input',
+              value: importSplitChoice,
+              'aria-label': format('settingsImportSplit'),
+              onChange: event => setImportSplitChoice(writeImportSplitChoice(event.target.value)),
+            },
+              h('option', { value: 'ask' }, format('importSplitChoiceAsk')),
+              h('option', { value: 'split' }, format('importSplitChoiceSplit')),
+              h('option', { value: 'later' }, format('importSplitChoiceLater')))
+          ),
+          h('p', { className: 'md-shelf-sub' }, format('settingsImportSplitHint')),
+          h('div', { className: 'md-settings-row' },
             h('span', { title: format('readCacheLimitHint') }, format('readCacheLimit')),
             h('select', {
               className: 'md-settings-input',
@@ -6742,6 +7634,9 @@ window.__ModuleLoader__.load({
             h('span', null, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')}（${format('envPythonSize')}）`),
             envTools.python ? null : h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink('https://www.python.org/downloads/windows/') }, format('envDownload'))
           ),
+          // The two pip packages every bundled tool needs (split, text, raster,
+          // overlay): same row as the library page, with the command to copy.
+          h(PipPackagesRow),
           h('div', { className: 'md-settings-row' },
             h('span', null, `${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}（${format('envTexSize')}）`),
             envTools.tex ? null : h(KitButton, { type: 'button', className: 'md-btn md-btn-small', onClick: () => openLink(TEXLIVE_URL) }, format('envDownload'))
@@ -6816,7 +7711,8 @@ window.__ModuleLoader__.load({
         props.updateOperation === null
           ? null
           : h('p', { className: 'md-settings-note', role: 'status' }, props.updateOperation.message),
-        h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback'))
+        h('p', { className: 'md-shelf-sub' }, hostUi !== null ? format('hostUiLoaded') : format('hostUiFallback')),
+        h('p', { className: 'md-settings-note' }, format('aboutCopyright'))
       )
       // Which measured folder each row stands for; the Host only sends keys.
       const storageLabel = {
@@ -7621,6 +8517,7 @@ window.__ModuleLoader__.load({
                 h('li', null, format('manualNaming1')),
                 h('li', null, format('manualNaming2')),
                 h('li', null, format('manualNaming3')),
+                h('li', null, format('splitStaysWhole')),
                 h('li', null, format('manualSessionLine'))
               )
             ),
@@ -7712,6 +8609,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-tool-card' },
           h('h3', { className: 'md-subheading' }, format('splitToolTitle')),
           h('p', { className: 'md-shelf-sub' }, format('splitToolCardHint')),
+          h('p', { className: 'md-shelf-sub' }, format('splitStaysWhole')),
           h('p', { className: 'md-shelf-sub' }, `${format('splitWorkspace')}：${props.workspaceLabel === '' ? format('workspaceNotChosen') : props.workspaceLabel}`),
           h('div', { className: 'md-library-tools' },
             h(KitButton, {
@@ -7737,6 +8635,10 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-tool-card', id: 'md-env-card' },
           h('h3', { className: 'md-subheading' }, format('envTitle')),
           h('p', { className: 'md-shelf-sub' }, `${format('envPython')}：${envTools.python ? format('envOn') : format('envOff')} · ${format('envTex')}：${envTools.tex ? format('envOn') : format('envOff')}`),
+          // Everything that has to be installed, with its channel, on the page a
+          // new user lands on: Python + the pip packages, the typesetter, TeX.
+          PipPackagesRow(),
+          h(EngineStatusRow),
           h('div', { className: 'md-library-tools' },
             envTools.python ? null : h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
@@ -7802,16 +8704,20 @@ window.__ModuleLoader__.load({
       }, props.text)
     }
 
+    /**
+     * The shelf grid, its selection marquee and the per-shelf actions. Which
+     * books belong here, which are shown and how many there are arrives as
+     * `view` from `shelfView`; this component only renders it and handles the
+     * pointer.
+     * @param {{ view: object, showWhole: boolean, showLoose: boolean, onToggleWhole: Function, onToggleLoose: Function, cardRefs: object, selected: Set<string>, covers: Set<string>, group: string | null, showAddPdf: boolean, canAddToShelf: boolean, wholeFormApplicable: boolean, wholeFormAllPinned: boolean, onSelect: Function, onToggle: Function, onOpen: Function, registerRef: Function, onOpenGroup: Function, onDeleteGroup: Function, onCreateShelf: Function, onAddToShelf: Function, onHide: Function, onUnhide: Function, onRemoveFromShelf: Function, onWholeForm: Function, onResetWholeForms: Function, onTrashSelected: Function, onClear: Function, onImportPdf?: Function }} props - the view and the workbench's actions.
+     * @returns {import('react').ReactElement} the shelf.
+     */
     function Shelf(props) {
+      const view = props.view
       const surfaceRef = useRef(null)
       const startRef = useRef(null)
       const boxRef = useRef(null)
       const [box, setBox] = useState(null)
-      // Two independent switches: whole, unsplit books, and books that were split
-      // but named by hand. Both default to shown — a readable PDF must not
-      // vanish from the library because of its file name.
-      const [showWhole, setShowWhole] = useState(() => readShelfFlag(SHOW_WHOLE_KEY))
-      const [showLoose, setShowLoose] = useState(() => readShelfFlag(SHOW_LOOSE_KEY))
       const boundsOf = () => (surfaceRef.current === null ? null : surfaceRef.current.getBoundingClientRect())
       const onPointerDown = event => {
         if (event.button !== 0) return
@@ -7862,14 +8768,14 @@ window.__ModuleLoader__.load({
         }
         props.onSelect(ids, start.additive)
       }
-      const empty = props.books.length === 0 && props.collections.length === 0
-      const visibleBooks = props.books.filter(book => {
-        if (book.whole === true) return showWhole
-        if (book.loose === true) return showLoose
-        return true
-      })
-      const wholeTotal = Number(props.wholeTotal) || 0
-      const looseTotal = Number(props.looseTotal) || 0
+      const empty = view.empty
+      const wholeTotal = view.counts.whole
+      const looseTotal = view.counts.loose
+      const wholeAlwaysTotal = view.counts.pinned
+      // The add-PDF card belongs to the main shelf and to a custom shelf whose
+      // header switch is on; the hidden shelf never offers it.
+      const importTile = typeof props.onImportPdf === 'function'
+        && (props.group === null || (props.group !== 'hidden' && props.showAddPdf !== false))
       return h('div', {
         className: 'md-shelf',
         ref: surfaceRef,
@@ -7877,54 +8783,52 @@ window.__ModuleLoader__.load({
         onPointerMove,
         onPointerUp,
       },
-        wholeTotal === 0 && looseTotal === 0
+        // The switches describe the main shelf; explicit shelves show all contents.
+        view.explicit || (wholeTotal === 0 && looseTotal === 0 && wholeAlwaysTotal === 0)
           ? null
           : h('div', { className: 'md-shelf-loose' },
             wholeTotal === 0 ? null : h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               title: format('shelfWholeHint'),
-              'aria-pressed': showWhole ? 'true' : 'false',
-              onClick: () => {
-                const next = !showWhole
-                setShowWhole(next)
-                writeShelfFlag(SHOW_WHOLE_KEY, next)
-              },
-            }, `${format('shelfWhole')}${showWhole ? format('shelfShown') : format('shelfHidden')} (${wholeTotal})`),
+              'aria-pressed': props.showWhole ? 'true' : 'false',
+              onClick: props.onToggleWhole,
+            }, `${format('shelfWhole')}${props.showWhole ? format('shelfShown') : format('shelfHidden')} (${wholeTotal})`),
             looseTotal === 0 ? null : h(KitButton, {
               type: 'button', className: 'md-btn md-btn-small',
               title: format('shelfLooseHint'),
-              'aria-pressed': showLoose ? 'true' : 'false',
-              onClick: () => {
-                const next = !showLoose
-                setShowLoose(next)
-                writeShelfFlag(SHOW_LOOSE_KEY, next)
-              },
-            }, `${format('shelfLoose')}${showLoose ? format('shelfShown') : format('shelfHidden')} (${looseTotal})`)
+              'aria-pressed': props.showLoose ? 'true' : 'false',
+              onClick: props.onToggleLoose,
+            }, `${format('shelfLoose')}${props.showLoose ? format('shelfShown') : format('shelfHidden')} (${looseTotal})`),
+            wholeAlwaysTotal === 0 ? null : h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              title: format('shelfWholeResetHint'),
+              onClick: props.onResetWholeForms,
+            }, format('shelfWholeReset', { n: wholeAlwaysTotal }))
           ),
         empty
           ? h('div', { className: 'md-empty' },
             h('div', { className: 'md-empty-title' }, format('shelfEmpty')),
             h('div', { className: 'md-empty-hint' }, format('emptyHint')),
-            props.group !== null || typeof props.onImportPdf !== 'function'
-              ? null
-              : h('div', { className: 'md-empty-actions' },
+            importTile
+              ? h('div', { className: 'md-empty-actions' },
                 h(KitButton, {
                   type: 'button', className: 'md-btn',
                   onClick: props.onImportPdf,
                 }, format('importTileTitle')))
+              : null
           )
-          : visibleBooks.length === 0 && props.collections.length === 0
+          : view.visibleBooks.length === 0 && view.collections.length === 0
             ? h('div', { className: 'md-empty' },
               h('div', { className: 'md-empty-title' }, format('looseOnlyEmpty')))
             : h('div', { className: 'md-grid' },
-              props.collections.map(item => h(CollectionCard, {
+              view.collections.map(item => h(CollectionCard, {
                 key: item.id,
                 name: item.name,
                 count: item.count,
                 onOpen: () => props.onOpenGroup(item.id),
                 onDelete: () => props.onDeleteGroup(item.id),
               })),
-              visibleBooks.map(book => h(BookCard, {
+              view.visibleBooks.map(book => h(BookCard, {
                 key: book.id,
                 book,
                 selected: props.selected.has(book.id),
@@ -7933,11 +8837,10 @@ window.__ModuleLoader__.load({
                 onOpen: props.onOpen,
                 registerRef: props.registerRef,
               })),
-              // The import tile lives at the end of the default shelf only: the file
-              // lands in 整本\ and belongs to no custom shelf yet.
-              props.group !== null || typeof props.onImportPdf !== 'function'
-                ? null
-                : h(KitButton, {
+              // The import tile ends the main shelf and a custom shelf (its header
+              // switch decides); the imported file still lands in 整本\.
+              importTile
+                ? h(KitButton, {
                   key: '__import',
                   type: 'button', className: 'md-card md-card-add',
                   title: format('importTileHint'),
@@ -7948,6 +8851,7 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'md-card-body' },
                     h('span', { className: 'md-card-title' }, format('importTileTitle')),
                     h('span', { className: 'md-card-sub' }, format('importTileHint'))))
+                : null
             ),
         box === null
           ? null
@@ -7964,6 +8868,15 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'md-btn md-btn-small',
               onClick: props.onCreateShelf,
             }, format('shelfNew')),
+            // Second way to file a selection: join a shelf that already exists.
+            props.group === 'hidden'
+              ? null
+              : h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                disabled: props.canAddToShelf !== true,
+                title: props.canAddToShelf === true ? undefined : format('shelfAddToEmpty'),
+                onClick: props.onAddToShelf,
+              }, format('shelfAddTo')),
             props.group === 'hidden'
               ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
@@ -7973,6 +8886,17 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'md-btn md-btn-small',
                 onClick: props.onHide,
               }, format('shelfHide')),
+            // Next to "hide": pin this book's whole-PDF form so the global
+            // switch cannot hide it, or unpin it again. The card stays visible
+            // either way, so the choice can always be undone.
+            props.group === 'hidden'
+              ? null
+              : h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small',
+                title: format('shelfWholeFormHint'),
+                disabled: props.wholeFormApplicable !== true,
+                onClick: props.onWholeForm,
+              }, props.wholeFormAllPinned === true ? format('shelfWholeUnpinForm') : format('shelfWholePinForm')),
             props.group === 'hidden'
               ? h(KitButton, {
                 type: 'button', className: 'md-btn md-btn-small',
@@ -8017,6 +8941,34 @@ window.__ModuleLoader__.load({
           h(KitButton, { key: 'cancel', variant: 'ghost', onClick: props.onClose }, format('previewClose')),
           h(KitButton, { key: 'save', variant: 'primary', onClick: props.onConfirm }, format('shelfCreate')),
         ],
+      })
+    }
+
+    /**
+     * Pick which existing shelf the selected books join. One row per shelf, the
+     * same row shape the import picker uses.
+     * @param {{ shelves: object[], count: number, onPick: Function, onClose: Function }} props - shelves, selection size and handlers.
+     * @returns {import('react').ReactElement} the dialog.
+     */
+    function ShelfPickDialog(props) {
+      const shelves = Array.isArray(props.shelves) ? props.shelves : []
+      return h(KitModal, {
+        title: format('shelfAddToTitle'),
+        onClose: props.onClose,
+        children: h('div', { className: 'md-picker' },
+          h('div', { className: 'md-picker-sub' }, format('shelfAddToHint', { n: props.count })),
+          shelves.length === 0
+            ? h('div', { className: 'md-picker-empty' }, format('shelfAddToEmpty'))
+            : h('ul', { className: 'md-picker-list' }, shelves.map(shelf => h('li', { key: shelf.id },
+              h(KitButton, {
+                type: 'button',
+                className: 'md-picker-row',
+                onClick: () => props.onPick(shelf.id),
+              },
+                h('span', { className: 'md-picker-name' }, shelf.name),
+                h('span', { className: 'md-picker-time' }, format('shelfBookCount', { n: shelf.books.length })))))),
+        ),
+        footer: [h(KitButton, { key: 'close', variant: 'ghost', onClick: props.onClose }, format('previewClose'))],
       })
     }
 
@@ -10988,6 +11940,90 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /* ------------------------------------------------ import split ask -- */
+
+    /** Where the remembered "split it now?" answer lives. */
+    const IMPORT_SPLIT_KEY = 'pdfdesk:import-split'
+
+    /** The three answers: ask every time, split by itself, never ask. */
+    const IMPORT_SPLIT_CHOICES = ['ask', 'split', 'later']
+
+    /**
+     * The remembered answer to "split it now?" after an import.
+     * @returns {'ask'|'split'|'later'} the stored choice (`ask` when nothing is stored).
+     */
+    function readImportSplitChoice() {
+      try {
+        const raw = window.localStorage.getItem(IMPORT_SPLIT_KEY)
+        return IMPORT_SPLIT_CHOICES.includes(raw) ? raw : 'ask'
+      } catch {
+        return 'ask'
+      }
+    }
+
+    /**
+     * Remember the answer; `ask` is what the settings row writes to restore the
+     * question.
+     * @param {string} value - `ask`, `split` or `later`.
+     * @returns {'ask'|'split'|'later'} the stored choice.
+     */
+    function writeImportSplitChoice(value) {
+      const next = IMPORT_SPLIT_CHOICES.includes(value) ? value : 'ask'
+      try {
+        window.localStorage.setItem(IMPORT_SPLIT_KEY, next)
+      } catch {
+        // storage unavailable
+      }
+      return next
+    }
+
+    /* --------------------------------------------- split result memory -- */
+
+    /** Where the two post-split choices are remembered. */
+    const SPLIT_RESULT_KEY = 'pdfdesk:split-result'
+
+    /** Default before the reader has finished a split: keep the whole, open the conversation. */
+    const SPLIT_RESULT_DEFAULT = Object.freeze({ removeWhole: false, openConversation: true })
+
+    /**
+     * The remembered post-split choices. Missing, malformed or non-boolean
+     * storage falls back to the defaults instead of leaking a stale value in.
+     * @returns {{ removeWhole: boolean, openConversation: boolean }} the choices.
+     */
+    function readSplitResultChoice() {
+      try {
+        const raw = window.localStorage.getItem(SPLIT_RESULT_KEY)
+        if (raw === null || raw === '') return { ...SPLIT_RESULT_DEFAULT }
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return { ...SPLIT_RESULT_DEFAULT }
+        return {
+          removeWhole: parsed.removeWhole === true,
+          openConversation: parsed.openConversation !== false,
+        }
+      } catch {
+        return { ...SPLIT_RESULT_DEFAULT }
+      }
+    }
+
+    /**
+     * Remember the choices applied by "完成". "以后再说" closes the dialog
+     * without writing, so cancelling never overwrites the last applied choice.
+     * @param {{ removeWhole: boolean, openConversation: boolean }} choice - applied choices.
+     * @returns {{ removeWhole: boolean, openConversation: boolean }} what was stored.
+     */
+    function writeSplitResultChoice(choice) {
+      const next = {
+        removeWhole: choice !== null && choice !== undefined && choice.removeWhole === true,
+        openConversation: choice === null || choice === undefined || choice.openConversation !== false,
+      }
+      try {
+        window.localStorage.setItem(SPLIT_RESULT_KEY, JSON.stringify(next))
+      } catch {
+        // storage unavailable: the choice still applies to this dialog
+      }
+      return next
+    }
+
     /** How much chapter context a new session gets: `daily` (web-chat-like) or `quality` (whole chapter). */
     const AI_MODE_KEY = 'pdfdesk:ai-mode'
 
@@ -12125,7 +13161,11 @@ window.__ModuleLoader__.load({
         void props.doc.getPage(props.pageNumber).then(page => {
           const height = page.getViewport({ scale: 1 }).height
           cache.set(props.pageNumber, height)
-          if (!cancelled) setBaseHeight(height)
+          if (cancelled) return
+          setBaseHeight(height)
+          // The column caches this for its ghost slots; the write alone does not
+          // re-render them, so say so.
+          if (typeof props.onMeasured === 'function') props.onMeasured()
         }).catch(() => {})
         return () => { cancelled = true }
       }, [props.doc, props.pageNumber])
@@ -12233,6 +13273,10 @@ window.__ModuleLoader__.load({
       // off-centre and left no paper to move into on the left.
       const columnRef = useRef(null)
       const [pageWidth, setPageWidth] = useState(0)
+      // Bumped when a mounted page caches its real height: the ghost slots below
+      // need that number, and the WeakMap write itself does not re-render.
+      const [, setHeightVersion] = useState(0)
+      const noteHeight = useCallback(() => setHeightVersion(value => value + 1), [])
       useEffect(() => {
         const column = columnRef.current
         const canvas = column === null ? null : column.querySelector('.md-reader-canvas')
@@ -12264,6 +13308,66 @@ window.__ModuleLoader__.load({
       // cheap ghosts until the reader approaches them.
       const from = Math.max(1, current - 12)
       const to = Math.min(total, current + 12)
+      // Height one ghost must reserve. A ghost used to be 240px tall while a real
+      // page is ~1000px, so every time the mounted window moved, the pages that
+      // left it collapsed and pulled the column thousands of pixels up: a normal
+      // scroll landed outside the mounted band, where nothing is mounted to
+      // report a new page — the column stayed blank. Reserving a measured page's
+      // real height keeps the column's total height stable while the window
+      // moves. Cheap enough: a WeakMap lookup, no extra getPage.
+      const measuredHeights = pageHeightCache.get(props.doc)
+      const measuredBase = measuredHeights === undefined
+        ? 0
+        : (measuredHeights.get(current) ?? measuredHeights.values().next().value ?? 0)
+      const ghostHeight = measuredBase > 0 ? Math.round(measuredBase * props.scale) : 0
+      // The mounted window follows page reports, and a report only comes from a
+      // mounted page. A scrollbar drag, a wheel fling or Page Down can therefore
+      // leave the viewport below (or above) the whole band with no mounted page
+      // under it: nothing reports, the window never moves, and the reader looks
+      // at blank paper for ever. When the viewport leaves the band, publish the
+      // page it is actually on; the window recentres there on the next render.
+      // `onFollow` lets a view whose page reports are deliberately coarse (the
+      // right preview, which must not publish every 50% crossing) still hand the
+      // window a page.
+      const follow = typeof props.onFollow === 'function' ? props.onFollow : props.onVisible
+      // A programmatic scroll (page jump, mode switch, zoom) crosses the ghost
+      // band on purpose; while one is settling its pages must not be published.
+      const settling = typeof props.isSettling === 'function' ? props.isSettling : null
+      useEffect(() => {
+        const root = props.rootRef === null || props.rootRef === undefined ? null : props.rootRef.current
+        if (root === null || root === undefined || typeof follow !== 'function') return undefined
+        let timer = null
+        const onScroll = () => {
+          if (timer !== null) clearTimeout(timer)
+          timer = setTimeout(() => {
+            timer = null
+            const column = columnRef.current
+            if (column === null) return
+            if (settling !== null && settling()) return
+            const slots = column.querySelectorAll('.md-reader-slot')
+            if (slots.length === 0) return
+            const edge = root.getBoundingClientRect().top + 24
+            const first = slots[0].getBoundingClientRect()
+            const last = slots[slots.length - 1].getBoundingClientRect()
+            const step = (ghostHeight > 0 ? ghostHeight : 900) + 18
+            let target = 0
+            if (last.bottom < edge) {
+              // Scrolled past the band: count the ghost pages between its end and
+              // the viewport's top edge.
+              target = Math.min(total, to + 1 + Math.floor((edge - last.bottom) / step))
+            } else if (first.top > edge) {
+              // Scrolled above the band: count the ghost pages above it.
+              target = Math.max(1, from - 1 - Math.floor((first.top - edge) / step))
+            }
+            if (target > 0 && target !== current) follow(target)
+          }, 140)
+        }
+        root.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+          root.removeEventListener('scroll', onScroll)
+          if (timer !== null) clearTimeout(timer)
+        }
+      }, [props.doc, props.rootRef, follow, settling, current, from, to, ghostHeight, total])
       const pages = []
       // The plane's margins at the ends of the column: blank paper where the
       // reader may write above the first page and below the last one.
@@ -12272,7 +13376,11 @@ window.__ModuleLoader__.load({
       if (topPad > 0) pages.push(h('div', { key: 'pad-top', className: 'md-reader-plane-pad', style: { height: `${topPad}px` } }))
       for (let page = 1; page <= total; page += 1) {
         if (page < from || page > to) {
-          pages.push(h('div', { key: page, className: 'md-reader-slot md-reader-ghost' },
+          pages.push(h('div', {
+            key: page,
+            className: 'md-reader-slot md-reader-ghost',
+            style: ghostHeight > 0 ? { minHeight: `${ghostHeight}px` } : undefined,
+          },
             h('span', { className: 'md-reader-page-no', 'aria-hidden': true }, String(page))))
           continue
         }
@@ -12290,6 +13398,7 @@ window.__ModuleLoader__.load({
           rootRef: props.rootRef,
           onVisible: props.onVisible,
           registerSlot: props.registerSlot,
+          onMeasured: noteHeight,
           showBlocks: props.showBlocks,
           bookId: props.bookId,
           code: props.code,
@@ -12815,6 +13924,8 @@ window.__ModuleLoader__.load({
           bookId: props.bookId,
           code: props.code,
           onVisible: props.onVisible,
+          onFollow: props.onFollow,
+          isSettling: props.isSettling,
           registerSlot: props.registerSlot,
           onError: props.onError,
           // The current page reports its box for pointer measurement.
@@ -13109,6 +14220,8 @@ window.__ModuleLoader__.load({
       // Until this timestamp a programmatic jump is still settling: the pages it
       // crosses must not report themselves as the page being read.
       const jumpingUntil = useRef(0)
+      // Same question for the continuous column's far-scroll follower.
+      const isSettling = useCallback(() => switchingMode.current || Date.now() < jumpingUntil.current, [])
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
       const [rightScale, setRightScale] = useState(null)
@@ -15982,6 +17095,10 @@ window.__ModuleLoader__.load({
                 // visible" while it is still off screen. The bilingual column
                 // keeps the observer's report.
                 onVisible: null,
+                // A far scroll outside the mounted band still has to tell the
+                // column where the reader is, or the band never follows.
+                onFollow: props.onVisible,
+                isSettling,
                 registerSlot,
                 onError: props.onError,
                 pan: extended ? inkPan : null,
@@ -16692,6 +17809,44 @@ body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg
 .md-env-title { margin: 0; font-size: 15px; }
 .md-env-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
 .md-env-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* "开始前检查" only. Host Modal portals outside .md-root, so the pdf tokens
+   are re-declared on its card; nothing else reads these classes. */
+.md-env-guide-modal.md-env-guide-modal {
+  --pdf-bg: var(--dsw-alias-bg-base);
+  --pdf-bg-sub: var(--dsw-alias-bg-layer-1);
+  --pdf-surface: var(--dsw-alias-bg-layer-2);
+  --pdf-border: var(--dsw-alias-border-l2);
+  --pdf-border-strong: var(--dsw-alias-border-l3);
+  --pdf-text: var(--dsw-alias-label-primary);
+  --pdf-text-sub: var(--dsw-alias-label-secondary);
+  --pdf-accent: var(--dsw-static-blue-600);
+  --pdf-danger: var(--dsw-alias-state-error-primary);
+  --pdf-shadow: var(--dsw-elevation-soft);
+  --pdf-radius: var(--dsw-radius-md);
+  width: min(440px, 100%);
+}
+body[data-ds-dark-theme] .md-env-guide-modal.md-env-guide-modal { --pdf-accent: var(--dsw-static-blue-400); }
+.md-env-guide { display: flex; flex-direction: column; max-height: min(64vh, 520px); overflow-y: auto; }
+.md-env-guide > .md-shelf-sub { margin: 0 0 4px; font-size: 12.5px; line-height: 1.6; color: var(--pdf-text-sub); }
+.md-env-guide .md-env-row {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-start;
+  gap: 4px 12px; padding: 12px 0 12px 10px; margin: 0;
+  border-top: 1px solid var(--pdf-border); border-left: 3px solid transparent;
+  font-size: 13px;
+}
+.md-env-guide .md-env-row > span:first-child {
+  flex: 1 1 auto; min-width: 0; font-weight: 600; line-height: 1.5; color: var(--pdf-text);
+}
+.md-env-guide .md-env-row-missing > span:first-child { color: var(--pdf-danger); }
+.md-env-guide .md-env-row > .md-shelf-sub {
+  flex: 1 1 100%; min-width: 0; margin: 0; font-size: 12px; line-height: 1.6; color: var(--pdf-text-sub);
+}
+.md-env-guide .md-env-row > .md-btn { flex: 0 0 auto; margin-left: auto; align-self: center; }
+.md-env-guide .md-env-row-ok { border-left-color: color-mix(in srgb, var(--pdf-accent) 45%, transparent); }
+.md-env-guide .md-env-row-missing { border-left-color: var(--pdf-danger); }
+.md-env-guide > .md-shelf-sub:last-child {
+  margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--pdf-border);
+}
 .md-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .md-modal-body { display: flex; flex-direction: column; gap: 12px; }
 .md-modal-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -16752,6 +17907,8 @@ body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg
 .md-btn-ghost { background: transparent; border-color: transparent; }
 .md-btn-ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; }
 .md-crumbs { flex: none; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+/* A shelf's own add-PDF switch, parked at the right end of the crumb row. */
+.md-crumbs-toggle { margin-left: auto; }
 .md-crumb { font: inherit; font-size: 13px; color: var(--dsw-alias-label-secondary); background: none; border: 0; padding: 2px 4px; border-radius: 6px; cursor: pointer; }
 .md-crumb:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .md-crumb-sep { opacity: .5; }
@@ -16958,6 +18115,12 @@ body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg
 .md-home .md-library-toolscroll > .md-subheading { display: none; }
 .md-home .md-tool-card { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
 .md-home .md-tool-card .md-btn { align-self: flex-start; margin-top: auto; }
+.md-home .md-library-toolscroll > #md-env-card { grid-column: span 2; }
+.md-home #md-env-card .md-settings-row { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 14px; line-height: 1.6; }
+.md-home #md-env-card .md-settings-row > span:first-child { flex: 1 1 100%; min-width: 0; color: var(--pdf-text-sub); }
+.md-home #md-env-card .md-settings-row > .md-path { flex: 1 1 280px; min-width: 0; width: auto; max-width: 100%; box-sizing: border-box; align-self: stretch; padding: 8px 12px; font-size: 12px; line-height: 1.6; white-space: normal; word-break: normal; overflow-wrap: anywhere; color: var(--pdf-text); background: var(--pdf-bg); border-color: var(--pdf-border); }
+.md-home #md-env-card .md-settings-row > .md-btn { flex: 0 0 auto; align-self: center; margin-top: 0; min-width: 96px; min-height: 36px; box-sizing: border-box; padding: 4px 12px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.md-home #md-env-card .md-settings-row > .md-shelf-sub { flex: 1 1 100%; min-width: 0; }
 .md-home .md-manual { border-radius: var(--pdf-radius); padding: 0; overflow: hidden; border: 1px solid var(--pdf-border); background: var(--pdf-surface); }
 .md-home .md-manual-summary { gap: 12px; padding: 16px; }
 .md-home .md-manual-summary-main { gap: 4px; }
@@ -16974,6 +18137,7 @@ body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg
 .md-home .md-manual-heading { margin: 0; font-size: 14px; font-weight: 600; color: var(--pdf-text); }
 .md-home .md-manual-text, .md-home .md-manual-list { font-size: 14px; line-height: 1.6; color: var(--pdf-text-sub); }
 .md-home .md-manual-actions, .md-home .md-library-tools { gap: 8px; }
+.md-home .md-library-tools .md-settings-input { flex: 1 1 280px; min-width: 0; max-width: 100%; height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--pdf-border); border-radius: 6px; background: var(--pdf-bg); color: var(--pdf-text); font-size: 14px; }
 .md-home .md-manual-tree { padding: 12px 16px; font-size: 12px; line-height: 1.6; color: var(--pdf-text); background: var(--pdf-bg-sub); border: 1px solid var(--pdf-border); border-radius: 6px; }
 .md-home details.md-manual-sub { padding: 12px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); }
 .md-home .md-manual-sub-summary { font-size: 12px; color: var(--pdf-text); }
@@ -16990,6 +18154,7 @@ body[data-ds-dark-theme] .md-root:has(.md-home) { background: var(--dsw-alias-bg
   .md-home .md-add-name { flex: 1 1 160px; width: auto; }
   .md-home .md-add-submit { margin-left: 0; }
   .md-home .md-manual-grid { grid-template-columns: minmax(0, 1fr); }
+  .md-home .md-library-toolscroll > #md-env-card { grid-column: 1 / -1; }
 }
 .md-manual-summary { list-style: none; display: flex; align-items: center; gap: 16px; padding: 18px 22px; cursor: pointer; }
 .md-manual-summary::-webkit-details-marker { display: none; }
@@ -17257,9 +18422,12 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
    is on the page edge, with a short fade/slide so it does not pop. */
 .md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
 .md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 58px; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-right: none; box-shadow: var(--dsw-elevation-soft); opacity: .9; z-index: 39; pointer-events: none; transition: opacity .18s ease; }
-.md-rail-tab[data-side="right"] { right: 0; }
+.md-rail-tab[data-side="right"] { right: 20px; }
 .md-rail-tab[data-side="left"] { left: 0; border-radius: 0 6px 6px 0; border-right: 1px solid var(--dsw-alias-border-l3); border-left: none; }
-.md-rail-wrap[data-side="right"] { right: 0; }
+/* The rail sits 20px in from the edge on the right: that strip is the
+   scrollbar's lane, and a rail flush with the edge swallowed its pointer events
+   (the bar showed but could not be dragged). */
+.md-rail-wrap[data-side="right"] { right: 20px; }
 .md-rail-wrap[data-side="left"] { left: 0; }
 .md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: 78vh; overflow-y: auto; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: var(--dsw-elevation-prominent); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
 .md-rail-wrap[data-side="left"] .md-rail { transform: translateX(-10px); }
@@ -17280,7 +18448,7 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-reader[data-rail="right"] .md-reader-stage { padding-right: 58px; }
 .md-reader[data-rail="left"] .md-reader-stage { padding-left: 58px; }
 .md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 260px; max-height: calc(100vh - 110px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; box-shadow: var(--dsw-elevation-prominent); z-index: 42; pointer-events: auto; }
-.md-rail-panel[data-side="right"] { right: 28px; }
+.md-rail-panel[data-side="right"] { right: 48px; }
 .md-rail-panel[data-side="left"] { left: 28px; }
 .md-rail-panel-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); padding-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-rail-panel-hint { margin: 0; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
@@ -17437,6 +18605,11 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-split-item { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .md-split-page { position: relative; width: 100%; border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; overflow: hidden; background: #fff; box-shadow: var(--dsw-elevation-soft); }
 .md-split-page canvas { display: block; width: 100%; height: auto; }
+/* Host-rendered thumbnails: the frame reserves the page shape and the image
+   fills it, so rows never change height while scrolling. */
+.md-split-page-host { background: var(--pdf-bg-sub); box-shadow: none; }
+.md-split-thumb { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.md-split-thumb-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .md-split-num { position: absolute; left: 5px; bottom: 5px; font-size: 12px; color: #444; background: rgba(255, 255, 255, 0.9); border-radius: 3px; padding: 0 5px; }
 .md-split-num-on { color: #fff; background: #dc2626; }
 .md-split-cut { position: absolute; top: 0; bottom: 0; right: -9px; width: 18px; display: flex; flex-direction: column; align-items: center; padding: 0; border: 0; background: transparent; color: #64748b; cursor: pointer; z-index: 2; }
@@ -17450,6 +18623,14 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-split-cut-on .md-split-cut-line { border-left-style: solid; border-left-color: #dc2626; }
 .md-split-cut-on .md-split-cut-btn { border: 1px solid #dc2626; border-style: solid; background: #dc2626; color: #fff; }
 .md-split-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* The range line doubles as the page jump: its numbers are buttons, and the page
+   a jump landed on is outlined for a moment. Paper stays white in dark mode. */
+.md-split-range { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; }
+.md-split-range-dash { color: var(--pdf-text-sub); }
+.md-split-jump { font: inherit; font-size: 12px; line-height: 1.6; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--pdf-accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.md-split-jump:hover { background: var(--pdf-bg-sub); text-decoration: none; }
+.md-split-jump:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 1px; }
+.md-split-item.md-split-flash .md-split-page { outline: 2px solid var(--pdf-accent); outline-offset: 2px; }
 .md-split-preview { margin: 0; padding-left: 16px; font-size: 11px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .md-wizard-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.45); }
 .md-wizard-panel { width: min(860px, 94vw); max-height: min(840px, 92vh); display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); overflow: hidden; }
@@ -17515,7 +18696,7 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
    moving when the page grows a scrollbar. */
 .md-side-body .md-reader-stage { padding: 8px 10px 16px; scrollbar-gutter: stable; }
 .md-side-body > .md-reader-stage-host { flex: 1 1 auto; min-height: 0; display: flex; }
-.md-side .md-side-body .md-reader-stage { padding-right: 40px; }
+.md-side .md-side-body .md-reader-stage { padding-right: 48px; }
 /* The developer readout (Ctrl+Alt+D): one small overlay, never takes a click. */
 .md-hud { position: absolute; left: 8px; bottom: 8px; z-index: 60; margin: 0; padding: 6px 8px; max-width: calc(100% - 16px); overflow: hidden; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base)); border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; pointer-events: none; opacity: 0.94; }
 /* The preview's action list when the shared context menu service is absent. */
@@ -18521,15 +19702,52 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         // The chapter owns the page: this end only asks for the move.
         setChapterPage(bookId, code, 'side', number, 'navigate')
       }, [bookId, code])
-
-      // Scrolling reports a page; it must not echo back as a programmatic jump.
-      const onVisible = useCallback(number => {
-        if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
-        visibleTimer.current = setTimeout(() => {
-          if (jumping.current) return
-          reportChapterPage(bookId, code, 'side', number)
-        }, 350)
+      // One way for this preview to report the page it is on: the scroll listener
+      // below and the column's own far-scroll follower both use it.
+      const reportSide = useCallback(page => {
+        if (bookId === '' || code === '') return
+        reportChapterPage(bookId, code, 'side', page)
       }, [bookId, code])
+      // While this preview scrolls itself to a page, its places on the way are
+      // not where the reader is: the far-scroll follower stays quiet.
+      const isSettling = useCallback(() => jumping.current, [])
+
+      // In continuous mode the page is the one at the viewport's top edge, not
+      // the page whose center crossed 50%: the latter reports the next/previous
+      // page while the current one is still being read, which made the shared
+      // page number and this preview drift by one.
+      useEffect(() => {
+        if (mode !== 'continuous' || phase !== 'ready') return undefined
+        const scrollport = stage.current
+        if (scrollport === null || scrollport === undefined) return undefined
+        const onScroll = () => {
+          if (visibleTimer.current !== null) clearTimeout(visibleTimer.current)
+          visibleTimer.current = setTimeout(() => {
+            visibleTimer.current = null
+            if (jumping.current) return
+            const edge = scrollport.getBoundingClientRect().top + 24
+            let best = null
+            let first = null
+            slots.current.forEach((node, number) => {
+              if (node === null || node === undefined) return
+              if (first === null || number < first) first = number
+              if (node.getBoundingClientRect().top <= edge && (best === null || number > best)) best = number
+            })
+            // A drag far past the mounted window leaves no slot above the edge;
+            // fall back to the topmost mounted page so the window can follow.
+            const chosen = best === null ? first : best
+            if (chosen !== null && chosen !== pageRef.current) reportSide(chosen)
+          }, 180)
+        }
+        scrollport.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+          scrollport.removeEventListener('scroll', onScroll)
+          if (visibleTimer.current !== null) {
+            clearTimeout(visibleTimer.current)
+            visibleTimer.current = null
+          }
+        }
+      }, [mode, phase, bookId, code])
 
       const scrollToPage = useCallback(number => {
         jumping.current = true
@@ -18748,7 +19966,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       // The editing surface: an invisible page-sized layer that only takes pointer
       // events while a tool is picked, so scrolling stays untouched otherwise.
-      const editLayer = tool === '' || tool === 'hand'
+      // The question tool is excluded: its own marks layer handles the drag, and
+      // this layer would swallow every press before it (the reader does the same).
+      const editLayer = tool === '' || tool === 'hand' || tool === 'question'
         ? null
         : h('div', {
           className: 'md-annot md-annot-edit',
@@ -18877,20 +20097,46 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         onFailure: () => { notifySide(format('questionSaveFailed')) },
       })
       const commitQuestions = (list, next, record = true) => { questionCommitting.commit(list, next, record) }
+      /**
+       * Announce a new mark with the picture of its framed region, so the model
+       * reads the exact content even when the page is a scan with no text layer.
+       * The Host renders the crop; the PNG sits beside the question store.
+       * @param {{ id: string, name: string, page: number, rect: object }} question - the created mark.
+       * @returns {Promise<void>} completion (best effort).
+       */
+      const announceQuestionImage = async question => {
+        let image = ''
+        try {
+          const crop = await request('POST', 'question-crop', {
+            book: bookId,
+            code,
+            id: question.id,
+            page: question.page,
+            rect: question.rect,
+          })
+          if (crop !== null && crop !== undefined && typeof crop.path === 'string') image = crop.path
+        } catch {
+          // A failed crop still leaves the page-number announcement.
+        }
+        await injectQuestionLine(bookId, code, image === '' ? question : { ...question, image })
+      }
       const createQuestion = rect => {
         // Same gap-filling number as the reader: one numbering rule for both.
         const number = nextQuestionNumber(questionsRef.current)
         const question = {
           id: createQuestionId(),
           name: `疑问 ${number}`,
-          page: displayPage,
+          // The chapter page, not the clamped document page: a translated file
+          // with fewer pages must not rename the page the mark belongs to.
+          page,
           rect,
           createdAt: Date.now(),
         }
         commitQuestions([...questionsRef.current, question], Math.max(questionsNext.current, number + 1))
-        // This column is the PDF beside the conversation, so this is where a new
-        // mark is announced: one line into the open chat box, never sent.
-        void injectQuestionLine(bookId, code, question)
+        // This column is the PDF beside the conversation: render the framed
+        // region to an image and announce that, so the model sees exactly what
+        // the user boxed (scanned pages have no text to quote).
+        void announceQuestionImage(question)
       }
       const flashQuestion = id => {
         setQuestionFlash(id)
@@ -18948,7 +20194,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }, [undoCount, redoCount])
 
       const questionLayer = h(QuestionMarks, {
-        questions: questions.filter(item => Number(item.page) === displayPage),
+        // Annotations read by the chapter page too; the displayed page may be
+        // clamped when the translated file has fewer pages.
+        questions: questions.filter(item => Number(item.page) === page),
         active: tool === 'question',
         create: tool === 'question',
         reading: tool === '',
@@ -19260,9 +20508,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               showBlocks: false,
               bookId,
               code,
-              onVisible,
               registerSlot,
               onError,
+              // A far scroll (scrollbar drag / fling) lands outside the mounted
+              // window; this preview's own 180 ms listener would only nudge the
+              // window 12 pages at a time, so let the column report the page.
+              onFollow: reportSide,
+              isSettling,
               pan: mode === 'single' ? sidePan : null,
               panNeeds: null,
               margins: planeMargins,
@@ -19372,6 +20624,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               if (found === undefined) return
               goPage(found.page)
               flashQuestion(found.id)
+              // Picking a mark to discuss also sends its picture: an existing
+              // mark predates the crop feature, and the model still needs to see
+              // the framed region.
+              void announceQuestionImage(found)
             },
           }),
           h(KitButton, {
@@ -19720,6 +20976,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // instead so a click always has a visible answer.
       const [translateAsk, setTranslateAsk] = useState(null)
       const [splitBook, setSplitBook] = useState(null)
+      // The whole book and the split result, held while the post-split choices
+      // are open. Both actions in that dialog are real (trash / open the book).
+      const [splitResult, setSplitResult] = useState(null)
       const [guideClosed, setGuideClosed] = useState(false)
       // The settings page can bring the checklist back even when nothing is
       // missing; the flag lives only for that one open.
@@ -19738,6 +20997,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const workspaceRequest = useRef(null)
       const inFlightSessions = useRef(new Set())
       const [reloadKey, setReloadKey] = useState(0)
+      // Callers that need the refreshed catalog (the split result adds the new
+      // chapter files to the shelf) wait on the next bootstrap response instead
+      // of racing it.
+      const reloadWaiters = useRef([])
       // A chapter the right column asked to open, held until the catalog knows it.
       const [deskRequest, setDeskRequest] = useState(null)
       // A 提取/答疑/习题 conversation the right column asked for, same deal.
@@ -19891,6 +21154,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // book to appear instead of guessing from the file name.
       const importPdfStem = useRef('')
       const [importAsk, setImportAsk] = useState(null)
+      // The dialog's "remember this choice" box; cleared each time it opens.
+      const [rememberImportSplit, setRememberImportSplit] = useState(false)
       const [bookWizard, setBookWizard] = useState(null)
       // A whole-book PDF over 64 MB is still importable, but not without saying
       // twice what it costs: the whole book's pages enter conversations, so the
@@ -19915,11 +21180,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (typeof resolve === 'function') resolve(confirmed)
       }
       const [shelfGroups, setShelfGroups] = useState({ hidden: [], shelves: [] })
+      // Whole-PDF forms pinned to always show, per book and per library. A view
+      // choice like the "whole books" switch (localStorage), not part of the
+      // library's hidden list: the files stay where they are. Pinned cards stay
+      // selectable, so the choice is always reversible.
+      const activeLibraryId = catalog === null || typeof catalog.libraryId !== 'string' ? '' : catalog.libraryId
+      const [wholeAlways, setWholeAlways] = useState(() => readWholeAlways(activeLibraryId))
+      useEffect(() => {
+        setWholeAlways(readWholeAlways(activeLibraryId))
+      }, [activeLibraryId])
+      // Shelves whose add-PDF card is switched off in the shelf header.
+      const [addPdfOff, setAddPdfOff] = useState(() => readShelfAddPdfOff(activeLibraryId))
+      useEffect(() => {
+        setAddPdfOff(readShelfAddPdfOff(activeLibraryId))
+      }, [activeLibraryId])
       const [group, setGroup] = useState(null)
       const groupRef = useRef(null)
       groupRef.current = group
+      // The two shelf switches: whole/unsplit books, and split books named by
+      // hand. They live with the view, not inside the grid, so one `shelfView`
+      // call decides both what the main shelf shows and what its counters say.
+      const [showWhole, setShowWhole] = useState(() => readShelfFlag(SHOW_WHOLE_KEY))
+      const [showLoose, setShowLoose] = useState(() => readShelfFlag(SHOW_LOOSE_KEY))
       const [selected, setSelected] = useState(() => new Set())
       const [shelfName, setShelfName] = useState(null)
+      // Open while the user picks which existing shelf the selection joins.
+      const [shelfPick, setShelfPick] = useState(false)
       const [marquee, setMarquee] = useState(null)
       const bootstrapSeq = useRef(0)
       const digestRef = useRef(false)
@@ -20059,10 +21345,32 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         return persist(current, false)
       }, [persist])
 
+      /**
+       * Refresh the catalog. The returned promise resolves with the next
+       * bootstrap's books, so a caller that has just written files (the split
+       * result) can add the new rows without racing the refresh. A failed or
+       * abandoned refresh resolves with an empty list.
+       * @returns {Promise<object[]>} the refreshed books.
+       */
       const reload = useCallback(() => {
         setPreview(null)
-        void flushSave().then(() => setReloadKey(key => key + 1))
+        return new Promise(resolve => {
+          reloadWaiters.current.push(resolve)
+          const bump = () => setReloadKey(key => key + 1)
+          try {
+            void flushSave().then(bump, bump)
+          } catch {
+            bump()
+          }
+        })
       }, [flushSave])
+
+      // A page that closes mid-refresh must not leave a split caller waiting.
+      useEffect(() => () => {
+        const waiters = reloadWaiters.current
+        reloadWaiters.current = []
+        for (const resolve of waiters) resolve([])
+      }, [])
 
       /**
        * Read one chapter's produced files. A chapter already read (or being
@@ -21036,9 +22344,15 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           countsState.current = { pending: new Set(), tried: new Set() }
           setArtifacts({})
           setCounts({})
+          const waiters = reloadWaiters.current
+          reloadWaiters.current = []
+          for (const resolve of waiters) resolve(books)
           setPhase('ready')
         }).catch(reason => {
           if (!alive) return
+          const waiters = reloadWaiters.current
+          reloadWaiters.current = []
+          for (const resolve of waiters) resolve([])
           setPhase('error')
           setError(errorText(reason))
         })
@@ -21604,6 +22918,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         // The shared-prefix base session already read this chapter; no brief is
         // injected into the conversation any more.
         const cachePart = ''
+        const questionPart = mode === GENERAL_MODE ? '' : await chapterQuestionsBrief(book.id, chapter.code)
         const draft = mode === GENERAL_MODE
           ? [
             `${format('generalSeedBook')}：${book.title === '' ? book.id : `${book.title}（${book.id}）`}`,
@@ -21612,7 +22927,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             paths.pdfPath === '' ? '' : `${format('generalSeedPdf')}：${paths.pdfPath}`,
             cachePart,
           ].filter(Boolean).join('\n')
-          : [seedFor(book, chapter, paths, persona), cachePart, format('sessionQuestionLead')].filter(Boolean).join('\n\n')
+          : [seedFor(book, chapter, paths, persona), questionPart, cachePart, format('sessionQuestionLead')].filter(Boolean).join('\n\n')
         const prefill = await beginPrefill(sessionId, draft, 'keep')
         if (prefill.applied && persona !== '') {
           try { window.localStorage.setItem(`pdfdesk:qa-persona:${sessionId}`, '1') } catch { /* storage unavailable */ }
@@ -21829,6 +23144,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }
             }
             const parts = [seedFor(book, chapter, paths, persona)]
+            const questionPart = await chapterQuestionsBrief(book.id, chapter.code)
+            if (questionPart !== '') parts.push(questionPart)
             if (cachePart !== '') parts.push(cachePart)
             if (artifact !== '') parts.push(`产物：${artifact}（本章产物区里的这个文件）`)
             if (continuation >= 2) {
@@ -22254,10 +23571,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         }
       }, [format, marketUpdate, updateBusy, updateInfo])
 
-      /** Persist hidden books / shelves for the active library. */
+      /**
+       * Persist hidden books / shelves for the active library. Returns the
+       * write promise so a caller that immediately reloads (the split result)
+       * cannot read the old group back before this write lands.
+       * @param {{ hidden: string[], shelves: object[] }} next - groups to store.
+       * @returns {Promise<void>} completion, including a failed write.
+       */
       const saveShelfGroups = useCallback(next => {
         setShelfGroups(next)
-        void request('POST', 'shelves', next).catch(() => {})
+        return request('POST', 'shelves', next).catch(() => {})
       }, [])
 
       const toggleSelect = useCallback(id => {
@@ -22319,12 +23642,99 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setSelected(new Set())
       }, [saveShelfGroups, selected, shelfGroups])
 
+      /** Whether this shelf shows its add-PDF card (the main shelf always does). */
+      const shelfAddPdfOn = group === null || group === 'hidden' ? true : !addPdfOff.includes(group)
+      const toggleShelfAddPdf = useCallback(() => {
+        if (group === null || group === 'hidden') return
+        const current = new Set(addPdfOff)
+        if (current.has(group)) current.delete(group)
+        else current.add(group)
+        const next = [...current]
+        setAddPdfOff(next)
+        writeShelfAddPdfOff(activeLibraryId, next)
+      }, [activeLibraryId, addPdfOff, group])
+
+      /**
+       * Put the selected books into an existing shelf. Books already there are
+       * not duplicated; a shelf that holds all of them says so instead of
+       * claiming it added something.
+       * @param {string} shelfId - target shelf id.
+       * @returns {void}
+       */
+      const addSelectedToShelf = useCallback(shelfId => {
+        if (selected.size === 0) return
+        const result = shelfAddBooks(shelfGroups, shelfId, [...selected])
+        if (result === null) {
+          const shelf = shelfGroups.shelves.find(item => item.id === shelfId)
+          if (shelf === undefined) return
+          showNotice(format('shelfAlreadyIn', { name: shelf.name }))
+        } else {
+          saveShelfGroups(result.groups)
+          showNotice(format('shelfAddedTo', { n: result.added, name: result.shelf.name }))
+        }
+        setShelfPick(false)
+        setSelected(new Set())
+      }, [saveShelfGroups, selected, shelfGroups, showNotice])
+
       const unhideSelected = useCallback(() => {
         if (selected.size === 0) return
         const hidden = shelfGroups.hidden.filter(id => !selected.has(id))
         saveShelfGroups({ hidden, shelves: shelfGroups.shelves })
         setSelected(new Set())
       }, [saveShelfGroups, selected, shelfGroups])
+
+      /** The whole-form keys the current selection would pin or unpin. */
+      const selectedWholeForms = [...selected]
+        .map(id => books.find(item => item.id === id))
+        .filter(item => item !== undefined)
+        .map(wholeFormKey)
+        .filter(key => key !== '')
+      const selectedWholeAllPinned = selectedWholeForms.length > 0
+        && selectedWholeForms.every(key => wholeAlways.includes(key))
+      // Pinning only means something for a book that still has a whole PDF.
+      const wholeFormApplicable = selectedWholeForms.some(key => books.some(item => item.whole === true && wholeBaseId(item.id) === key))
+
+      /**
+       * Pin (or unpin) the selected books' whole-PDF forms. A pinned whole card
+       * stays visible whatever the "whole books" switch says, and both cards of
+       * one book resolve to the same key, so pinning from either one works. The
+       * split chapters and the files themselves are untouched.
+       */
+      const toggleWholeForms = useCallback(() => {
+        const picked = [...selected]
+          .map(id => books.find(item => item.id === id))
+          .filter(item => item !== undefined)
+          .map(wholeFormKey)
+          .filter(key => key !== '')
+        if (picked.length === 0) return
+        const current = new Set(wholeAlways)
+        const allPinned = picked.every(key => current.has(key))
+        if (allPinned) for (const key of picked) current.delete(key)
+        else for (const key of picked) current.add(key)
+        const next = [...current]
+        setWholeAlways(next)
+        writeWholeAlways(activeLibraryId, next)
+      }, [activeLibraryId, books, selected, wholeAlways])
+
+      /** Unpin every book: whole PDFs follow the shelf switch again. */
+      const resetWholeForms = useCallback(() => {
+        setWholeAlways([])
+        writeWholeAlways(activeLibraryId, [])
+      }, [activeLibraryId])
+
+      /** Flip the main shelf's "whole books" switch and remember it. */
+      const toggleShowWhole = useCallback(() => {
+        const next = !showWhole
+        setShowWhole(next)
+        writeShelfFlag(SHOW_WHOLE_KEY, next)
+      }, [showWhole])
+
+      /** Flip the main shelf's "split by hand" switch and remember it. */
+      const toggleShowLoose = useCallback(() => {
+        const next = !showLoose
+        setShowLoose(next)
+        writeShelfFlag(SHOW_LOOSE_KEY, next)
+      }, [showLoose])
 
       const removeFromShelf = useCallback(() => {
         if (group === null || group === 'hidden' || selected.size === 0) return
@@ -22490,11 +23900,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             return
           }
           const name = imported !== null ? String(imported.name) : String(duplicate.existing)
+          const stem = name.replace(/\.pdf$/i, '')
+          // Imported from inside a shelf: the book joins that shelf right away, so
+          // it lands where the user is looking (the file still goes to 整本\).
+          if (group !== null && group !== 'hidden') {
+            const filed = shelfAddBooks(shelfGroups, group, [stem])
+            if (filed !== null) saveShelfGroups(filed.groups)
+          }
           if (imported === null) {
             showNotice(format('importDuplicate', { name }))
             return
           }
-          importPdfStem.current = name.replace(/\.pdf$/i, '')
+          importPdfStem.current = stem
           showNotice(format('importPdfDone', { name }))
           setReloadKey(key => key + 1)
         } catch (error) {
@@ -22502,16 +23919,25 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         } finally {
           setImportBusy(false)
         }
-      }, [showNotice])
+      }, [group, saveShelfGroups, shelfGroups, showNotice])
 
       // Ask "split it now?" once the imported PDF shows up as a whole book. A miss
-      // keeps the stem: the next catalog reload may still list it.
+      // keeps the stem: the next catalog reload may still list it. A remembered
+      // answer replaces the question: "split" opens the panel, "later" says
+      // nothing. The dialog's checkbox writes the same value.
       useEffect(() => {
         const stem = importPdfStem.current
         if (stem === '' || catalog === null) return
         const found = wholeBookByFileStem(catalog.books, stem)
         if (found === null) return
         importPdfStem.current = ''
+        const choice = readImportSplitChoice()
+        if (choice === 'later') return
+        if (choice === 'split') {
+          setSplitBook(found)
+          return
+        }
+        setRememberImportSplit(false)
         setImportAsk(found)
       }, [catalog])
 
@@ -22642,56 +24068,69 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
 
       /**
        * Copy the split toolkit into the active library and open a conversation
-       * with a prepared prompt — the workflow the library was built with.
-       * @returns {Promise<void>} completion.
+       * with a prepared prompt — the workflow the library was built with. A
+       * remembered conversation is reopened only when every check in
+       * `splitSessionReusable` passes; anything else creates a new one, and its
+       * pointer is stored only after the conversation actually opened.
+       * @returns {Promise<boolean>} whether a split conversation was opened.
        */
       const startSplitSession = useCallback(async () => {
-        if (libBusy || catalog === null) return
+        if (libBusy || catalog === null) return false
         setLibBusy(true)
         setLibError('')
         try {
           const target = await ensureWorkspaceTarget()
-          if (target === null) return
+          if (target === null) return false
           const libraryId = library === null ? catalog.libraryId : library.id
+          const libraryDir = library === null ? catalog.libraryDir : library.libraryDir
+          const dir = typeof libraryDir === 'string' ? libraryDir : ''
+          const sessions = sessionService()
+          const list = sessions === null || sessions.list === undefined ? null : sessions.list.getSnapshot()
+          const workspaces = workspacesService()
+          const archived = workspaces === null || workspaces.list === undefined
+            ? new Set()
+            : new Set(workspaces.list.getSnapshot().archivedSessionIds ?? [])
           const stored = readStoredSplitSession(libraryId)
-          if (stored !== null && stored.workspaceId === target.workspaceId) {
-            const sessions = sessionService()
-            const list = sessions === null || sessions.list === undefined ? null : sessions.list.getSnapshot()
-            const workspaces = workspacesService()
-            const archived = workspaces === null || workspaces.list === undefined
-              ? new Set()
-              : new Set(workspaces.list.getSnapshot().archivedSessionIds ?? [])
-            const known = list === null || list.phase !== 'ready' ? undefined : list.byId?.[stored.sessionId]
-            if (!archived.has(stored.sessionId) && (known !== undefined || list === null || list.phase !== 'ready')) {
-              if (openHostSession(stored.sessionId)) {
-                showNotice(format('splitReopened'))
-                return
-              }
+          if (splitSessionReusable({ stored, target, list, archived, cwd: dir })) {
+            if (openHostSession(stored.sessionId)) {
+              showNotice(format('splitReopened'))
+              return true
             }
+            clearStoredSplitSession(libraryId)
           }
           try {
             await request('POST', 'toolkit/install', {})
           } catch {
             // Without the copy the conversation can still guide the user.
           }
-          const base = { workspaceId: target.workspaceId, cwd: target.cwd }
-          const sessionId = await createSessionId(base)
-          writeStoredSplitSession(libraryId, sessionId, target.workspaceId)
-          const prefill = await beginPrefill(sessionId, format('splitPrompt', {
-            dir: library === null ? catalog.libraryDir : library.libraryDir,
-          }))
+          const sessionId = await createSessionId({ workspaceId: target.workspaceId, cwd: target.cwd })
+          if (typeof sessionId !== 'string' || sessionId === '') throw new Error('session service returned no id')
+          const prefill = await beginPrefill(sessionId, format('splitPrompt', { dir }))
           if (!openHostSession(sessionId)) {
-            showNotice(format('splitFailed'))
+            clearStoredSplitSession(libraryId)
+            showNotice(format('splitResultOpenFailed'))
             if (prefill.reference !== null) prefill.reference.release()
-            return
+            return false
+          }
+          // Only a conversation that is actually on screen may be remembered;
+          // a failed open must never leave a pointer for later "reopening".
+          writeStoredSplitSession(libraryId, sessionId, target.workspaceId, dir)
+          if (!prefill.applied) {
+            // The blank exists and is known to this visit (chapter New must not
+            // adopt it), but it cannot prove a split conversation next time.
+            clearStoredSplitSession(libraryId)
+            showNotice(format('splitPromptMissing'))
           }
           if (prefill.reference !== null) {
             window.setTimeout(() => {
               try { prefill.reference.release() } catch { /* already released */ }
             }, 500)
           }
+          return true
         } catch (reason) {
           setLibError(`${format('splitFailed')} (${errorText(reason)})`)
+          showNotice(format('splitResultOpenFailed'))
+          return false
         } finally {
           setLibBusy(false)
         }
@@ -22842,6 +24281,18 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           ? (typeof catalog.target.cwd === 'string' ? catalog.target.cwd : '')
           : '')
         : (activeWorkspace.title === '' ? activeWorkspace.path : activeWorkspace.title)
+      // One shelf view for the grid and the breadcrumb: membership, counters and
+      // visibility come from `shelfView`, not from copies at the call sites.
+      const hiddenLabel = format('hiddenShelf')
+      const shelfPage = useMemo(() => shelfView({
+        books,
+        groups: shelfGroups,
+        group,
+        showWhole,
+        showLoose,
+        wholeAlways,
+        hiddenLabel,
+      }), [books, group, hiddenLabel, shelfGroups, showWhole, showLoose, wholeAlways])
       let body
       if (blockingError !== '' && (catalog === null || work === null)) {
         body = h('div', { className: 'md-state md-state-error', role: 'alert' },
@@ -22941,36 +24392,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           registerFileRef,
         })
       } else {
-        const hiddenSet = new Set(shelfGroups.hidden)
-        const shelved = new Set()
-        for (const shelf of shelfGroups.shelves) for (const id of shelf.books) shelved.add(id)
-        const activeShelf = group === null || group === 'hidden'
-          ? null
-          : shelfGroups.shelves.find(shelf => shelf.id === group) ?? null
-        const visibleBooks = group === 'hidden'
-          ? books.filter(item => hiddenSet.has(item.id))
-          : activeShelf !== null
-            ? books.filter(item => activeShelf.books.includes(item.id))
-            : books.filter(item => !hiddenSet.has(item.id) && !shelved.has(item.id))
-        const groupNameForShelf = group === 'hidden'
-          ? format('hiddenShelf')
-          : activeShelf === null ? null : activeShelf.name
-        const collections = [
-          ...(group !== null || shelfGroups.hidden.length === 0
-            ? []
-            : [{ id: 'hidden', name: format('hiddenShelf'), count: shelfGroups.hidden.filter(id => books.some(book => book.id === id)).length }]),
-          ...shelfGroups.shelves
-            .filter(shelf => (shelf.parent ?? null) === group)
-            .map(shelf => ({ id: shelf.id, name: shelf.name, count: shelf.books.filter(id => books.some(book => book.id === id)).length })),
-        ]
         body = h(Shelf, {
-          books: visibleBooks,
-          wholeTotal: books.filter(item => item.whole === true).length,
-          looseTotal: books.filter(item => item.loose === true && item.whole !== true).length,
+          view: shelfPage,
+          showWhole,
+          showLoose,
+          onToggleWhole: toggleShowWhole,
+          onToggleLoose: toggleShowLoose,
           covers: catalog.covers,
           group,
-          groupName: groupNameForShelf,
-          collections,
           selected,
           cardRefs,
           onSelect: selectMany,
@@ -22982,9 +24411,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           onTrashBook: trashBook,
           onTrashSelected: trashSelected,
           onCreateShelf: () => setShelfName(''),
+          onAddToShelf: () => setShelfPick(true),
+          canAddToShelf: shelfGroups.shelves.length > 0,
+          showAddPdf: shelfAddPdfOn,
           onHide: hideSelected,
           onUnhide: unhideSelected,
           onRemoveFromShelf: removeFromShelf,
+          onWholeForm: toggleWholeForms,
+          onResetWholeForms: resetWholeForms,
+          wholeFormAllPinned: selectedWholeAllPinned,
+          wholeFormApplicable,
           onClear: clearSelection,
           onImportPdf: () => pdfInput.current?.click(),
         })
@@ -22996,11 +24432,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null || shelfName !== null || settingsOpen
       // The crumbs render before the catalog arrives; `work` is still null then.
       const librariesView = work !== null && work.view === 'libraries'
-      const groupName = group === 'hidden'
-        ? format('hiddenShelf')
-        : group === null
-          ? null
-          : (shelfGroups.shelves.find(shelf => shelf.id === group) ?? { name: null }).name
+      // The crumbs name the open shelf from the same view the grid renders.
+      const groupName = shelfPage.groupName
       const libraryName = library === null || typeof library.name !== 'string' || library.name === ''
         ? format('shelf')
         : library.name
@@ -23101,7 +24534,17 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   onClick: () => openGroup(group),
                 }, groupName),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title)
+            book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title),
+            // Inside one custom shelf: the add-PDF card's own switch, remembered
+            // per shelf. The main shelf always offers the card.
+            book === null && group !== null && group !== 'hidden'
+              ? h(KitButton, {
+                type: 'button', className: 'md-btn md-btn-small md-btn-ghost md-crumbs-toggle',
+                'aria-pressed': shelfAddPdfOn ? 'true' : 'false',
+                title: shelfAddPdfOn ? format('shelfAddPdfOnHint') : format('shelfAddPdfOffHint'),
+                onClick: toggleShelfAddPdf,
+              }, `${format('shelfAddPdf')}${shelfAddPdfOn ? format('shelfAddPdfOn') : format('shelfAddPdfOff')}`)
+              : null
           ),
           inlineError === '' ? null : h('div', { className: 'md-alert', role: 'alert', inert: covered ? '' : undefined },
             h('span', { className: 'md-alert-text' }, inlineError),
@@ -23130,7 +24573,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               work === null || (work.view !== 'shelf' && work.view !== 'book') ? null : h('details', { className: 'md-details md-tips' },
                 h('summary', { className: 'md-details-summary' }, format('tipsTitle')),
                 h('div', { className: 'md-tips-line' }, format('tipsLeftClick')),
-                h('div', { className: 'md-tips-line' }, format('tipsRightClick'))
+                h('div', { className: 'md-tips-line' }, format('tipsRightClick')),
+                h('div', { className: 'md-tips-line' }, format('tipsDelete')),
+                h('div', { className: 'md-tips-line' }, format('tipsCopyright'))
               ),
               catalog === null || blockingError !== '' || work === null || work.view === 'libraries' ? null : h('details', { className: 'md-details', style: { order: 4 } },
                 h('summary', { className: 'md-details-summary' }, format('diagnosticsTitle')),
@@ -23287,6 +24732,14 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onConfirm: createShelf,
             onClose: () => setShelfName(null),
           }),
+        shelfPick
+          ? h(ShelfPickDialog, {
+            shelves: shelfGroups.shelves,
+            count: selected.size,
+            onPick: addSelectedToShelf,
+            onClose: () => setShelfPick(false),
+          })
+          : null,
         reader === null
           ? null
           : h(ReaderView, {
@@ -23424,7 +24877,24 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : h(SplitDialog, {
             book: splitBook,
             onClose: () => setSplitBook(null),
-            onDone: () => { setSplitBook(null); reload() },
+            onDone: async result => {
+              const doneBook = splitBook
+              // A split started from a custom shelf belongs in that shelf right
+              // away; `fileSplitBooks` waits for the refresh, matches the folder
+              // and files the new books before the result dialog opens.
+              setSplitBook(null)
+              await fileSplitBooks({ book: doneBook, group, groups: shelfGroups, reload, saveShelfGroups })
+              setSplitResult({ book: doneBook, result })
+            },
+          }),
+        splitResult === null
+          ? null
+          : h(SplitResultDialog, {
+            book: splitResult.book,
+            result: splitResult.result,
+            onClose: () => setSplitResult(null),
+            onRemoved: () => reload(),
+            onOpenConversation: () => startSplitSession(),
           }),
         // Asked right after a PDF lands in 整本\: the file is already imported, so
         // "later" costs nothing and the answer is never a blocking dialog.
@@ -23433,12 +24903,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           : h(KitModal, {
             title: format('importSplitAskTitle'),
             onClose: () => setImportAsk(null),
-            children: h('p', { className: 'md-env-body' }, format('importSplitAsk', { title: importAsk.title })),
+            children: h(React.Fragment, null,
+              h('p', { className: 'md-env-body' }, format('importSplitAsk', { title: importAsk.title })),
+              h('label', { className: 'md-settings-row' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: rememberImportSplit,
+                  onChange: event => setRememberImportSplit(event.target.checked),
+                }),
+                h('span', null, format('importSplitRemember')))),
             footer: [
-              h(KitButton, { key: 'later', variant: 'ghost', onClick: () => setImportAsk(null) }, format('importSplitLater')),
+              h(KitButton, {
+                key: 'later', variant: 'ghost',
+                onClick: () => {
+                  if (rememberImportSplit) writeImportSplitChoice('later')
+                  setImportAsk(null)
+                },
+              }, format('importSplitLater')),
               h(KitButton, {
                 key: 'split', variant: 'primary',
                 onClick: () => {
+                  if (rememberImportSplit) writeImportSplitChoice('split')
                   const book = importAsk
                   setImportAsk(null)
                   setSplitBook(book)

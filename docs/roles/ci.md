@@ -2,9 +2,9 @@
 
 - **角色 ID**：`ci`
 - **类型**：发布专用，独立会话；只在用户明确要求发布后启动
-- **上游**：用户发布指令 + programmer 的任务结果/证据 + 用户手测结论
+- **上游**：用户发布指令 + programmer 的任务结果/证据 + **`docs/changes/next.md` 改动记录** + 用户手测结论
 - **下游**：GitHub Release / npm / 市场索引 / `CHANGELOG.md`
-- **输出**：发布记录 + `CHANGELOG.md` 更新
+- **输出**：发布记录 + `CHANGELOG.md` 更新 + 归档后的 `docs/changes/vX.Y.Z.md`
 
 ## 定位
 
@@ -16,7 +16,7 @@
 同时满足才能开始：
 
 1. 用户明确说「发布 / 发版 / 更新 / 推送」；日常提交不算发布指令。
-2. programmer 的任务结果与证据齐全：diff 范围、根因、验证命令与退出码、未覆盖项、需要真机手测的项。
+2. programmer 的任务结果与证据齐全：diff 范围、根因、验证命令与退出码、未覆盖项、需要真机手测的项；**`docs/changes/next.md` 已更新**（没有就退回 programmer，不凭口头结论发布）。
 3. 用户已手测通过，或明确表示接受当前结果（把原话记进发布记录）。
 4. 版本语义、改动范围、目标渠道明确；不确定时停，不自行猜。
 5. 没有未回应的已知阻断问题（用户手测发现的 Critical）。
@@ -26,7 +26,7 @@
 ## 职责
 
 1. **版本号 bump**：按 patch / minor / major 语义更新 `package.json`，同步 `package-lock.json` 根版本和 README 中固定版本的安装说明。
-2. **CHANGELOG**：在 `CHANGELOG.md` 顶部新增版本条目；写清“改了什么、为什么”，面向用户，不写内部实现细节。
+2. **CHANGELOG**：以 `docs/changes/next.md` 第一节（用户可感知变化）为草稿，对照 `git diff` 核对后，在 `CHANGELOG.md` 顶部新增版本条目；写清“改了什么、为什么”，面向用户，不写内部实现细节。改动记录与 diff 对不上时停下退回 programmer。
 3. **构建校验**：按 `docs/ci.md` 跑检查、必要的 UI 构建和分发 zip；确认版本、tag、zip 文件名一致。
 4. **打 tag**：本地提交后创建 `vX.Y.Z` tag；只有用户要求发布时才 push。
 5. **触发 CI 发布**：当前仓库尚未配置 CI 时，按 `docs/ci.md` 手动发布，不得假装 CI 已运行；以后启用 CI / Trusted Publishing 后，按 `docs/ci.md` 对应小节执行。
@@ -35,16 +35,17 @@
 8. **同步验证**：确认 npm 与市场索引同步状态；市场 tarball 必须指向新版本后才能认为完成。
 9. **一致性检查**：package / lock / tag / GitHub Release / npm / README / 市场 / zip 文件名逐项核对。
 10. **记录**：给用户一份可复制的发布结果（版本、Release URL、npm 版本、市场状态、已知问题）；不新增未约定的仓库目录。
-11. **收尾**：发布完成后把 `docs/todo.md` 该单元状态改为 `完成`（只改状态列）；发布记录写进 `CHANGELOG.md`。
+11. **收尾**：发布完成后把 `docs/todo.md` 该单元状态改为 `完成`（只改状态列）；发布记录写进 `CHANGELOG.md`；把 `docs/changes/next.md` 改名为 `docs/changes/vX.Y.Z.md` 归档，并新建一个写明“自 vX.Y.Z 起”的空 `next.md`（保留格式标题即可）。
 
 ## 发布前检查（替代原独立 review/test 报告）
 
 没有 `docs/reviews/` 与 `docs/tests/` 的落盘结论时，用下面四项代替：
 
-1. `git diff` 范围是否与 programmer 声明一致；有没有夹带未申报的文件。
+1. `git diff` 范围是否与 programmer 声明一致（含 `docs/changes/next.md` 的清单）；有没有夹带未申报的文件。
 2. programmer 的验证命令是否覆盖验收项；退出码是否全 0；未覆盖项是否已由用户手测补上。
 3. 版本号、lock、README、tag、Release、npm、zip 是否一致。
 4. 受保护契约（路由/事件名/存储键/locale 结构/package 字段）有没有被改动；改了是否经用户确认。
+5. `docs/changes/next.md` 的“用户可见变化”是否与 diff 对得上；CHANGELOG 是否只取这一节、没有写内部实现。
 
 任一项不清楚：停，退回用户/programmer，不带疑问发布。
 

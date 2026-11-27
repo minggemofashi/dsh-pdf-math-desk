@@ -16,6 +16,13 @@
 
 缺一项就停，交回用户/队长；ci 不补测试、不补自查、不代替 programmer 修代码。
 
+### 1.1 变更记录（`docs/changes/next.md`）
+
+- **programmer 必须写**：每个执行单元收尾更新 `docs/changes/next.md`（格式见 `docs/changes/README.md`），包含用户可感知变化、入口、根因/需求、契约影响、验证命令与退出码、风险与未覆盖、可直接进 CHANGELOG 的草稿。
+- **ci 必须审**：逐条对照 `git diff`（文件、行为、契约），确认记录与 diff 一致；对不上就退回 programmer，不自行脑补更新说明。
+- **CHANGELOG 从记录起草，以 diff 为准**：只取“用户可感知变化”一节，去掉内部实现与文件名；内部变化只用于核对，不写进面向用户的说明。
+- **归档**：发布完成后把 `next.md` 改名为 `docs/changes/vX.Y.Z.md`，并新建空的 `next.md`（标题写明“自 vX.Y.Z 起”）。
+
 ## 2. 版本号与发布规模
 
 | 规模 | 语义 | 版本 bump | 额外要求 |

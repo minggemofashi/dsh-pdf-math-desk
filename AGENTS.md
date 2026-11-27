@@ -14,7 +14,8 @@
 - 任何角色文档的变更必须经用户明确确认后才落盘；确认前只写提案。
 - 高风险改动（3 个及以上文件、触碰受保护契约、数据迁移）可应要求临时开一次独立只读复核；它不是常驻门禁。
 - 上下文出现稀释信号（重复确认过的事、忘记文件位置、规则自相矛盾、压缩后丢失未落盘的结论）时，按角色文档交接并换会话，不靠感觉硬撑。
-- 会话结束前，值得保留的结论必须写进指定文件；未落盘视为丢弃。
+- **会话结束前，值得保留的结论必须写进指定文件**；未落盘视为丢弃。
+- **改动留痕（硬性）**：每个执行单元收尾必须更新 `docs/changes/next.md`：用户可感知的变化、入口（文件+函数）、原因、契约影响、验证命令与退出码、风险/未覆盖，以及一段可直接进 CHANGELOG 的用户可读草稿。**没更新视为未完成**；ci 不得只凭会话口头结论发版，必须对照该文件与 `git diff` 审阅。
 - **会话预算**：单会话超过 300–500 步必须交接换新会话；按波次（3–5 个单元）开工，不按周开巨会话；只读相关文件，不整本读 `client.js` 或全量历史。详见 `docs/decisions.md` DEC-0011。
 
 ## 2. 代码修改
@@ -47,7 +48,7 @@
 - `cordis.patch.yml` 必须保持中性，不写具体书库路径；真实书库由运行时的 `~/.dsh/pdfdesk/libraries.json` 管理。
 - 不进 git：`node_modules/`、`dist/`、`.dsh-scratch/`、临时文件、任何带本机绝对路径或凭据的文件。
 - 不提交个人目录绝对路径、API Key、token、密码；提交前用 `git diff --cached` 检查。
-- 仓库里允许并应持久化的项目记忆：`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/features.md`、`docs/copy/`、`CHANGELOG.md`；`docs/requirements/`、`docs/reviews/`、`docs/tests/` 是历史记录，保留但不新增（需求块只在对话/任务里，不落盘）。临时草稿和含个人信息的诊断仍放仓库外。
+- 仓库里允许并应持久化的项目记忆：`docs/roles/`、`docs/todo.md`、`docs/decisions.md`、`docs/features.md`、`docs/copy/`、`docs/changes/`、`CHANGELOG.md`；`docs/requirements/`、`docs/reviews/`、`docs/tests/` 是历史记录，保留但不新增（需求块只在对话/任务里，不落盘）。临时草稿和含个人信息的诊断仍放仓库外。
 - CI 细节、发布命令和历史坑只在 `docs/ci.md` / `docs/RELEASE.md`，不要搬回本文件。
 
 ## 4. 改完必跑的验证
@@ -81,6 +82,7 @@ node .dsh-scratch\host-test.mjs
 | 判断当前该谁做、拆几个会话 | 队长 + `docs/roles/programmer.md` |
 | 把模糊需求问清、写成需求块 | `docs/roles/requirements.md`（只在对话里，不落盘） |
 | 实现一个执行单元 | `docs/todo.md` + `docs/roles/programmer.md` |
+| 收尾写改动记录（给 ci 审阅） | `docs/changes/README.md` + `docs/changes/next.md` |
 | 发布 | `docs/roles/ci.md` + `docs/ci.md` |
 | 查已定架构/被否决方案/隐性契约 | `docs/decisions.md` |
 | 真机验收矩阵（补充） | `docs/TESTING.md` |

@@ -21,6 +21,9 @@ const RANGE_FILE = /^(?<short>[^_]+?)_(?:(?:第[^_]*?章)_)?(?<rest>.*?)(?:_p|_)
 /** Canonical chapter code, lowercase and exactly `c` + two or three digits. */
 const CODE_SHAPE = /^c\d{2,3}$/
 
+/** The placeholder the range splitter writes when it has no chapter title. */
+const UNRENAMED_TITLE = /^(?:未命名|untitled)$/i
+
 /**
  * Canonicalize one chapter code.
  * @param {unknown} raw - code from a file name or the authored index.
@@ -214,8 +217,9 @@ function bookRow(book) {
     unparsed: typeof book.unparsed === 'number' ? book.unparsed : 0,
     duplicates,
     // A book made entirely of files whose names the splitter did not produce:
-    // readable, but hidden until the reader asks for unrecognized books.
-    loose: chapters.length > 0 && chapters.every(chapter => chapter.loose === true),
+    // readable, but hidden until the reader asks for unrecognized books. A book
+    // the splitter produced but nobody named yet is in the same bucket.
+    loose: book.loose === true || (chapters.length > 0 && chapters.every(chapter => chapter.loose === true)),
     chapters,
   }
 }
@@ -410,6 +414,12 @@ async function scanFragments(fragmentDir) {
     }
     for (const chapter of chapters) delete chapter.from
     chapters.sort((left, right) => left.code.localeCompare(right.code))
+    // A plain page-range split (`split_pdf.py --ranges`) titles every chapter
+    // with the placeholder "未命名": the book has not been named per the split
+    // rule yet, so it belongs with the un-named books (out of the shelf until
+    // the reader asks for them) instead of flooding it after a split.
+    const unrenamed = chapters.length > 0
+      && chapters.every(chapter => UNRENAMED_TITLE.test(String(chapter.title).trim()))
     const { title, author } = splitBookTitle(entry.name)
     books.push(bookRow({
       id: short === '' ? entry.name : short,
@@ -417,6 +427,7 @@ async function scanFragments(fragmentDir) {
       author,
       dir: entry.name,
       unparsed,
+      loose: unrenamed,
       chapters,
     }))
   }
