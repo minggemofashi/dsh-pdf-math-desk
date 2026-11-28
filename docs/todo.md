@@ -978,11 +978,11 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-01 | P1 | 拆分面板双击缩略图整页预览（低质量扫描件看清章号） | `client.js`（`SplitPagePreview` / `SplitDialog`）、`src/host/routes.js`、`tools/pdf_thumbs.py` | 用户 2026-11-28 指令 1 | 宽度上限 480→1600；Host 单页 1200、pdf.js 回退大画布；Esc 先关预览；拆点与滚动位置不变 | programmer | 待用户验收 |
-| T-20261128-02 | P1 | 笔的荧光笔形态（主阅读器 + 右栏预览） | `client.js`（`PenStyleControls`、两栏笔设置、`createInkGestures`） | 用户 2026-11-28 指令 2；用户确认四色 + 笔型切换 | 22px、38% 透明、四色；笔画多一个可选 `opacity`，旧数据按 1 渲染；不新增工具条按钮 | programmer | 待用户验收 |
-| T-20261128-03 | P1 | 书架内新建书架＝嵌套：选中的书移入新书架 | `client.js`（`shelfCreateFromSelection` / `createShelf`） | 用户 2026-11-28 指令 3；用户确认「移入新书架」 | 只动当前书架；其它书架保留同一本书；子书架可继续往下嵌套 | programmer | 待用户验收 |
-| T-20261128-04 | P1 | 预览大图并入「不重要缓存」一键清理，存储面板显示缩略图占用 | `client.js`、`src/host/routes.js`、`src/host/storage.js` | 用户 2026-11-28 追加指令（方案 B：保留缓存 + 清理按钮） | 不改路由形状；`clear-translation-cache` 多清 `thumbs/` 并在响应里单列 `thumbs`；不做定时静默删除（DEC-0014） | programmer | 待用户验收 |
-| T-20261128-05 | P2 | 纠正两条历史失败：`t08-test` 断言写在 pointerdown、`ui-polish-test` 断言过期 | 仓库外 `.dsh-scratch/t08-test.mjs`、`ui-polish-test.mjs` | 用户 2026-11-28「已知bug可以先修一下」 | 只改测试断言，不改产品行为；`t08` 实际点击选中、拖拽新建，与主阅读器一致 | programmer | 待用户验收 |
+| T-20261128-01 | P1 | 拆分面板双击缩略图整页预览（低质量扫描件看清章号） | `client.js`（`SplitPagePreview` / `SplitDialog`）、`src/host/routes.js`、`tools/pdf_thumbs.py` | 用户 2026-11-28 指令 1 | 宽度上限 480→1600；Host 单页 1200、pdf.js 回退大画布；Esc 先关预览；拆点与滚动位置不变 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-02 | P1 | 笔的荧光笔形态（主阅读器 + 右栏预览） | `client.js`（`PenStyleControls`、两栏笔设置、`createInkGestures`） | 用户 2026-11-28 指令 2；用户确认四色 + 笔型切换 | 22px、38% 透明、四色；笔画多一个可选 `opacity`，旧数据按 1 渲染；不新增工具条按钮 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-03 | P1 | 书架内新建书架＝嵌套：选中的书移入新书架 | `client.js`（`shelfCreateFromSelection` / `createShelf`） | 用户 2026-11-28 指令 3；用户确认「移入新书架」 | 只动当前书架；其它书架保留同一本书；子书架可继续往下嵌套 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-04 | P1 | 预览大图并入「不重要缓存」一键清理，存储面板显示缩略图占用 | `client.js`、`src/host/routes.js`、`src/host/storage.js` | 用户 2026-11-28 追加指令（方案 B：保留缓存 + 清理按钮） | 不改路由形状；`clear-translation-cache` 多清 `thumbs/` 并在响应里单列 `thumbs`；不做定时静默删除（DEC-0014） | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-05 | P2 | 纠正两条历史失败：`t08-test` 断言写在 pointerdown、`ui-polish-test` 断言过期 | 仓库外 `.dsh-scratch/t08-test.mjs`、`ui-polish-test.mjs` | 用户 2026-11-28「已知bug可以先修一下」 | 只改测试断言，不改产品行为；`t08` 实际点击选中、拖拽新建，与主阅读器一致 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-01 证据（2026-11-28）**
 
@@ -1027,7 +1027,7 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-06 | P1 | 反色阅读（夜间黑纸）：跟随深色主题 + 手动覆盖；只反纸面；单色墨；框/把手/输入框适配 | `client.js`（`usePaperMode`、`PaperInvertProvider`、`paperInkColor`/palette、主阅读器/右栏/设置入口、CSS） | 用户 2026-11-28 拍板 + 方案 §1 验收口径 | 不升版本；重启 DSH 手测；方案要求 6 张真机截图 | programmer | 待用户验收 |
+| T-20261128-06 | P1 | 反色阅读（夜间黑纸）：跟随深色主题 + 手动覆盖；只反纸面；单色墨；框/把手/输入框适配 | `client.js`（`usePaperMode`、`PaperInvertProvider`、`paperInkColor`/palette、主阅读器/右栏/设置入口、CSS） | 用户 2026-11-28 拍板 + 方案 §1 验收口径 | 不升版本；重启 DSH 手测；方案要求 6 张真机截图 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-06 证据（2026-11-28）**
 
@@ -1044,10 +1044,10 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-07 | P1 | 荧光笔笔迹粗细可调（12–40px，默认 22，两栏共用本机记忆） | `client.js`：`HIGHLIGHT_WIDTH_*`、`useHighlightWidth`、`PenStyleControls`、两栏 marker | 用户 2026-11-28 指令 + 对话确认 | 旧笔画不迁移；滑杆只在荧光笔形态出现 | programmer | 待用户验收 |
-| T-20261128-08 | P1 | 左右工具条悬停设置面板在指针移入时不再消失 | `client.js`：`keepRailPanel`/`keepSidePanel`、面板 `onPointerEnter`、关闭宽限、面板间距/桥接 CSS | 用户 2026-11-28 报告「悬停菜单会消失」 | 不新增按钮；主阅读器与右栏一致 | programmer | 待用户验收 |
+| T-20261128-07 | P1 | 荧光笔笔迹粗细可调（12–40px，默认 22，两栏共用本机记忆） | `client.js`：`HIGHLIGHT_WIDTH_*`、`useHighlightWidth`、`PenStyleControls`、两栏 marker | 用户 2026-11-28 指令 + 对话确认 | 旧笔画不迁移；滑杆只在荧光笔形态出现 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-08 | P1 | 左右工具条悬停设置面板在指针移入时不再消失 | `client.js`：`keepRailPanel`/`keepSidePanel`、面板 `onPointerEnter`、关闭宽限、面板间距/桥接 CSS | 用户 2026-11-28 报告「悬停菜单会消失」 | 不新增按钮；主阅读器与右栏一致 | programmer | 完成（v1.6.0 已发布） |
 | T-20261128-09 | P1 | 章节对比度 100–200%（依赖反色、按书+章记忆、两栏同步） | `client.js`：`useChapterContrast`、`--paper-contrast`、滤镜 `contrast()`、主阅读器弹层、右栏 `⋯` 子菜单 | 用户 2026-11-28 指令 + 对话确认 | 只反色纸面生效；普通模式不变；不碰 Host | programmer | 已关闭（用户 2026-11-28 判定「对比度效果不好」，由 T-20261128-16 文字增强整体替换；旧实现已删除，不留两套） |
-| T-20261128-10 | P1 | 触控板双指捏合缩放（主阅读器 + 右栏） | `client.js`：两处 `wheel` 监听、`onZoomBy`、侧栏 `zoomTo` | 用户 2026-11-28 指令 + 对话确认 | 普通双指滚动不变；主阅读器双栏不拦截 | programmer | 待用户验收 |
+| T-20261128-10 | P1 | 触控板双指捏合缩放（主阅读器 + 右栏） | `client.js`：两处 `wheel` 监听、`onZoomBy`、侧栏 `zoomTo` | 用户 2026-11-28 指令 + 对话确认 | 普通双指滚动不变；主阅读器双栏不拦截 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-07…10 证据（2026-11-28）**
 
@@ -1066,9 +1066,9 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-11 | P1 | 竖排工具条框与图标对齐（左右栏 + 右栏预览） | `client.js`：`.md-rail` 的 `flex: none`、`.md-rail-wrap` 44px、面板 46px、三条工具栏 z-index 41 | 用户 2026-11-28「右栏竖排工具条框/图标错位」+ 方案 §1 UI-1 | 不新增按钮；滚动条车道仍留 20px；悬停面板仍在框边 2px | programmer | 待用户验收 |
-| T-20261128-12 | P1 | 窄宽度顶栏保单行（书名让位；必要时收起首页/适应宽度/缩放百分比） | `client.js`：`md-reader-first`/`md-reader-fit`、`pdfdesk-reader` 容器查询、`.md-reader-titles` flex | 用户 2026-11-28「顶部变两行挤压阅读区」+ 方案 §1 UI-2 + 对话确认可隐藏 | Home/F 仍可达；双栏 `md-hidden` 不变；不新增按钮 | programmer | 待用户验收 |
-| T-20261128-13 | P1 | 右侧预览新增反色按钮（与主阅读器同步） | `client.js`：`.md-side-bar` 的 `md-side-paper` + 其 CSS | 用户 2026-11-28「右栏预览缺反色按钮」+ 方案 §1 UI-3 | 复用 `paperInvert`/`paperInvertHint`，不新增 locale 键；不新增依赖 | programmer | 待用户验收 |
+| T-20261128-11 | P1 | 竖排工具条框与图标对齐（左右栏 + 右栏预览） | `client.js`：`.md-rail` 的 `flex: none`、`.md-rail-wrap` 44px、面板 46px、三条工具栏 z-index 41 | 用户 2026-11-28「右栏竖排工具条框/图标错位」+ 方案 §1 UI-1 | 不新增按钮；滚动条车道仍留 20px；悬停面板仍在框边 2px | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-12 | P1 | 窄宽度顶栏保单行（书名让位；必要时收起首页/适应宽度/缩放百分比） | `client.js`：`md-reader-first`/`md-reader-fit`、`pdfdesk-reader` 容器查询、`.md-reader-titles` flex | 用户 2026-11-28「顶部变两行挤压阅读区」+ 方案 §1 UI-2 + 对话确认可隐藏 | Home/F 仍可达；双栏 `md-hidden` 不变；不新增按钮 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-13 | P1 | 右侧预览新增反色按钮（与主阅读器同步） | `client.js`：`.md-side-bar` 的 `md-side-paper` + 其 CSS | 用户 2026-11-28「右栏预览缺反色按钮」+ 方案 §1 UI-3 | 复用 `paperInvert`/`paperInvertHint`，不新增 locale 键；不新增依赖 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-11…13 证据（2026-11-28）**
 
@@ -1086,8 +1086,8 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-14 | P1 | 竖排工具条从顶栏/工具行下方开始（主阅读器 + 右栏预览） | `client.js`：两处 `ResizeObserver`、`--pdf-reader-rail-top`/`--pdf-side-rail-top`、`.md-rail` 的 `max-height`/`scrollbar-width` | 用户 2026-11-28 手测反馈 | 工具行折行/收起都成立；保留工具栏 z-index 41 兜底；不新增按钮 | programmer | 待用户验收 |
-| T-20261128-15 | P1 | 面包屑显示多级书架链路（点祖先返回；hidden 一级；父缺失/成环截断） | `client.js`：`shelfChain`、`crumbChain.map`、`.md-crumb-ancestor`/`.md-crumbs` CSS | 用户 2026-11-28 指令 + 方案 §1 UI-4 | 只读 `shelves[].parent`，不改 schema/路由；长名省略、窄屏换行 | programmer | 待用户验收 |
+| T-20261128-14 | P1 | 竖排工具条从顶栏/工具行下方开始（主阅读器 + 右栏预览） | `client.js`：两处 `ResizeObserver`、`--pdf-reader-rail-top`/`--pdf-side-rail-top`、`.md-rail` 的 `max-height`/`scrollbar-width` | 用户 2026-11-28 手测反馈 | 工具行折行/收起都成立；保留工具栏 z-index 41 兜底；不新增按钮 | programmer | 完成（v1.6.0 已发布） |
+| T-20261128-15 | P1 | 面包屑显示多级书架链路（点祖先返回；hidden 一级；父缺失/成环截断） | `client.js`：`shelfChain`、`crumbChain.map`、`.md-crumb-ancestor`/`.md-crumbs` CSS | 用户 2026-11-28 指令 + 方案 §1 UI-4 | 只读 `shelves[].parent`，不改 schema/路由；长名省略、窄屏换行 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-14…15 证据（2026-11-28）**
 
@@ -1104,7 +1104,7 @@
 
 | ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T-20261128-16 | P1 | 文字增强替换对比度（按章记忆的三档 S 曲线、只作用反色、只处理近灰像素、两栏同步） | `client.js`：`useChapterEnhance`/`ENHANCE_*`、`EnhanceDefs` SVG 滤镜、`--pdf-enh`、`⌄` 子栏下拉、右栏 `⋯` 子菜单；删除 contrast 全套 | 用户 2026-11-28 指令 + 方案 §2 FUNC-1 + 三项对话确认 | 不新增依赖/按钮；普通纸面不变；旧 `pdfdesk:contrast*` 键不读不迁移 | programmer | 待用户验收 |
+| T-20261128-16 | P1 | 文字增强替换对比度（按章记忆的三档 S 曲线、只作用反色、只处理近灰像素、两栏同步） | `client.js`：`useChapterEnhance`/`ENHANCE_*`、`EnhanceDefs` SVG 滤镜、`--pdf-enh`、`⌄` 子栏下拉、右栏 `⋯` 子菜单；删除 contrast 全套 | 用户 2026-11-28 指令 + 方案 §2 FUNC-1 + 三项对话确认 | 不新增依赖/按钮；普通纸面不变；旧 `pdfdesk:contrast*` 键不读不迁移 | programmer | 完成（v1.6.0 已发布） |
 
 **T-20261128-16 证据（2026-11-28）**
 
