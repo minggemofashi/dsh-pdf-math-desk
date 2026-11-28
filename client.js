@@ -23,6 +23,25 @@ window.__ModuleLoader__.load({
     const useMemo = React.useMemo
     const useRef = React.useRef
     const useLayoutEffect = typeof React.useLayoutEffect === 'function' ? React.useLayoutEffect : React.useEffect
+    // Paper inversion is display-only state. Ink components read it from this
+    // context, so every mark (reader, bilingual column, right preview) resolves
+    // the same mono ink without threading a prop through every layer. The
+    // repository's static test harnesses run the factory with a tiny React
+    // stand-in that has no createContext, so the context is created only when
+    // the host really provides one; those harnesses then simply render the
+    // non-inverted tree.
+    const PaperInvertContext = typeof React.createContext === 'function'
+      ? React.createContext(false)
+      : null
+    function usePaperInvert() {
+      return PaperInvertContext !== null && typeof React.useContext === 'function'
+        ? React.useContext(PaperInvertContext)
+        : false
+    }
+    function PaperInvertProvider(props) {
+      if (PaperInvertContext === null) return h(React.Fragment, null, props.children)
+      return h(PaperInvertContext.Provider, { value: props.value }, props.children)
+    }
 
     // Official host primitives are build-time source in DSH. The build script
     // compiles the subset we use into one CJS file; load it with this instance's
@@ -517,6 +536,42 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The shelves above the open one, root first. A nested shelf keeps its
+     * parent id, so the breadcrumb can walk up instead of only naming the
+     * current level. A missing parent, a cycle or a runaway depth stops the
+     * walk: the crumbs then show the levels that were provable, never a guess.
+     * @param {{ hidden?: string[], shelves?: object[] }} groups - stored groups.
+     * @param {string | null} group - the open group ('hidden' for the hidden shelf).
+     * @param {string} hiddenLabel - localized name of the hidden shelf.
+     * @returns {{ id: string, name: string }[]} root→current chain (empty on the main shelf).
+     */
+    function shelfChain(groups, group, hiddenLabel) {
+      if (group === null || group === undefined) return []
+      const shelves = Array.isArray(groups?.shelves) ? groups.shelves : []
+      if (group === 'hidden') return [{ id: 'hidden', name: hiddenLabel }]
+      const byId = new Map()
+      for (const item of shelves) {
+        if (item !== null && typeof item === 'object' && typeof item.id === 'string') byId.set(item.id, item)
+      }
+      const chain = []
+      const seen = new Set()
+      let current = byId.get(group)
+      while (current !== undefined && seen.size < 20) {
+        seen.add(current.id)
+        chain.unshift({ id: current.id, name: typeof current.name === 'string' ? current.name : '' })
+        const parent = current.parent
+        if (parent === null || parent === undefined || parent === '') break
+        if (parent === 'hidden') {
+          chain.unshift({ id: 'hidden', name: hiddenLabel })
+          break
+        }
+        if (seen.has(parent)) break
+        current = byId.get(parent)
+      }
+      return chain
+    }
+
+    /**
      * Put books into one shelf. Existing ids keep their order and are not
      * repeated; the caller learns whether anything was added. Filing the
      * selection, an imported PDF and the books a split just wrote all go
@@ -565,6 +620,42 @@ window.__ModuleLoader__.load({
         shelves.push(result.shelf)
       }
       return added > 0 ? { groups: current, added, shelves } : null
+    }
+
+    /**
+     * Make a shelf out of the current selection. At the root the books simply
+     * disappear from the main shelf (they are shelved now); inside another
+     * shelf the new shelf is nested one level down and the selected books move
+     * into it, so the parent stops listing them and the same gesture can nest
+     * again. Other shelves that hold the same books are never touched.
+     * @param {{ hidden?: string[], shelves?: object[] }} groups - stored groups.
+     * @param {string | null} parent - the shelf the new one is made in, or null at the root.
+     * @param {string} name - the new shelf's name.
+     * @param {string[]} ids - the selected book ids.
+     * @returns {{ groups: object, shelf: object, nested: boolean, moved: number }} the next groups and what happened.
+     */
+    function shelfCreateFromSelection(groups, parent, name, ids) {
+      const current = groups === null || groups === undefined ? {} : groups
+      const shelves = Array.isArray(current.shelves) ? current.shelves : []
+      const picked = [...new Set(Array.isArray(ids) ? ids : [])]
+      const nested = typeof parent === 'string' && parent !== '' && parent !== 'hidden'
+      const shelf = {
+        id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
+        name,
+        books: picked,
+        ...(parent === null || parent === undefined || parent === '' ? {} : { parent }),
+      }
+      const next = nested
+        ? shelves.map(item => (item.id === parent
+          ? { ...item, books: (Array.isArray(item.books) ? item.books : []).filter(id => !picked.includes(id)) }
+          : item))
+        : shelves
+      return {
+        groups: { hidden: Array.isArray(current.hidden) ? current.hidden : [], shelves: [...next, shelf] },
+        shelf,
+        nested,
+        moved: nested ? picked.length : 0,
+      }
     }
 
     /** Opt-in for Host-created reader sessions (model at creation). */
@@ -1454,6 +1545,12 @@ window.__ModuleLoader__.load({
       annotColorHint: '标注颜色',
       annotWidthHint: '笔画粗细',
       annotColor: '文字颜色',
+      annotPenKind: '笔型',
+      annotPenPlain: '笔',
+      annotHighlight: '荧光笔',
+      annotHighlightHint: '很粗的半透明笔，用来整行标记',
+      annotHighlightColor: '荧光笔颜色',
+      annotHighlightSize: '荧光笔大小',
       annotFontSize: '字号',
       annotFontFamily: '字体',
       annotTextStyle: '字形',
@@ -1522,6 +1619,9 @@ window.__ModuleLoader__.load({
       splitHint: '在这个整本 PDF 上按页切开，输出到 分片/<书id>/',
       splitTitle: '拆分',
       splitLoading: '正在载入缩略图…',
+      splitPreviewHint: '双击放大看这一页',
+      splitPreviewTitle: '第 {n} 页',
+      splitPreviewFailed: '这一页的大图没有生成，双击可重试',
       splitNoPdf: '这本书没有整本 PDF',
       splitRanges: '拆分结果',
       splitNeedCuts: '点页与页之间的剪刀加一个拆点',
@@ -1690,6 +1790,19 @@ window.__ModuleLoader__.load({
       readCacheLimit: '页面位图缓存',
       readCacheLimitHint: '阅读器最多同时保留几页清晰位图：调大翻页更顺但更占内存，调小省内存但翻回来要重绘。默认 5 页。',
       readCacheOption: '{n} 页',
+      paperInvert: '反色阅读',
+      paperInvertHint: '黑底白字；跟随深色主题时自动开关',
+      paperInvertAuto: '跟随深色主题',
+      paperInvertOn: '始终开',
+      paperInvertOff: '始终关',
+      paperInvertSettingHint: '快捷开关只改本机；要恢复跟随主题，在这里选「跟随深色主题」。',
+      paperEnhance: '文字增强',
+      paperEnhanceHint: '反色时把灰纸与灰字分开，扫描件更清楚；只处理近灰像素，彩色插图保留原色',
+      paperEnhanceOff: '关闭',
+      paperEnhanceSoft: '柔和',
+      paperEnhanceClear: '清晰',
+      paperEnhanceInk: '黑白',
+      paperEnhanceNeedsInvert: '反色后生效',
       settingsTabReading: '阅读',
       settingsTabWorkflow: '模式',
       settingsTabKeys: '快捷键',
@@ -1790,10 +1903,11 @@ window.__ModuleLoader__.load({
       storagePreImport: '导入前快照（回滚用）',
       storagePackages: '打包文件（你自己的包）',
       storageTrash: '回收站（删除的书与产物）',
+      storageThumbs: '拆分缩略图与预览大图',
       storageEmpty: '没有占用空间',
       storageRefresh: '刷新',
       storageClean: '清理可重建缓存',
-      storageCleanConfirm: '清理上传/导出临时文件、过期的导入暂存包，以及未完成的打包中间目录？译文缓存、打包文件和回收站不受影响。',
+      storageCleanConfirm: '清理上传/导出临时文件、过期的导入暂存包，以及未完成的打包中间目录？译文缓存、拆分缩略图、打包文件和回收站不受影响。',
       storageCleanNothing: '没有可清理的临时文件',
       storageCleanDone: '已清理 {n} 项，释放 {mb} MB',
       storageEmptyTrash: '清空回收站',
@@ -1878,11 +1992,12 @@ window.__ModuleLoader__.load({
       dataFonts: '包含手写字体（约 22 MB）',
       dataProjcache: '包含会话投影缓存（可重建，体积大）',
       dataSettings: '包含浏览器设置（阅读宽度/快捷键等，导出为 settings.json）',
-      dataCacheTitle: '翻译缓存',
-      dataCacheHint: '整章翻译会逐页缓存 Markdown 与块数据，用于断点续译和重建叠加层；译文 PDF 生成后它们就没用了，可以清掉。产物（_translated.pdf / _overlay.pdf）不会被删除。',
-      dataCacheClear: '清除翻译缓存',
-      dataCacheConfirm: '除正在进行的翻译外，所有逐页缓存都会被删除；已生成的译文 PDF 不受影响。继续吗？',
+      dataCacheTitle: '不重要缓存',
+      dataCacheHint: '整章翻译的逐页缓存（Markdown 与块数据）和按页拆分用的缩略图/预览大图都能重新生成：译文 PDF 生成后翻译缓存就没用了；缩略图下次打开拆分面板时重建。产物 PDF、标注、书架与回收站不受影响。',
+      dataCacheClear: '清理不重要缓存',
+      dataCacheConfirm: '删除所有逐页翻译缓存（正在进行的翻译除外）以及拆分面板的缩略图和预览大图？译文 PDF、标注与书架不受影响，缩略图下次打开拆分面板时重建。继续吗？',
       dataCacheDone: '已清除 {n} 项缓存',
+      dataCacheThumbs: '其中 {n} 项是缩略图缓存',
       dataCacheRunning: '跳过 {n} 个正在进行的任务',
       dataCacheFailed: '清除失败：',
       dataImportTitle: '导入迁移包',
@@ -2416,6 +2531,12 @@ window.__ModuleLoader__.load({
       annotColorHint: 'Annotation colour',
       annotWidthHint: 'Stroke width',
       annotColor: 'Text colour',
+      annotPenKind: 'Pen type',
+      annotPenPlain: 'Pen',
+      annotHighlight: 'Highlighter',
+      annotHighlightHint: 'Thick translucent marker for marking a whole line',
+      annotHighlightColor: 'Highlighter colour',
+      annotHighlightSize: 'Highlighter size',
       annotFontSize: 'Font size',
       annotFontFamily: 'Font',
       annotTextStyle: 'Style',
@@ -2485,6 +2606,9 @@ window.__ModuleLoader__.load({
       splitHint: 'Cut this whole PDF by page into 分片/<book id>/',
       splitTitle: 'Split',
       splitLoading: 'Loading thumbnails…',
+      splitPreviewHint: 'Double-click to view this page enlarged',
+      splitPreviewTitle: 'Page {n}',
+      splitPreviewFailed: 'Could not render this page; double-click to retry',
       splitNoPdf: 'This book has no whole PDF',
       splitRanges: 'Ranges',
       splitNeedCuts: 'Click the scissors between pages to add a cut',
@@ -2653,6 +2777,19 @@ window.__ModuleLoader__.load({
       readCacheLimit: 'Page bitmaps kept',
       readCacheLimitHint: 'How many rendered page bitmaps the reader keeps: more is smoother when flipping back, less uses less memory. Default 5.',
       readCacheOption: '{n} pages',
+      paperInvert: 'Invert paper',
+      paperInvertHint: 'White text on black paper; follows the dark theme automatically',
+      paperInvertAuto: 'Follow dark theme',
+      paperInvertOn: 'Always on',
+      paperInvertOff: 'Always off',
+      paperInvertSettingHint: 'The quick switch is a local override; choose “Follow dark theme” here to restore automatic behavior.',
+      paperEnhance: 'Text enhance',
+      paperEnhanceHint: 'Separates grey paper from grey type on inverted pages; only near-grey pixels change, so coloured figures keep their colours',
+      paperEnhanceOff: 'Off',
+      paperEnhanceSoft: 'Soft',
+      paperEnhanceClear: 'Clear',
+      paperEnhanceInk: 'Ink',
+      paperEnhanceNeedsInvert: 'Works on inverted paper',
       settingsTabReading: 'Reading',
       settingsTabWorkflow: 'Modes',
       settingsTabKeys: 'Shortcuts',
@@ -2753,10 +2890,11 @@ window.__ModuleLoader__.load({
       storagePreImport: 'Pre-import snapshot (for rollback)',
       storagePackages: 'Packages you created',
       storageTrash: '回收站 (deleted books and artifacts)',
+      storageThumbs: 'Split thumbnails and previews',
       storageEmpty: 'Nothing is using space',
       storageRefresh: 'Refresh',
       storageClean: 'Clean rebuildable caches',
-      storageCleanConfirm: 'Remove upload/page-export temp files, expired import stage packages and unfinished packing folders? Translation caches, packages and 回收站 are left alone.',
+      storageCleanConfirm: 'Remove upload/page-export temp files, expired import stage packages and unfinished packing folders? Translation caches, split thumbnails, packages and 回收站 are left alone.',
       storageCleanNothing: 'No temporary files to clean',
       storageCleanDone: 'Cleaned {n} item(s), freed {mb} MB',
       storageEmptyTrash: 'Empty 回收站',
@@ -2842,11 +2980,12 @@ window.__ModuleLoader__.load({
       dataProjcache: 'Include the session projection cache (rebuildable, large)',
       dataSettings: 'Include browser settings (reading width, shortcuts…) as settings.json',
       dataImportTitle: 'Import a backup',
-      dataCacheTitle: 'Translation cache',
-      dataCacheHint: 'Whole-chapter translation caches per-page Markdown and block data for resuming and for rebuilding the overlay; once the translated PDF exists they are dead weight. Translated PDFs (_translated.pdf / _overlay.pdf) are not deleted.',
-      dataCacheClear: 'Clear translation cache',
-      dataCacheConfirm: 'Every per-page cache except a translation that is still running will be deleted. Translated PDFs are not touched. Continue?',
+      dataCacheTitle: 'Unimportant caches',
+      dataCacheHint: 'Per-page translation caches (Markdown and block data) and the split panel’s thumbnails/preview images are all rebuildable: once the translated PDF exists the page caches are dead weight, and the thumbnails are re-rendered the next time the split panel opens. Translated PDFs, annotations, shelves and 回收站 are left alone.',
+      dataCacheClear: 'Clear unimportant caches',
+      dataCacheConfirm: 'Delete every per-page translation cache (except a translation that is still running) and the split panel’s thumbnails/preview images? Translated PDFs, annotations and shelves are untouched; thumbnails rebuild the next time the split panel opens. Continue?',
       dataCacheDone: 'Cleared {n} cache entries',
+      dataCacheThumbs: '{n} of them are thumbnail caches',
       dataCacheRunning: 'skipped {n} running job(s)',
       dataCacheFailed: 'Clear failed: ',
       dataImportHint: 'Choose a local ZIP package; its manifest and checksums are verified after upload. Merge never overwrites: conflicts become *.imported-<time>.',
@@ -5797,6 +5936,12 @@ window.__ModuleLoader__.load({
 
     /** Width of a split-panel thumbnail, in CSS pixels; 240 stays sharp at 2×. */
     const SPLIT_THUMB_WIDTH = 240
+    /**
+     * Width of the single-page preview a double-click opens, in CSS pixels. The
+     * grid cannot show a scan's chapter number legibly, so the same Host image
+     * route renders one page at reading size instead.
+     */
+    const SPLIT_PREVIEW_WIDTH = 1200
 
     /**
      * One cached split-panel page image. `version` is the PDF identity hash the
@@ -6065,6 +6210,118 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One split page at reading size. A chunk of scanned books renders its
+     * chapter number below the thumbnail's resolution, so the panel offers the
+     * same page large: the Host renders the single page once and caches it like
+     * any other thumbnail, while the pdf.js fallback draws its own canvas.
+     * @param {{ bookId: string, chapterCode: string, page: number,
+     *   mode: string, doc: object | null, onClose: Function }} props - which page and how to render it.
+     * @returns {import('react').ReactElement} the overlay.
+     */
+    function SplitPagePreview(props) {
+      const page = props.page
+      const [url, setUrl] = useState('')
+      const [error, setError] = useState('')
+      const canvasRef = useRef(null)
+      const host = props.mode === 'host' && typeof props.chapterCode === 'string' && props.chapterCode !== ''
+      useEffect(() => {
+        if (!host || page < 1) return undefined
+        let alive = true
+        setUrl('')
+        setError('')
+        void (async () => {
+          try {
+            const payload = await request('POST', 'pdf-layout', {
+              book: props.bookId,
+              code: props.chapterCode,
+              from: page,
+              to: page,
+              w: SPLIT_PREVIEW_WIDTH,
+            }, 120000)
+            if (!alive) return
+            if (payload === null || typeof payload !== 'object' || payload.ok !== true
+              || !(Number(payload.pages) > 0)) {
+              setError(format('splitPreviewFailed'))
+              return
+            }
+            const version = typeof payload.v === 'string' ? payload.v : ''
+            // A Host that still caps the width answers with the width it used;
+            // asking for the file it actually wrote keeps the image reachable.
+            const width = Number(payload.width)
+            setUrl(splitThumbUrl(props.bookId, props.chapterCode, page,
+              Number.isFinite(width) && width > 0 ? width : SPLIT_PREVIEW_WIDTH, version))
+          } catch (reason) {
+            if (alive) {
+              setError(`${format('splitPreviewFailed')}：${String(reason && reason.message ? reason.message : reason)}`)
+            }
+          }
+        })()
+        return () => { alive = false }
+      }, [host, page, props.bookId, props.chapterCode])
+      useEffect(() => {
+        if (host || props.doc === null || props.doc === undefined || page < 1) return undefined
+        let alive = true
+        setError('')
+        void (async () => {
+          try {
+            const pdfPage = await props.doc.getPage(page)
+            if (!alive) return
+            const canvas = canvasRef.current
+            if (canvas === null) return
+            const base = pdfPage.getViewport({ scale: 1 })
+            const ratio = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1))
+            const target = Math.min(1500, Math.max(720, Math.round((window.innerWidth || 1280) * 0.7)))
+            const viewport = pdfPage.getViewport({ scale: (target * ratio) / base.width })
+            canvas.width = Math.round(viewport.width)
+            canvas.height = Math.round(viewport.height)
+            await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+          } catch (reason) {
+            if (alive) {
+              setError(`${format('splitPreviewFailed')}：${String(reason && reason.message ? reason.message : reason)}`)
+            }
+          }
+        })()
+        return () => { alive = false }
+      }, [host, page, props.doc])
+      return h('div', {
+        className: 'md-split-backdrop md-split-lightbox',
+        role: 'presentation',
+        onMouseDown: event => {
+          if (event.target === event.currentTarget) props.onClose()
+        },
+      },
+        h('div', {
+          className: 'md-split-lightbox-panel',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': format('splitPreviewTitle', { n: page }),
+        },
+          h('div', { className: 'md-split-lightbox-head' },
+            h('h3', { className: 'md-env-title' }, format('splitPreviewTitle', { n: page })),
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
+              'aria-label': format('modalClose'), title: format('modalClose'),
+              onClick: props.onClose,
+            }, '×')),
+          h('div', { className: 'md-split-lightbox-body' },
+            error !== ''
+              ? h('p', { className: 'md-settings-note' }, error)
+              : host
+                ? (url === ''
+                  ? h('p', { className: 'md-shelf-sub' }, format('splitLoading'))
+                  : h('img', {
+                    className: 'md-split-lightbox-image',
+                    src: url,
+                    alt: '',
+                    draggable: false,
+                    decoding: 'async',
+                    onError: () => setError(format('splitPreviewFailed')),
+                  }))
+                : h('canvas', { className: 'md-split-lightbox-canvas', ref: canvasRef })))
+      )
+    }
+
+    /**
      * 拆分面板（类 WPS）：整本 PDF 的缩略图网格，点页与页之间的剪刀加拆点，
      * 右侧实时给出版本范围与输出预览，一次性拆成多份并写进 `分片/<书id>/`。
      * @param {{ book: object, onClose: Function }} props - the whole book to split.
@@ -6089,6 +6346,11 @@ window.__ModuleLoader__.load({
       const [cuts, setCuts] = useState(() => new Set())
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState('')
+      // The page opened by a double-click. The thumbnails are too small to read
+      // a scanned chapter number, so this is the "look closer" window.
+      const [previewPage, setPreviewPage] = useState(0)
+      const previewPageRef = useRef(0)
+      previewPageRef.current = previewPage
       // The cut plan is remembered per book: closing the panel by accident (or a
       // crash) must not throw away a plan the user built up page by page.
       const [restored, setRestored] = useState(0)
@@ -6225,7 +6487,17 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (typeof window === 'undefined') return undefined
-        const onKey = event => { if (event.key === 'Escape') props.onClose() }
+        const onKey = event => {
+          if (event.key !== 'Escape') return
+          // Escape closes one level at a time: the page preview first, so
+          // looking closer never throws the cut plan away.
+          if (previewPageRef.current > 0) {
+            setPreviewPage(0)
+            event.stopPropagation()
+            return
+          }
+          props.onClose()
+        }
         window.addEventListener('keydown', onKey, true)
         return () => window.removeEventListener('keydown', onKey, true)
       }, [])
@@ -6431,6 +6703,8 @@ window.__ModuleLoader__.load({
                         className: frameClass,
                         ref: thumbRef(number),
                         style: hostGrid && pageAspect !== undefined ? { aspectRatio: pageAspect } : undefined,
+                        title: format('splitPreviewHint'),
+                        onDoubleClick: () => setPreviewPage(number),
                       },
                         hostGrid
                           ? (thumbUrl === undefined
@@ -6515,7 +6789,17 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'md-btn md-btn-small md-btn-primary',
                 disabled: busy || ranges.length === 0,
                 onClick: () => { void startSplit() },
-              }, busy ? format('splitBusy') : format('splitStart'))))))))
+              }, busy ? format('splitBusy') : format('splitStart')))))),
+          previewPage > 0
+            ? h(SplitPagePreview, {
+              bookId,
+              chapterCode,
+              page: previewPage,
+              mode: thumbMode,
+              doc,
+              onClose: () => setPreviewPage(0),
+            })
+            : null))
     }
 
     /**
@@ -6878,6 +7162,7 @@ window.__ModuleLoader__.load({
 
     function SettingsDialog(props) {
       const hostUi = useHostUi()
+      const paper = usePaperMode()
       const envTools = props.envTools ?? { python: false, tex: false, apiKey: false }
       // The dialog is paged: reading switches, the keyboard table, the toolchain
       // check, and the about/update row. Tabs keep it from becoming a long scroll.
@@ -7175,7 +7460,10 @@ window.__ModuleLoader__.load({
           const payload = await request('POST', 'clear-translation-cache')
           const removed = payload !== null && typeof payload === 'object' ? Number(payload.removed) || 0 : 0
           const skipped = payload !== null && typeof payload === 'object' ? Number(payload.skipped) || 0 : 0
-          setCacheNote(`${format('dataCacheDone', { n: removed })}${skipped > 0 ? `（${format('dataCacheRunning', { n: skipped })}）` : ''}`)
+          const thumbs = payload !== null && typeof payload === 'object' ? Number(payload.thumbs) || 0 : 0
+          // `removed` counts translation entries only; the note reports the one
+          // total the user cares about and breaks out the thumbnails.
+          setCacheNote(`${format('dataCacheDone', { n: removed + thumbs })}${thumbs > 0 ? `（${format('dataCacheThumbs', { n: thumbs })}）` : ''}${skipped > 0 ? `（${format('dataCacheRunning', { n: skipped })}）` : ''}`)
         } catch (error) {
           setCacheNote(`${format('dataCacheFailed')}${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`)
         } finally {
@@ -7458,6 +7746,19 @@ window.__ModuleLoader__.load({
           ),
           h('p', { className: 'md-shelf-sub' }, format('readCacheLimitHint')),
           h('div', { className: 'md-settings-row' },
+            h('span', { title: format('paperInvertSettingHint') }, format('paperInvert')),
+            h('select', {
+              className: 'md-settings-input',
+              value: paper.mode,
+              'aria-label': format('paperInvert'),
+              onChange: event => paper.setMode(event.target.value),
+            },
+              h('option', { value: 'auto' }, format('paperInvertAuto')),
+              h('option', { value: 'on' }, format('paperInvertOn')),
+              h('option', { value: 'off' }, format('paperInvertOff')))
+          ),
+          h('p', { className: 'md-shelf-sub' }, format('paperInvertSettingHint')),
+          h('div', { className: 'md-settings-row' },
             h('span', null, format('sketchRoughness')),
             h('input', {
               type: 'range', min: 0, max: 2, step: 0.1,
@@ -7721,6 +8022,7 @@ window.__ModuleLoader__.load({
         projcache: 'storageProjcache',
         translation: 'storageTranslation',
         legacy: 'storageLegacy',
+        thumbs: 'storageThumbs',
         jobs: 'storageJobs',
         tmp: 'storageTmp',
         staging: 'storageStaging',
@@ -9713,6 +10015,181 @@ window.__ModuleLoader__.load({
     const NOTE_SIZES = [14, 18, 22, 28]
     /** The note colours offered in the in-place editor. */
     const NOTE_COLORS = ['#1f1f1f', '#c0392b', '#2f6df6', '#1e8a4c', '#d9820b']
+    /**
+     * The paper's two inks. Black and white are one "mono" choice: what a mark
+     * shows depends on the paper mode, so an old black stroke turns white on
+     * black paper without migrating what is stored.
+     */
+    const MONO_DARK = '#1f1f1f'
+    const MONO_LIGHT = '#ffffff'
+    /** The coloured pen inks; the mono swatch is resolved separately. */
+    const PEN_COLORS = ['#e0554a', '#2f6df6', '#2ecc71']
+    /** Icons for the reader's paper-mode button (sun while inverted). */
+    const PAPER_ICON_MOON = 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z'
+    const PAPER_ICON_SUN = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M18.4 5.6l1.4-1.4M4.2 19.8l1.4-1.4'
+
+    /**
+     * Normalize a colour to `#rrggbb` so two stored values compare the same.
+     * Only the short and long hex forms used by the palette and old marks are
+     * accepted; named colours and rgb() are left untouched.
+     * @param {string} color - the stored colour.
+     * @returns {string | null} lowercase hex, or null when not a hex colour.
+     */
+    function normalizeHex(color) {
+      if (typeof color !== 'string') return null
+      const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())
+      if (match === null) return null
+      const digits = match[1]
+      return digits.length === 3
+        ? `#${digits[0]}${digits[0]}${digits[1]}${digits[1]}${digits[2]}${digits[2]}`.toLowerCase()
+        : `#${digits}`.toLowerCase()
+    }
+
+    /**
+     * Relative luminance of a hex colour (sRGB, 0 = black, 1 = white).
+     * @param {string} hex - `#rgb` or `#rrggbb`.
+     * @returns {number} the luminance, or 0.5 when the value is not hex.
+     */
+    function hexLuminance(hex) {
+      const normalized = normalizeHex(hex)
+      if (normalized === null) return 0.5
+      const channel = offset => {
+        const value = Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+    }
+
+    /**
+     * The colour one stored mark shows on the current paper. Near-black ink
+     * turns white on black paper; near-white ink turns black on white paper (a
+     * white value left by a newer version must not vanish); coloured ink keeps
+     * its colour in both modes.
+     * @param {string} color - the stored colour.
+     * @param {boolean} inverted - whether the paper is inverted.
+     * @returns {string} the colour to draw.
+     */
+    function paperInkColor(color, inverted) {
+      const hex = normalizeHex(color)
+      if (hex === null) return color
+      const luminance = hexLuminance(hex)
+      if (luminance < 0.12) return inverted ? MONO_LIGHT : color
+      if (luminance > 0.9) return inverted ? color : MONO_DARK
+      return color
+    }
+
+    /** The one swatch that flips with the paper mode. */
+    function monoInk(inverted) {
+      return inverted ? MONO_LIGHT : MONO_DARK
+    }
+
+    /** True when a stored colour is the mono ink (old black or old/new white). */
+    function isMonoInk(color) {
+      const hex = normalizeHex(color)
+      if (hex === null) return false
+      const luminance = hexLuminance(hex)
+      return luminance < 0.12 || luminance > 0.9
+    }
+
+    /** The pen colours, with the mono swatch resolved for the current paper. */
+    function penPalette(inverted) {
+      return [monoInk(inverted), ...PEN_COLORS]
+    }
+
+    /** The note colours, with the mono swatch resolved for the current paper. */
+    function notePalette(inverted) {
+      return [monoInk(inverted), ...NOTE_COLORS.slice(1)]
+    }
+    /**
+     * The highlighter: a thick, translucent marker for marking a whole line.
+     * Its opacity is fixed so a highlight reads as one even band; its width is
+     * adjustable because page density and zoom differ, and its four inks are a
+     * separate short list from the pen's colours.
+     */
+    const HIGHLIGHT_COLORS = ['#f2c94c', '#7ed492', '#f49ac2', '#79b8f3']
+    const HIGHLIGHT_WIDTH = 22
+    const HIGHLIGHT_OPACITY = 0.38
+    /**
+     * The highlighter is one translucency and four inks, but its width is the
+     * one thing a scan or a zoom level changes: the default 22px is too thin
+     * for a dense page and too fat for a small one. One machine-wide value is
+     * shared by the reader and the right preview, like the pen ink.
+     */
+    const HIGHLIGHT_WIDTH_KEY = 'pdfdesk:highlight-width'
+    const HIGHLIGHT_WIDTH_EVENT = 'pdfdesk:highlight-width'
+    const HIGHLIGHT_WIDTH_MIN = 12
+    const HIGHLIGHT_WIDTH_MAX = 40
+
+    /**
+     * Clamp a stored highlighter width to the slider's range.
+     * @param {number|string} value - the proposed width.
+     * @returns {number} an integer between 12 and 40 (22 when unreadable).
+     */
+    function clampHighlightWidth(value) {
+      const number = Number(value)
+      if (!Number.isFinite(number)) return HIGHLIGHT_WIDTH
+      return Math.max(HIGHLIGHT_WIDTH_MIN, Math.min(HIGHLIGHT_WIDTH_MAX, Math.round(number)))
+    }
+
+    /**
+     * The remembered highlighter width.
+     * @returns {number} the width in CSS pixels.
+     */
+    function readHighlightWidth() {
+      try {
+        const raw = window.localStorage.getItem(HIGHLIGHT_WIDTH_KEY)
+        return raw === null ? HIGHLIGHT_WIDTH : clampHighlightWidth(raw)
+      } catch {
+        return HIGHLIGHT_WIDTH
+      }
+    }
+
+    /**
+     * Remember the highlighter width and tell the other surface.
+     * @param {number|string} value - the proposed width.
+     * @returns {number} the stored width.
+     */
+    function writeHighlightWidth(value) {
+      const next = clampHighlightWidth(value)
+      try {
+        window.localStorage.setItem(HIGHLIGHT_WIDTH_KEY, String(next))
+      } catch {
+        // storage unavailable: the choice lasts for this visit
+      }
+      try {
+        window.dispatchEvent(new CustomEvent(HIGHLIGHT_WIDTH_EVENT, { detail: next }))
+      } catch {
+        // a host without CustomEvent: the next mount reads the stored value
+      }
+      return next
+    }
+
+    /**
+     * The shared highlighter width plus its setter.
+     * @returns {[number, Function]} the width and a setter.
+     */
+    function useHighlightWidth() {
+      const [width, setWidthState] = useState(readHighlightWidth)
+      useEffect(() => {
+        const reread = () => setWidthState(readHighlightWidth())
+        const onStorage = event => {
+          if (event !== null && event !== undefined && event.key !== null && event.key !== HIGHLIGHT_WIDTH_KEY) return
+          reread()
+        }
+        window.addEventListener(HIGHLIGHT_WIDTH_EVENT, reread)
+        window.addEventListener('storage', onStorage)
+        return () => {
+          window.removeEventListener(HIGHLIGHT_WIDTH_EVENT, reread)
+          window.removeEventListener('storage', onStorage)
+        }
+      }, [])
+      const setWidth = useCallback(next => {
+        const written = writeHighlightWidth(next)
+        setWidthState(written)
+        return written
+      }, [])
+      return [width, setWidth]
+    }
     /** Where the note font choice is remembered (global, like the reading mode). */
     const NOTE_FONT_KEY = 'pdfdesk:note-font'
 
@@ -10301,6 +10778,7 @@ window.__ModuleLoader__.load({
      */
     function ShapeMark(props) {
       const entry = props.entry
+      const inverted = usePaperInvert()
       const width = Number.isFinite(entry.width) ? entry.width : 2
       const paths = sketchPaths(entry, props.roughness ?? 1)
       const opacity = Number.isFinite(entry.opacity) ? entry.opacity : 1
@@ -10310,14 +10788,15 @@ window.__ModuleLoader__.load({
           paths.map((path, index) => {
             // Hachure fill paths are stroked with the fill colour at half the
             // stroke width; solid fills carry `fill` and no stroke. Neither
-            // should inherit the outline's dashed style.
+            // should inherit the outline's dashed style or the paper ink map:
+            // a fill is a literal colour.
             const isFill = (path.fill !== undefined && path.fill !== 'none')
               || (typeof entry.fill === 'string' && entry.fill !== '' && path.stroke === entry.fill && (path.strokeWidth ?? 0) < width)
             return h('path', {
               key: index,
               d: path.d,
               fill: path.fill ?? 'none',
-              stroke: path.stroke,
+              stroke: isFill ? path.stroke : paperInkColor(path.stroke, inverted),
               strokeWidth: path.strokeWidth,
               strokeDasharray: isFill ? undefined : dash,
               vectorEffect: 'non-scaling-stroke',
@@ -10326,7 +10805,7 @@ window.__ModuleLoader__.load({
             })
           }))
       }
-      const color = entry.color ?? '#e0554a'
+      const color = paperInkColor(entry.color ?? '#e0554a', inverted)
       const common = {
         fill: entry.fill ?? 'none',
         stroke: color,
@@ -10392,6 +10871,7 @@ window.__ModuleLoader__.load({
      */
     function InkMarks(props) {
       const entries = Array.isArray(props.entries) ? props.entries : []
+      const inverted = usePaperInvert()
       const drag = props.drag === undefined ? null : props.drag
       const resize = props.resize === undefined ? null : props.resize
       const resizeEntry = props.resizeEntry === undefined ? null : props.resizeEntry
@@ -10421,6 +10901,9 @@ window.__ModuleLoader__.load({
         if (points.length < 2) continue
         if (points.some(point => point.length > 2)) {
           const base = shown.width ?? 2
+          // Resolve the ink once per stroke, not once per pressure segment:
+          // a long stroke is hundreds of lines and this runs on every drag frame.
+          const ink = paperInkColor(shown.color ?? '#e0554a', inverted)
           strokeNodes.push(h('g', { key: index, opacity: shown.opacity ?? 1 },
             points.slice(1).map((point, segment) => {
               const previous = points[segment]
@@ -10431,7 +10914,7 @@ window.__ModuleLoader__.load({
                 y1: previous[1],
                 x2: point[0],
                 y2: point[1],
-                stroke: shown.color ?? '#e0554a',
+                stroke: ink,
                 strokeWidth: base * (0.35 + pressure * 1.2),
                 vectorEffect: 'non-scaling-stroke',
                 strokeLinecap: 'round',
@@ -10443,7 +10926,7 @@ window.__ModuleLoader__.load({
           key: index,
           points: points.map(point => `${point[0]},${point[1]}`).join(' '),
           fill: 'none',
-          stroke: shown.color ?? '#e0554a',
+          stroke: paperInkColor(shown.color ?? '#e0554a', inverted),
           strokeWidth: shown.width ?? 2,
           opacity: shown.opacity ?? 1,
           vectorEffect: 'non-scaling-stroke',
@@ -10467,7 +10950,7 @@ window.__ModuleLoader__.load({
             left: `${bounds.x * 100}%`,
             top: `${bounds.y * 100}%`,
             ...(hasBox ? { width: `${bounds.w * 100}%`, height: `${bounds.h * 100}%` } : { maxWidth: '70%' }),
-            color: entry.color ?? '#e0554a',
+            color: paperInkColor(entry.color ?? '#e0554a', inverted),
             fontSize: Number.isFinite(entry.fontSize) ? `${entry.fontSize}px` : undefined,
             fontFamily: typeof entry.fontFamily === 'string' ? (NOTE_FONTS[entry.fontFamily] ?? undefined) : undefined,
             opacity: entry.opacity ?? 1,
@@ -10498,7 +10981,7 @@ window.__ModuleLoader__.load({
               key: 'selection',
               points: (selectedEntry.points ?? []).map(point => `${point[0]},${point[1]}`).join(' '),
               fill: 'none',
-              stroke: '#2f6df6',
+              style: { stroke: 'var(--annot-ui-ink, #2f6df6)' },
               strokeWidth: (selectedEntry.width ?? 2) + 8,
               opacity: 0.35,
               vectorEffect: 'non-scaling-stroke',
@@ -10514,7 +10997,7 @@ window.__ModuleLoader__.load({
               width: selectedEntry.w,
               height: selectedEntry.h,
               fill: 'none',
-              stroke: '#2f6df6',
+              style: { stroke: 'var(--annot-ui-ink, #2f6df6)' },
               strokeWidth: 1.5,
               strokeDasharray: '5 4',
               vectorEffect: 'non-scaling-stroke',
@@ -10533,10 +11016,12 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the control rows.
      */
     function NoteStyleControls(props) {
+      const inverted = usePaperInvert()
+      const colors = notePalette(inverted)
       const style = props.style
       const size = Number.isFinite(style.fontSize) ? style.fontSize : NOTE_SIZES[0]
       const family = typeof style.fontFamily === 'string' && NOTE_FONTS[style.fontFamily] !== undefined ? style.fontFamily : 'normal'
-      const color = typeof style.color === 'string' && style.color !== '' ? style.color : NOTE_COLORS[0]
+      const color = typeof style.color === 'string' && style.color !== '' ? style.color : colors[0]
       const bold = style.fontWeight === 'bold'
       const italic = style.fontStyle === 'italic'
       const align = typeof style.textAlign === 'string' ? style.textAlign : 'left'
@@ -10601,17 +11086,99 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'md-note-style-row' },
           h('span', { className: 'md-note-style-label' }, format('annotColor')),
-          NOTE_COLORS.map(value => h(KitButton, {
+          colors.map((value, index) => h(KitButton, {
             key: value,
             type: 'button',
             className: 'md-note-color',
             style: { background: value },
-            'data-on': color === value ? 'true' : undefined,
+            'data-on': (index === 0 ? isMonoInk(color) : color === value) ? 'true' : undefined,
             'aria-label': format('annotColor'),
             onMouseDown: event => event.preventDefault(),
             onClick: () => props.onChange({ color: value }),
           }))
         )
+      )
+    }
+
+    /**
+     * The pen's settings rows, shared by the reader and the right preview so
+     * both panes always offer the same pen. A highlighter is the same pen with
+     * a fixed translucent stroke: the colour row switches to the highlighter
+     * inks and its own 12–40px size slider; the regular pen keeps its own width.
+     * @param {{ color: string, width: number, highlight: boolean, highlightColor: string,
+     *   highlightWidth?: number, onColor: Function, onWidth: Function, onHighlight: Function,
+     *   onHighlightColor: Function, onHighlightWidth: Function }} props - the pen state and setters.
+     * @returns {import('react').ReactElement} the control rows.
+     */
+    function PenStyleControls(props) {
+      const inverted = usePaperInvert()
+      const colors = penPalette(inverted)
+      const highlight = props.highlight === true
+      const highlightColor = HIGHLIGHT_COLORS.includes(props.highlightColor) ? props.highlightColor : HIGHLIGHT_COLORS[0]
+      return h(React.Fragment, null,
+        h('div', { className: 'md-note-style-row' },
+          h('span', { className: 'md-note-style-label' }, format('annotPenKind')),
+          h(KitButton, {
+            type: 'button', className: 'md-note-style-btn',
+            'data-on': highlight ? undefined : 'true',
+            'aria-pressed': highlight ? 'false' : 'true',
+            title: format('annotHint'),
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onHighlight(false),
+          }, format('annotPenPlain')),
+          h(KitButton, {
+            type: 'button', className: 'md-note-style-btn',
+            'data-on': highlight ? 'true' : undefined,
+            'aria-pressed': highlight ? 'true' : 'false',
+            title: format('annotHighlightHint'),
+            onMouseDown: event => event.preventDefault(),
+            onClick: () => props.onHighlight(true),
+          }, format('annotHighlight'))),
+        highlight
+          ? h(React.Fragment, null,
+            h('div', { className: 'md-note-style-row' },
+              h('span', { className: 'md-note-style-label' }, format('annotHighlightColor')),
+              HIGHLIGHT_COLORS.map(value => h(KitButton, {
+                key: value,
+                type: 'button',
+                className: 'md-note-color',
+                style: { background: value },
+                'data-on': highlightColor === value ? 'true' : undefined,
+                'aria-label': `${format('annotHighlightColor')} ${value}`,
+                onMouseDown: event => event.preventDefault(),
+                onClick: () => props.onHighlightColor(value),
+              }))),
+            h('div', { className: 'md-note-style-row' },
+              h('span', { className: 'md-note-style-label' }, format('annotHighlightSize')),
+              h('input', {
+                type: 'range', min: HIGHLIGHT_WIDTH_MIN, max: HIGHLIGHT_WIDTH_MAX, step: 1,
+                value: props.highlightWidth ?? HIGHLIGHT_WIDTH,
+                'aria-label': format('annotHighlightSize'),
+                onChange: event => props.onHighlightWidth(Number(event.target.value)),
+              }),
+              h('span', { className: 'md-note-size-value' }, `${props.highlightWidth ?? HIGHLIGHT_WIDTH}px`)))
+          : h(React.Fragment, null,
+            h('div', { className: 'md-note-style-row' },
+              h('span', { className: 'md-note-style-label' }, format('annotColor')),
+              colors.map((value, index) => h(KitButton, {
+                key: value,
+                type: 'button',
+                className: 'md-note-color',
+                style: { background: value },
+                'data-on': (index === 0 ? isMonoInk(props.color) : props.color === value) ? 'true' : undefined,
+                'aria-label': value,
+                onMouseDown: event => event.preventDefault(),
+                onClick: () => props.onColor(value),
+              }))),
+            h('div', { className: 'md-note-style-row' },
+              h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+              h('input', {
+                type: 'range', min: 1, max: 10, step: 1,
+                value: props.width,
+                'aria-label': format('annotWidthHint'),
+                onChange: event => props.onWidth(Number(event.target.value) || 2),
+              }),
+              h('span', { className: 'md-note-size-value' }, `${props.width}px`)))
       )
     }
 
@@ -10651,6 +11218,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the editor.
      */
     function NoteEditor(props) {
+      const inverted = usePaperInvert()
       const draft = props.draft
       const size = Number.isFinite(draft.fontSize) ? draft.fontSize : NOTE_SIZES[0]
       const family = typeof draft.fontFamily === 'string' && NOTE_FONTS[draft.fontFamily] !== undefined ? draft.fontFamily : 'normal'
@@ -10707,7 +11275,7 @@ window.__ModuleLoader__.load({
           style: {
             fontSize: `${size}px`,
             fontFamily: NOTE_FONTS[family],
-            color,
+            color: paperInkColor(color, inverted),
             fontStyle: draft.fontStyle === 'italic' ? 'italic' : 'normal',
             fontWeight: draft.fontWeight === 'bold' ? 'bold' : 'normal',
             textAlign: typeof draft.textAlign === 'string' ? draft.textAlign : 'left',
@@ -11649,6 +12217,12 @@ window.__ModuleLoader__.load({
       const shapeTools = Array.isArray(options.shapeTools) ? options.shapeTools : []
       const shapeRef = options.shapeDraftRef === undefined ? null : options.shapeDraftRef
       const setShapeDraft = typeof options.setShapeDraft === 'function' ? options.setShapeDraft : null
+      // A highlighter is stored like any stroke plus one extra field; keeping it
+      // optional means every old stroke still renders at full opacity.
+      const opacity = Number.isFinite(options.opacity) ? options.opacity : undefined
+      // A marker keeps one even width: drop the per-point pressure the reader's
+      // sampler attaches, or the committed band would thin out segment by segment.
+      const flat = options.flat === true
       const eraseAt = point => saveAnnots(strokesRef.current.filter(entry => !hitTest(entry, point)))
       return {
         /**
@@ -11679,6 +12253,7 @@ window.__ModuleLoader__.load({
             points: [sample(event, point)],
             color: options.color,
             width: options.width,
+            ...(opacity === undefined ? {} : { opacity }),
           }
           setDraftStroke(draftRef.current)
           return true
@@ -11739,7 +12314,8 @@ window.__ModuleLoader__.load({
           draftRef.current = null
           setDraftStroke(null)
           const points = options.smooth === true ? smoothStroke(current.points) : current.points
-          if (points.length > 1) saveAnnots([...strokesRef.current, { ...current, points }])
+          const committed = flat ? points.map(point => [point[0], point[1]]) : points
+          if (committed.length > 1) saveAnnots([...strokesRef.current, { ...current, points: committed }])
           return true
         },
       }
@@ -11938,6 +12514,303 @@ window.__ModuleLoader__.load({
       } catch {
         // storage unavailable
       }
+    }
+
+    /* ---------------------------------------------------- paper mode -- */
+
+    /** Where "invert paper" lives: `auto` follows the DSH colour scheme. */
+    const PAPER_MODE_KEY = 'pdfdesk:paper-mode'
+    const PAPER_MODE_EVENT = 'pdfdesk:paper-mode'
+    const PAPER_MODES = ['auto', 'on', 'off']
+
+    /**
+     * The remembered paper mode.
+     * @returns {'auto'|'on'|'off'} the stored mode (`auto` when nothing is stored).
+     */
+    function readPaperMode() {
+      try {
+        const raw = window.localStorage.getItem(PAPER_MODE_KEY)
+        return PAPER_MODES.includes(raw) ? raw : 'auto'
+      } catch {
+        return 'auto'
+      }
+    }
+
+    /**
+     * Remember the paper mode and tell every mounted surface, so the reader,
+     * the right preview and the settings row never disagree.
+     * @param {string} mode - `auto`, `on` or `off`; anything else means `auto`.
+     * @returns {string} the stored mode.
+     */
+    function writePaperMode(mode) {
+      const next = PAPER_MODES.includes(mode) ? mode : 'auto'
+      try {
+        window.localStorage.setItem(PAPER_MODE_KEY, next)
+      } catch {
+        // storage unavailable: the choice lasts for this visit
+      }
+      try {
+        window.dispatchEvent(new CustomEvent(PAPER_MODE_EVENT, { detail: next }))
+      } catch {
+        // a host without CustomEvent: the next mount reads the stored value
+      }
+      return next
+    }
+
+    /**
+     * Whether DSH is showing its dark palette. The shell publishes this as the
+     * presence of `data-ds-dark-theme` on body (the value is empty); older
+     * shells publish only `data-ds-theme-source`, so the OS preference is the
+     * fallback only when that marker is missing.
+     * @returns {boolean} true when the shell is dark.
+     */
+    function readThemeDark() {
+      if (typeof document === 'undefined' || document.body === null) return false
+      const body = document.body
+      if (typeof body.hasAttribute === 'function' && body.hasAttribute('data-ds-dark-theme')) return true
+      const root = document.documentElement
+      const sourced = root !== null && root !== undefined && typeof root.hasAttribute === 'function'
+        && root.hasAttribute('data-ds-theme-source')
+      if (!sourced
+        && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches
+      }
+      return false
+    }
+
+    /**
+     * The paper mode plus the resolved inversion for this surface. Every pane
+     * calls this hook; changes are broadcast, so the reader and the right
+     * preview flip together and survive a reload.
+     * @returns {{mode: string, inverted: boolean, setMode: Function}} the state.
+     */
+    function usePaperMode() {
+      const [mode, setModeState] = useState(readPaperMode)
+      const [dark, setDark] = useState(readThemeDark)
+      useEffect(() => {
+        const reread = () => setModeState(readPaperMode())
+        const onStorage = event => {
+          if (event !== null && event.key !== null && event.key !== PAPER_MODE_KEY) return
+          reread()
+        }
+        window.addEventListener(PAPER_MODE_EVENT, reread)
+        window.addEventListener('storage', onStorage)
+        const media = typeof window.matchMedia === 'function'
+          ? window.matchMedia('(prefers-color-scheme: dark)')
+          : null
+        const onMedia = () => setDark(readThemeDark())
+        if (media !== null && typeof media.addEventListener === 'function') {
+          media.addEventListener('change', onMedia)
+        }
+        const body = typeof document === 'undefined' ? null : document.body
+        let observer = null
+        if (body !== null && typeof MutationObserver === 'function') {
+          observer = new MutationObserver(() => setDark(readThemeDark()))
+          observer.observe(body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+          const root = document.documentElement
+          if (root !== null && root !== undefined) {
+            observer.observe(root, { attributes: true, attributeFilter: ['data-ds-theme-source'] })
+          }
+        }
+        // Another surface may have flipped the theme between the first render
+        // and the observer being attached.
+        setDark(readThemeDark())
+        return () => {
+          window.removeEventListener(PAPER_MODE_EVENT, reread)
+          window.removeEventListener('storage', onStorage)
+          if (media !== null && typeof media.removeEventListener === 'function') {
+            media.removeEventListener('change', onMedia)
+          }
+          if (observer !== null) observer.disconnect()
+        }
+      }, [])
+      const setMode = useCallback(next => writePaperMode(next), [])
+      const inverted = mode === 'on' || (mode === 'auto' && dark)
+      return { mode, inverted, setMode }
+    }
+
+    /* -------------------------------------------------- paper enhance -- */
+
+    /**
+     * Some scans put grey type on grey paper. Contrast cannot fix that: it
+     * stretches around mid-grey, so both the paper and the ink move together.
+     * An S-curve with real black and white points pushes the paper down and the
+     * ink up instead, and it is applied only to near-grey pixels, so a coloured
+     * illustration keeps its colours in every level. The level belongs to one
+     * chapter, so a clean vector page never inherits a scanned book's setting.
+     */
+    const ENHANCE_KEY_PREFIX = 'pdfdesk:enhance:'
+    const ENHANCE_EVENT = 'pdfdesk:enhance'
+    const ENHANCE_LEVELS = ['off', 'soft', 'clear', 'ink']
+    // These scans are white-paper pages (the paper sits at 0.00 after inversion)
+    // whose type ranges from solid black to a faint 0.35-0.45. A curve with a toe
+    // or a high black point eats the antialiased stroke edges and the text stops
+    // being readable, so every level is a straight gain with the black point at
+    // 0.02 (just enough to kill paper speckles) and a different slope. That keeps
+    // edge pixels proportional while lifting faint type toward white.
+    const ENHANCE_BLACK = 0.02
+    const ENHANCE_CURVES = {
+      soft: { slope: 1.3 },
+      clear: { slope: 1.9 },
+      ink: { slope: 2.8 },
+    }
+    /**
+     * The linear transfer a level uses: black point ENHANCE_BLACK, gain = slope.
+     * @param {string} level - 'soft' | 'clear' | 'ink'.
+     * @returns {{ slope: string, intercept: string }} the feFunc attributes.
+     */
+    function enhanceTransfer(level) {
+      const slope = (ENHANCE_CURVES[level] ?? ENHANCE_CURVES.soft).slope
+      return { slope: String(slope), intercept: String(-slope * ENHANCE_BLACK) }
+    }
+
+    /**
+     * One of the four enhancement levels; anything unknown means "off".
+     * @param {*} value - the proposed level.
+     * @returns {string} 'off' | 'soft' | 'clear' | 'ink'.
+     */
+    function normalizeEnhance(value) {
+      return typeof value === 'string' && ENHANCE_LEVELS.includes(value) ? value : 'off'
+    }
+
+    /**
+     * Whether a level is actually in force: the filters only exist on inverted
+     * paper, so a stored level does nothing while the paper is normal.
+     * @param {string} level - the stored level.
+     * @param {boolean} inverted - whether the paper is inverted.
+     * @returns {boolean} true when the level should be applied.
+     */
+    function enhActive(level, inverted) {
+      return inverted === true && normalizeEnhance(level) !== 'off'
+    }
+
+    /**
+     * The localStorage key for one chapter's text enhancement.
+     * @param {string} bookId - the book id.
+     * @param {string} code - the chapter code.
+     * @returns {string} the storage key.
+     */
+    function chapterEnhanceKey(bookId, code) {
+      return `${ENHANCE_KEY_PREFIX}${encodeURIComponent(String(bookId ?? ''))}:${encodeURIComponent(String(code ?? ''))}`
+    }
+
+    /**
+     * The remembered enhancement level for one chapter.
+     * @param {string} bookId - the book id.
+     * @param {string} code - the chapter code.
+     * @returns {string} the level ('off' when nothing is stored).
+     */
+    function readChapterEnhance(bookId, code) {
+      try {
+        return normalizeEnhance(window.localStorage.getItem(chapterEnhanceKey(bookId, code)))
+      } catch {
+        return 'off'
+      }
+    }
+
+    /**
+     * Remember one chapter's enhancement and tell the other surface.
+     * @param {string} bookId - the book id.
+     * @param {string} code - the chapter code.
+     * @param {string} value - the proposed level.
+     * @returns {string} the stored level.
+     */
+    function writeChapterEnhance(bookId, code, value) {
+      const next = normalizeEnhance(value)
+      try {
+        if (next === 'off') window.localStorage.removeItem(chapterEnhanceKey(bookId, code))
+        else window.localStorage.setItem(chapterEnhanceKey(bookId, code), next)
+      } catch {
+        // storage unavailable: the choice lasts for this visit
+      }
+      try {
+        window.dispatchEvent(new CustomEvent(ENHANCE_EVENT, {
+          detail: { bookId, code, enhance: next },
+        }))
+      } catch {
+        // a host without CustomEvent: the next mount reads the stored value
+      }
+      return next
+    }
+
+    /**
+     * One chapter's enhancement plus its setter; both paper surfaces call this
+     * so a level changed in the reader shows up in the right preview at once.
+     * @param {string} bookId - the book id.
+     * @param {string} code - the chapter code.
+     * @returns {[string, Function]} the level and a setter.
+     */
+    function useChapterEnhance(bookId, code) {
+      const [value, setValue] = useState(() => readChapterEnhance(bookId, code))
+      useEffect(() => {
+        setValue(readChapterEnhance(bookId, code))
+        const reread = () => setValue(readChapterEnhance(bookId, code))
+        const onEvent = event => {
+          const detail = event === null || event === undefined ? null : event.detail
+          if (detail !== null && detail !== undefined
+            && (detail.bookId !== bookId || detail.code !== code)) return
+          reread()
+        }
+        const key = chapterEnhanceKey(bookId, code)
+        const onStorage = event => {
+          if (event !== null && event !== undefined && event.key !== null && event.key !== key) return
+          reread()
+        }
+        window.addEventListener(ENHANCE_EVENT, onEvent)
+        window.addEventListener('storage', onStorage)
+        return () => {
+          window.removeEventListener(ENHANCE_EVENT, onEvent)
+          window.removeEventListener('storage', onStorage)
+        }
+      }, [bookId, code])
+      const setEnhance = useCallback(next => {
+        const written = writeChapterEnhance(bookId, code, next)
+        setValue(written)
+        return written
+      }, [bookId, code])
+      return [value, setEnhance]
+    }
+
+    /**
+     * The SVG filters behind the enhancement levels. Both paper surfaces render
+     * one copy; the CSS references them by id. Every level first inverts and
+     * hue-rotates exactly like the plain paper switch, then levels only the
+     * pixels whose chroma is low, so coloured illustrations survive untouched.
+     * @returns {import('react').ReactElement} the hidden filter definitions.
+     */
+    function EnhanceDefs() {
+      return h('svg', { className: 'md-enh-defs', width: 0, height: 0, 'aria-hidden': true, focusable: 'false' },
+        Object.keys(ENHANCE_CURVES).map(level => {
+          const curve = enhanceTransfer(level)
+          const transfer = name => h(name, { type: 'linear', slope: curve.slope, intercept: curve.intercept })
+          return h('filter', {
+            key: level,
+            id: `pdfdesk-enh-${level}`,
+            'color-interpolation-filters': 'sRGB',
+            x: '0%', y: '0%', width: '100%', height: '100%',
+          },
+            // Same inversion the plain switch uses: invert the channels, then
+            // rotate the hue back so colours come out the right way round.
+            h('feColorMatrix', { in: 'SourceGraphic', type: 'matrix', result: 'inv', values: '-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0' }),
+            h('feColorMatrix', { in: 'inv', type: 'hueRotate', values: '180', result: 'base' }),
+            // The grey path: desaturate, then stretch black/white points.
+            h('feColorMatrix', { in: 'base', type: 'saturate', values: '0', result: 'gray' }),
+            h('feComponentTransfer', { in: 'gray', result: 'levelled' },
+              transfer('feFuncR'), transfer('feFuncG'), transfer('feFuncB')),
+            // Chroma mask: |base - gray| is near zero for paper and ink and
+            // large for a coloured illustration.
+            h('feBlend', { in: 'base', in2: 'gray', mode: 'difference', result: 'chromaDiff' }),
+            h('feColorMatrix', {
+              in: 'chromaDiff', type: 'matrix', result: 'chroma',
+              values: '0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  3 3 3 0 -0.10',
+            }),
+            // Keep the levelled pixels only where the mask is empty, then lay
+            // them over the inverted original.
+            h('feComposite', { in: 'levelled', in2: 'chroma', operator: 'out', result: 'onlyGray' }),
+            h('feComposite', { in: 'onlyGray', in2: 'base', operator: 'over' })
+          )
+        })
+      )
     }
 
     /* ------------------------------------------------ import split ask -- */
@@ -12718,6 +13591,7 @@ window.__ModuleLoader__.load({
      * @returns {import('react').ReactElement} the ink layer.
      */
     function ColumnInk(props) {
+      const inverted = usePaperInvert()
       const storageKey = `pdfdesk:annots:${props.bookId}:${props.code}:${props.page}:${props.store}`
       const [strokes, setStrokes] = useState([])
       const [draft, setDraft] = useState(null)
@@ -12971,8 +13845,9 @@ window.__ModuleLoader__.load({
                 key: 'draft',
                 points: draft.points.map(point => `${point[0]},${point[1]}`).join(' '),
                 fill: 'none',
-                stroke: draft.color ?? '#e0554a',
+                stroke: paperInkColor(draft.color ?? '#e0554a', inverted),
                 strokeWidth: draft.width ?? 2,
+                opacity: draft.opacity,
                 vectorEffect: 'non-scaling-stroke',
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
@@ -12986,7 +13861,7 @@ window.__ModuleLoader__.load({
                 width: Math.abs(textDraft.x1 - textDraft.x0),
                 height: Math.abs(textDraft.y1 - textDraft.y0),
                 fill: 'none',
-                stroke: '#2f6df6',
+                style: { stroke: 'var(--annot-ui-ink, #2f6df6)' },
                 strokeWidth: 1.5,
                 strokeDasharray: '5 4',
                 vectorEffect: 'non-scaling-stroke',
@@ -13999,11 +14874,14 @@ window.__ModuleLoader__.load({
      * The full-page PDF reader: one page or a continuous column, page
      * navigation, zoom, reading-mode switch, and the chapter's three New
      * buttons (which start a session and leave for it).
-     * @param {{ reader: object, doc: object, busy: boolean, forceNew: boolean, fitScale: Function, onScale: Function, stageRef: Function, paneRef: Function, onBack: Function, onShelf: Function, onPrev: Function, onNext: Function, onPage: Function, onZoomIn: Function, onZoomOut: Function, onFit: Function, onRetry: Function, onMode: Function, onNewSession: Function, onForceNew: Function, onVisible: Function }} props - the open reader and its handlers.
+     * @param {{ reader: object, doc: object, busy: boolean, forceNew: boolean, fitScale: Function, onScale: Function, stageRef: Function, paneRef: Function, onBack: Function, onShelf: Function, onPrev: Function, onNext: Function, onPage: Function, onZoomIn: Function, onZoomOut: Function, onZoomBy: Function, onFit: Function, onRetry: Function, onMode: Function, onNewSession: Function, onForceNew: Function, onVisible: Function }} props - the open reader and its handlers.
      * @returns {import('react').ReactElement} the reader.
      */
     function ReaderView(props) {
       const reader = props.reader
+      const paper = usePaperMode()
+      const inverted = paper.inverted
+      const [enhance, setEnhance] = useChapterEnhance(reader.bookId, reader.code)
       // The chapter's shared state, for the diagnostic overlay: the page box and
       // the annotation key are read from the same record the preview uses.
       const storeView = useChapterView(reader.bookId, reader.code)
@@ -14030,6 +14908,30 @@ window.__ModuleLoader__.load({
       // held; releasing it gives the previous tool back without a mode change.
       const [spaceHeld, setSpaceHeld] = useState(false)
       const [toolsOpen, setToolsOpen] = useState(true)
+      const barRef = useRef(null)
+      const subbarRef = useRef(null)
+      // The edge rail is centred down the reader, but the bar and its tool row
+      // come first: on a narrow reader the tool row wraps to two or three lines
+      // and a centred rail ran underneath it. Publish the real height of both
+      // rows so the rail's lane can start below them instead of guessing.
+      useEffect(() => {
+        const node = props.paneRef === null || props.paneRef === undefined ? null : props.paneRef.current
+        if (node === null) return undefined
+        const measure = () => {
+          const top = (barRef.current === null ? 0 : barRef.current.offsetHeight)
+            + (subbarRef.current === null ? 0 : subbarRef.current.offsetHeight)
+          node.style.setProperty('--pdf-reader-rail-top', `${top}px`)
+        }
+        if (typeof ResizeObserver !== 'function') {
+          measure()
+          return undefined
+        }
+        const observer = new ResizeObserver(measure)
+        if (barRef.current !== null) observer.observe(barRef.current)
+        if (subbarRef.current !== null) observer.observe(subbarRef.current)
+        measure()
+        return () => observer.disconnect()
+      }, [props.paneRef, toolsOpen])
       const [overlay, setOverlay] = useState(false)
       const [maskDraft, setMaskDraft] = useState(null)
       // The boxes "框住本页块" made on this page: a second press removes them, and
@@ -14085,6 +14987,10 @@ window.__ModuleLoader__.load({
       const [activeSide, setActiveSide] = useState('main')
       const [annotColor, setAnnotColor] = useState('#1f1f1f')
       const [annotWidth, setAnnotWidth] = useState(2)
+      // The pen's highlighter form: same tool, thick translucent marker.
+      const [annotHighlight, setAnnotHighlight] = useState(false)
+      const [annotHighlightColor, setAnnotHighlightColor] = useState(HIGHLIGHT_COLORS[0])
+      const [annotHighlightWidth, setAnnotHighlightWidth] = useHighlightWidth()
       // Which page `strokes` belongs to. The interactive layer is only drawn
       // once the list matches the page on screen; until then the page shows its
       // committed marks through a read-only copy, so a page turn never paints
@@ -14152,10 +15058,16 @@ window.__ModuleLoader__.load({
       const leaveRail = () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
         railPanelTimer.current = null
-        // Keep the panel just long enough to cross the small gap and use a
-        // slider, then let it go: the pointer leaving is a finished interaction.
+        // The panel sits a few pixels beside the rail: allow a slow diagonal
+        // move onto it, then close. A pointer entering the panel cancels this.
         if (railCloseTimer.current !== null) clearTimeout(railCloseTimer.current)
-        railCloseTimer.current = setTimeout(() => setRailPanel(false), 220)
+        railCloseTimer.current = setTimeout(() => setRailPanel(false), 600)
+      }
+      const keepRailPanel = () => {
+        if (railCloseTimer.current !== null) {
+          clearTimeout(railCloseTimer.current)
+          railCloseTimer.current = null
+        }
       }
       useEffect(() => () => {
         if (railPanelTimer.current !== null) clearTimeout(railPanelTimer.current)
@@ -14224,6 +15136,32 @@ window.__ModuleLoader__.load({
       const isSettling = useCallback(() => switchingMode.current || Date.now() < jumpingUntil.current, [])
       const visibleTimer = useRef(null)
       const [dual, setDual] = useState(false)
+      // Trackpad pinch arrives in Chromium as a wheel with ctrlKey set. The
+      // browser would zoom the whole page; inside the page area it should zoom
+      // the PDF instead, with the same feel as the +/- buttons.
+      useEffect(() => {
+        const node = props.paneRef === null || props.paneRef === undefined ? null : props.paneRef.current
+        if (node === null || typeof node.addEventListener !== 'function') return undefined
+        const onWheel = event => {
+          if (event.ctrlKey !== true || event.deltaY === 0) return
+          const target = event.target
+          if (target === null || target === undefined || typeof target.closest !== 'function') return
+          if (target.closest('.md-reader-stage') === null) return
+          if (target.closest('.md-note-editor, .md-rail-panel') !== null) return
+          // Even in dual mode the gesture must not zoom the DSH shell; there is
+          // simply no single page scale to apply it to.
+          event.preventDefault()
+          event.stopPropagation()
+          if (dual) return
+          const delta = event.deltaMode === 1
+            ? event.deltaY * 16
+            : event.deltaMode === 2 ? event.deltaY * 100 : event.deltaY
+          const factor = Math.max(0.67, Math.min(1.5, Math.exp(-delta * 0.0025)))
+          if (typeof props.onZoomBy === 'function') props.onZoomBy(factor)
+        }
+        node.addEventListener('wheel', onWheel, { passive: false, capture: true })
+        return () => node.removeEventListener('wheel', onWheel, { capture: true })
+      }, [props.paneRef, props.onZoomBy, dual])
       const [rightScale, setRightScale] = useState(null)
       const jobRef = useRef('')
       const noteKey = `pdfdesk:translate-note:${reader.bookId}:${reader.code}`
@@ -15136,6 +16074,9 @@ window.__ModuleLoader__.load({
       }, annotIcon(path))
       const strokeDraft = useRef(null)
       const shapeDraftRef = useRef(null)
+      // The marker is the pen's form only: picking a shape while the pen is set
+      // to highlighter must still draw a normal shape.
+      const markerPen = annotHighlight && annotTool === 'pen'
       const inkGestures = createInkGestures({
         tool: annotTool,
         strokesRef,
@@ -15144,10 +16085,15 @@ window.__ModuleLoader__.load({
         saveAnnots: savePageAnnots,
         setDraftStroke,
         hitTest: annotHit,
-        color: annotColor,
-        width: annotWidth,
+        color: markerPen ? annotHighlightColor : annotColor,
+        width: markerPen ? annotHighlightWidth : annotWidth,
+        opacity: markerPen ? HIGHLIGHT_OPACITY : undefined,
+        flat: markerPen,
         smooth: true,
-        sample: (event, point) => [point[0], point[1], strokePressure(event)],
+        // A marker keeps one even width: pressure would make the band wobble.
+        sample: (event, point) => (markerPen
+          ? [point[0], point[1]]
+          : [point[0], point[1], strokePressure(event)]),
         shapeTools: SHAPE_TOOLS,
         shapeDraftRef,
         setShapeDraft,
@@ -16267,7 +17213,7 @@ window.__ModuleLoader__.load({
                 width: Math.abs(textDraft.x1 - textDraft.x0),
                 height: Math.abs(textDraft.y1 - textDraft.y0),
                 fill: 'none',
-                stroke: '#2f6df6',
+                style: { stroke: 'var(--annot-ui-ink, #2f6df6)' },
                 strokeWidth: 1.5,
                 strokeDasharray: '5 4',
                 vectorEffect: 'non-scaling-stroke',
@@ -16292,8 +17238,9 @@ window.__ModuleLoader__.load({
                 key: 'draft-stroke',
                 points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
                 fill: 'none',
-                stroke: draftStroke.color ?? '#e0554a',
+                stroke: paperInkColor(draftStroke.color ?? '#e0554a', inverted),
                 strokeWidth: draftStroke.width ?? 2,
+                opacity: draftStroke.opacity,
                 vectorEffect: 'non-scaling-stroke',
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
@@ -16619,7 +17566,7 @@ window.__ModuleLoader__.load({
       // per edge. The right preview renders the same component, so both panes
       // show the same plane and the same handles.
       const planeBoundsLayer = h(PlaneBounds, { margins: planeMargins, onExpand: expandPlane })
-      return h('section', {
+      return h(PaperInvertProvider, { value: inverted }, h('section', {
         className: 'md-reader',
         role: 'dialog',
         'aria-modal': 'true',
@@ -16627,6 +17574,8 @@ window.__ModuleLoader__.load({
         'data-phase': reader.phase,
         'data-mode': reader.mode,
         'data-rail': railSide,
+        'data-paper': inverted ? 'invert' : undefined,
+        'data-enh': enhActive(enhance, inverted) ? enhance : undefined,
         tabIndex: -1,
         ref: props.paneRef,
         onPointerMove: onRailPointer,
@@ -16636,7 +17585,8 @@ window.__ModuleLoader__.load({
           setRailOpen(false)
         },
       },
-        h('div', { className: 'md-reader-bar' },
+        h(EnhanceDefs, { key: 'enh-defs' }),
+        h('div', { className: 'md-reader-bar', ref: barRef },
           h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             title: format('readerShelfHint'), 'aria-label': format('readerShelf'),
@@ -16650,7 +17600,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'md-reader-tools' },
             h('div', { className: 'md-reader-pager' },
               h(KitButton, {
-                type: 'button', className: 'md-btn md-btn-small',
+                type: 'button', className: 'md-btn md-btn-small md-reader-first',
                 disabled: reader.page <= 1, title: format('readerFirstHint'), 'aria-label': format('readerFirst'),
                 onClick: () => props.onPage(1),
               }, '⇤'),
@@ -16689,7 +17639,7 @@ window.__ModuleLoader__.load({
               onClick: props.onZoomOut,
             }, '−'),
             h(KitButton, {
-              type: 'button', className: `md-btn md-btn-small${dual ? ' md-hidden' : ''}`, disabled: !ready,
+              type: 'button', className: `md-btn md-btn-small md-reader-fit${dual ? ' md-hidden' : ''}`, disabled: !ready,
               title: format('readerFit'),
               onClick: props.onFit,
             }, format('readerFit')),
@@ -16705,13 +17655,20 @@ window.__ModuleLoader__.load({
             'aria-label': format('toolsToggle'), title: format('toolsToggle'),
             onClick: () => setToolsOpen(value => !value),
           }, toolsOpen ? '⌃' : '⌄'),
+          h('span', { className: 'md-paper-control' },
+            h(KitButton, {
+              type: 'button', className: 'md-btn md-btn-small md-icon-btn md-paper-toggle',
+              'aria-pressed': inverted ? 'true' : 'false',
+              title: format('paperInvertHint'), 'aria-label': format('paperInvert'),
+              onClick: () => paper.setMode(inverted ? 'off' : 'on'),
+            }, annotIcon(inverted ? PAPER_ICON_SUN : PAPER_ICON_MOON))),
           h(KitButton, {
             type: 'button', className: 'md-btn md-btn-small md-btn-ghost',
             'aria-label': format('previewClose'), title: format('previewClose'),
             onClick: props.onBack,
           }, '×')
         ),
-        h('div', { className: 'md-reader-subbar', style: toolsOpen ? undefined : { display: 'none' } },
+        h('div', { className: 'md-reader-subbar', ref: subbarRef, style: toolsOpen ? undefined : { display: 'none' } },
           h('span', { className: 'md-reader-drawbar' },
             readerDrawTool('hand', 'annotHand', 'M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'),
             readerDrawTool('pen', 'annotPen', 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'),
@@ -16927,7 +17884,21 @@ window.__ModuleLoader__.load({
                 'aria-label': format('newSessionOf', { mode: format(`mode.${mode}`) }),
                 onClick: () => props.onNewSession(mode),
               }, `＋ ${format(`mode.${mode}`)}`))
-            )
+            ),
+          h('span', { className: 'md-reader-sep', 'aria-hidden': true }),
+          // Text enhancement lives here, not in the top bar: it only matters on
+          // inverted paper and the bar has to stay on one line.
+          h('span', { className: 'md-reader-enh' },
+            h('span', { className: 'md-reader-lang-label' }, format('paperEnhance')),
+            h('select', {
+              className: 'md-reader-lang',
+              value: enhance,
+              'aria-label': format('paperEnhance'),
+              title: inverted ? format('paperEnhanceHint') : format('paperEnhanceNeedsInvert'),
+              disabled: !inverted,
+              onChange: event => setEnhance(event.target.value),
+            }, [['off', 'paperEnhanceOff'], ['soft', 'paperEnhanceSoft'], ['clear', 'paperEnhanceClear'], ['ink', 'paperEnhanceInk']].map(([value, key]) =>
+              h('option', { key: value, value }, format(key)))))
         ),
         translateNote === '' ? null : h('div', { className: 'md-reader-note-reveal' },
           h('div', { className: 'md-reader-note', role: 'status' },
@@ -17204,7 +18175,12 @@ window.__ModuleLoader__.load({
             }, annotIcon('M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'))
           ),
           railPanel && selection === null && panelTool !== ''
-            ? h('div', { className: 'md-rail-panel', 'data-side': railSide, style: railAnchor === null ? undefined : { top: `${railAnchor}px` } },
+            ? h('div', {
+              className: 'md-rail-panel',
+              'data-side': railSide,
+              style: railAnchor === null ? undefined : { top: `${railAnchor}px` },
+              onPointerEnter: keepRailPanel,
+            },
               h('div', { className: 'md-rail-panel-title' },
                 `${format('toolSettings')} · ${format(TOOL_LABELS[panelTool] ?? 'annotPen')}`),
               panelTool === 'text'
@@ -17219,31 +18195,44 @@ window.__ModuleLoader__.load({
                     ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
                     : panelTool === 'erase'
                       ? h('p', { className: 'md-rail-panel-hint' }, format('annotEraseHint'))
-                      : h(React.Fragment, null,
-                        h('div', { className: 'md-note-style-row' },
-                          h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                          ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
-                            key: color,
-                            type: 'button',
-                            className: 'md-note-color',
-                            style: { background: color },
-                            'data-on': annotColor === color ? 'true' : undefined,
-                            'aria-label': color,
-                            onMouseDown: event => event.preventDefault(),
-                            onClick: () => setAnnotColor(color),
-                          }))
-                        ),
-                        h('div', { className: 'md-note-style-row' },
-                          h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
-                          h('input', {
-                            type: 'range', min: 1, max: 10, step: 1,
-                            value: annotWidth,
-                            'aria-label': format('annotWidthHint'),
-                            onChange: event => setAnnotWidth(Number(event.target.value) || 2),
-                          }),
-                          h('span', { className: 'md-note-size-value' }, `${annotWidth}px`)
+                      : panelTool === 'pen'
+                        ? h(PenStyleControls, {
+                          color: annotColor,
+                          width: annotWidth,
+                          highlight: annotHighlight,
+                          highlightColor: annotHighlightColor,
+                          highlightWidth: annotHighlightWidth,
+                          onColor: setAnnotColor,
+                          onWidth: setAnnotWidth,
+                          onHighlight: setAnnotHighlight,
+                          onHighlightColor: setAnnotHighlightColor,
+                          onHighlightWidth: setAnnotHighlightWidth,
+                        })
+                        : h(React.Fragment, null,
+                          h('div', { className: 'md-note-style-row' },
+                            h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                            penPalette(inverted).map((color, index) => h(KitButton, {
+                              key: color,
+                              type: 'button',
+                              className: 'md-note-color',
+                              style: { background: color },
+                              'data-on': (index === 0 ? isMonoInk(annotColor) : annotColor === color) ? 'true' : undefined,
+                              'aria-label': color,
+                              onMouseDown: event => event.preventDefault(),
+                              onClick: () => setAnnotColor(color),
+                            }))
+                          ),
+                          h('div', { className: 'md-note-style-row' },
+                            h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                            h('input', {
+                              type: 'range', min: 1, max: 10, step: 1,
+                              value: annotWidth,
+                              'aria-label': format('annotWidthHint'),
+                              onChange: event => setAnnotWidth(Number(event.target.value) || 2),
+                            }),
+                            h('span', { className: 'md-note-size-value' }, `${annotWidth}px`)
+                          )
                         )
-                      )
             )
             : null
         ),
@@ -17274,12 +18263,12 @@ window.__ModuleLoader__.load({
               : h(React.Fragment, null,
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                  ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
+                  penPalette(inverted).map((color, index) => h(KitButton, {
                     key: color,
                     type: 'button',
                     className: 'md-note-color',
                     style: { background: color },
-                    'data-on': (selectedEntry.color ?? '#e0554a') === color ? 'true' : undefined,
+                    'data-on': (index === 0 ? isMonoInk(selectedEntry.color) : (selectedEntry.color ?? '#e0554a') === color) ? 'true' : undefined,
                     'aria-label': color,
                     onClick: () => patchSelection({ color }),
                   }))
@@ -17287,7 +18276,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'md-note-style-row' },
                   h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
                   h('input', {
-                    type: 'range', min: 1, max: 10, step: 1,
+                    type: 'range', min: 1, max: 40, step: 1,
                     value: selectedEntry.width ?? 2,
                     'aria-label': format('annotWidthHint'),
                     onChange: event => patchSelection({ width: Number(event.target.value) || 2 }),
@@ -17302,7 +18291,7 @@ window.__ModuleLoader__.load({
                         'data-on': selectedEntry.fill === undefined || selectedEntry.fill === '' ? 'true' : undefined,
                         onClick: () => patchSelection({ fill: '' }),
                       }, format('fillNone')),
-                      ['#f2c94c', '#f28b82', '#aecbfa', '#b7e1cd'].map(color => h(KitButton, {
+                      ['#f2c94c', '#f28b82', '#aecbfa', '#b7e1cd', '#ffffff'].map(color => h(KitButton, {
                         key: color,
                         type: 'button',
                         className: 'md-note-color',
@@ -17366,7 +18355,7 @@ window.__ModuleLoader__.load({
               onClick: deleteSelection,
             }, format('selectionDelete'))
           )
-      )
+      ))
     }
 
 
@@ -17906,13 +18895,16 @@ body[data-ds-dark-theme] .md-env-guide-modal.md-env-guide-modal { --pdf-accent: 
 .md-btn[aria-pressed="true"]:not(.md-btn-ghost) { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 38%, var(--dsw-alias-border-l2)); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-layer-2)); }
 .md-btn-ghost { background: transparent; border-color: transparent; }
 .md-btn-ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; }
-.md-crumbs { flex: none; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.md-crumbs { flex: none; display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-secondary); padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 /* A shelf's own add-PDF switch, parked at the right end of the crumb row. */
 .md-crumbs-toggle { margin-left: auto; }
 .md-crumb { font: inherit; font-size: 13px; color: var(--dsw-alias-label-secondary); background: none; border: 0; padding: 2px 4px; border-radius: 6px; cursor: pointer; }
 .md-crumb:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .md-crumb-sep { opacity: .5; }
 .md-crumb-current { color: var(--dsw-alias-label-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+/* Nested shelves can add several levels; an ancestor crumb keeps its click
+   target but ellipsises instead of pushing the row wider than the page. */
+.md-crumb-ancestor { max-width: 16ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-crumbs button.md-crumb-current { font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: none; border: 0; padding: 2px 4px; min-height: 0; }
 .md-notice { flex: none; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 13px; }
 .md-alert { flex: none; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, var(--dsw-alias-bg-base)); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent); color: var(--dsw-alias-label-primary); font-size: 13px; }
@@ -18266,15 +19258,89 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-refs-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .md-refs-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--dsw-alias-label-primary); }
 .md-refs-actions { display: flex; justify-content: flex-end; }
-.md-reader { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; background: var(--pdf-bg); color: var(--pdf-text); }
+/* Annotation chrome on the paper: one ink and one halo, flipped together with
+   the paper. In normal mode this is the plugin's blue accent (blue-600 light,
+   blue-400 dark); inverted mode switches every frame and handle to white. The
+   black paper fill and white ink below are paper, not UI tokens. */
+.md-reader, .md-side {
+  --annot-ui-ink: var(--pdf-accent, var(--dsw-static-blue-600));
+  --annot-ui-bg: var(--dsw-alias-bg-base);
+  --annot-ui-halo: rgba(255, 255, 255, .85);
+  --annot-ui-halo-invert: rgba(0, 0, 0, .55);
+}
+.md-reader[data-paper="invert"], .md-side[data-paper="invert"] {
+  --annot-ui-ink: #fff;
+  --annot-ui-bg: #000;
+  --annot-ui-halo: var(--annot-ui-halo-invert);
+}
+/* Only the paper layers flip: the PDF canvas, the translated DOM text layer,
+   and the bitmap inside a mask. The annotation layer and the page wrap stay
+   unfiltered, so ink keeps the colours the user picked. */
+.md-reader[data-paper="invert"] .md-reader-canvas,
+.md-side[data-paper="invert"] .md-reader-canvas {
+  filter: var(--pdf-enh, invert(1) hue-rotate(180deg));
+  background: #fff;
+}
+.md-reader[data-paper="invert"] .md-overlay-text,
+.md-side[data-paper="invert"] .md-overlay-text {
+  filter: var(--pdf-enh, invert(1) hue-rotate(180deg));
+}
+.md-reader[data-paper="invert"] .md-mask-page-image,
+.md-side[data-paper="invert"] .md-mask-page-image {
+  filter: var(--pdf-enh, invert(1) hue-rotate(180deg));
+}
+/* The enhancement levels swap the whole filter: the SVG version already
+   inverts, so it must replace the plain invert rather than stack on it. */
+.md-reader[data-paper="invert"][data-enh="soft"], .md-side[data-paper="invert"][data-enh="soft"] { --pdf-enh: url(#pdfdesk-enh-soft); }
+.md-reader[data-paper="invert"][data-enh="clear"], .md-side[data-paper="invert"][data-enh="clear"] { --pdf-enh: url(#pdfdesk-enh-clear); }
+.md-reader[data-paper="invert"][data-enh="ink"], .md-side[data-paper="invert"][data-enh="ink"] { --pdf-enh: url(#pdfdesk-enh-ink); }
+/* The filter definitions themselves never take space or paint. */
+.md-enh-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+.md-reader[data-paper="invert"] .md-reader-page-wrap,
+.md-side[data-paper="invert"] .md-reader-page-wrap {
+  background: #000;
+}
+.md-reader[data-paper="invert"] .md-note-input,
+.md-side[data-paper="invert"] .md-note-input {
+  caret-color: #fff;
+}
+.md-reader[data-paper="invert"] .md-note-input::placeholder,
+.md-side[data-paper="invert"] .md-note-input::placeholder {
+  color: #fff;
+  opacity: .72;
+}
+.md-reader { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; background: var(--pdf-bg); color: var(--pdf-text); container-type: inline-size; container-name: pdfdesk-reader; }
 .md-reader-bar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--pdf-bg); border-bottom: 1px solid var(--pdf-border); }
+/* The bar is a flex item of the reader, so z-index applies without positioning:
+   the edge rail (z 40) spans the whole reader height and must not take the
+   pointer over the bar's right-hand controls (close, paper). */
+.md-reader-bar { z-index: 41; }
+.md-reader-subbar { z-index: 41; }
 .md-reader-bar > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 8px; border-radius: 6px; }
-.md-reader-titles { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; min-width: 0; }
+/* The paper switch is a 32px icon button, like the draw-tool icons. */
+.md-reader .md-reader-bar .md-paper-toggle { box-sizing: border-box; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.md-reader .md-reader-bar .md-paper-toggle[aria-pressed="true"] { color: var(--pdf-accent); border-color: color-mix(in srgb, var(--pdf-accent) 60%, transparent); background: color-mix(in srgb, var(--pdf-accent) 14%, transparent); }
+.md-paper-control { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+/* The enhancement picker is a compact select in the tool row, not in the top
+   bar: the bar has to stay on one line. */
+.md-reader-enh { display: inline-flex; align-items: center; gap: 6px; }
+.md-reader-enh .md-reader-lang { min-height: 28px; }
+.md-reader-enh .md-reader-lang:disabled { opacity: .55; }
+.md-reader-titles { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0; }
 .md-reader-name { font-size: 14px; font-weight: 600; color: var(--pdf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-reader-sub { font-size: 12px; line-height: 1.5; color: var(--pdf-text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-reader-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }
 .md-reader-tools .md-btn { white-space: nowrap; flex: 0 0 auto; }
 .md-reader-tools > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 8px; border-radius: 6px; }
+/* A reader column narrower than this (the right preview is open, or a small
+   window) cannot hold the first-page / fit / scale controls without pushing the
+   tool row onto a second line. They are dropped from the bar there; Home, F and
+   the page input still reach them, and zoom in/out stay in the bar. */
+@container pdfdesk-reader (max-width: 740px) {
+  .md-reader-bar .md-reader-first,
+  .md-reader-bar .md-reader-fit,
+  .md-reader-bar .md-reader-scale { display: none; }
+}
 .md-reader-pager { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
 .md-reader-pager .md-btn { box-sizing: border-box; border: 0; background: transparent; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 6px; color: var(--pdf-text-sub); box-shadow: none; }
 .md-reader-pager .md-btn:hover:not(:disabled) { background: var(--pdf-bg-sub); color: var(--pdf-text); }
@@ -18377,9 +19443,9 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-overlay-text-block[data-overflow="true"] { outline: 1px dashed color-mix(in srgb, #c0392b 55%, transparent); outline-offset: 1px; }
 .md-annot { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; overflow: visible; }
 .md-annot-readonly { overflow: visible; }
-.md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); border-radius: 2px; pointer-events: none; }
-.md-marquee-group { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); }
-.md-selection-outline { position: absolute; z-index: 7; border: 1.5px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent); pointer-events: none; }
+.md-marquee { position: absolute; z-index: 7; border: 1px dashed color-mix(in srgb, var(--annot-ui-ink) 70%, transparent); background: color-mix(in srgb, var(--annot-ui-ink) 7%, transparent); border-radius: 2px; pointer-events: none; }
+.md-marquee-group { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--annot-ui-ink) 10%, transparent); }
+.md-selection-outline { position: absolute; z-index: 7; border: 1.5px dashed color-mix(in srgb, var(--annot-ui-ink) 85%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--annot-ui-ink) 6%, transparent); pointer-events: none; }
 .md-plane-bounds[data-compact="true"] { border-color: transparent; }
 .md-annot[data-tool="pen"], .md-annot[data-tool="erase"], .md-annot[data-tool="text"] { pointer-events: auto; }
 .md-annot[data-tool="line"], .md-annot[data-tool="arrow"], .md-annot[data-tool="rect"], .md-annot[data-tool="diamond"], .md-annot[data-tool="ellipse"] { pointer-events: auto; cursor: crosshair; }
@@ -18391,20 +19457,20 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 /* The mark tool owns the page while it is picked: the layer itself must take
    the pointer, otherwise a drag-to-create can never start on empty paper. */
 .md-questions[data-active="true"] { pointer-events: auto; cursor: crosshair; }
-.md-question { position: absolute; box-sizing: border-box; border: 1.5px solid #2563eb; border-radius: 2px; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
+.md-question { position: absolute; box-sizing: border-box; border: 1.5px solid var(--annot-ui-ink); border-radius: 2px; pointer-events: none; box-shadow: 0 0 0 1px var(--annot-ui-halo); }
 .md-questions[data-active="true"] .md-question { pointer-events: auto; cursor: move; }
 .md-questions[data-reading="true"] .md-question { pointer-events: auto; touch-action: pan-y; cursor: default; }
 .md-question[data-flash="true"] { border-width: 2px; animation: md-question-flash 1.8s ease-out; }
 @keyframes md-question-flash { 0% { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent); } 100% { background: transparent; } }
 .md-question-name { position: absolute; left: -1px; bottom: 100%; transform: translateY(-3px); max-width: 240px; padding: 1px 6px; font-size: 11px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-radius: 4px; box-shadow: var(--dsw-elevation-soft); opacity: 0; transition: opacity .12s ease; pointer-events: auto; }
 .md-question:hover .md-question-name, .md-question[data-flash="true"] .md-question-name, .md-question:focus-within .md-question-name { opacity: 1; }
-.md-question-handle { position: absolute; width: 9px; height: 9px; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 2px; opacity: 0; pointer-events: auto; z-index: 2; }
+.md-question-handle { position: absolute; width: 9px; height: 9px; background: var(--annot-ui-bg); border: 1px solid var(--annot-ui-ink); border-radius: 2px; opacity: 0; pointer-events: auto; z-index: 2; }
 .md-questions[data-active="true"] .md-question:hover .md-question-handle, .md-questions[data-active="true"] .md-question[data-flash="true"] .md-question-handle { opacity: 1; }
 .md-question-nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .md-question-ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .md-question-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .md-question-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
-.md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); pointer-events: none; }
+.md-question-draft { border-style: dashed; background: color-mix(in srgb, var(--annot-ui-ink) 8%, transparent); pointer-events: none; }
 /* The rename field paints its own surface. The adapter's wrapper is only
    opaque while the host primitives bundle is in use, so the field must not
    depend on it: this wrapper supplies the background in both UI modes, and the
@@ -18416,11 +19482,11 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-questions[data-active="true"] .md-question-name { cursor: text; }
 .md-question-jump { min-width: 240px; max-width: min(420px, 56vw); }
 .md-question-jump .md-btn { min-width: 240px; max-width: min(420px, 56vw); justify-content: flex-start; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.md-annot-text.md-annot-selected { outline: none; border-radius: 0; border-color: #2563eb; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
+.md-annot-text.md-annot-selected { outline: none; border-radius: 0; border-color: var(--annot-ui-ink); box-shadow: 0 0 0 1px var(--annot-ui-halo); }
 .md-annot-text.md-annot-selected { cursor: move; }
 /* The vertical tool rail: collected PDF tools, revealed only while the pointer
    is on the page edge, with a short fade/slide so it does not pop. */
-.md-rail-wrap { position: absolute; top: 0; bottom: 0; z-index: 40; width: 30px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
+.md-rail-wrap { position: absolute; top: var(--pdf-reader-rail-top, 0px); bottom: 0; z-index: 40; width: 44px; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
 .md-rail-tab { position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 58px; border-radius: 6px 0 0 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l3); border-right: none; box-shadow: var(--dsw-elevation-soft); opacity: .9; z-index: 39; pointer-events: none; transition: opacity .18s ease; }
 .md-rail-tab[data-side="right"] { right: 20px; }
 .md-rail-tab[data-side="left"] { left: 0; border-radius: 0 6px 6px 0; border-right: 1px solid var(--dsw-alias-border-l3); border-left: none; }
@@ -18429,7 +19495,10 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
    (the bar showed but could not be dragged). */
 .md-rail-wrap[data-side="right"] { right: 20px; }
 .md-rail-wrap[data-side="left"] { left: 0; }
-.md-rail { display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: 78vh; overflow-y: auto; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: var(--dsw-elevation-prominent); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
+/* flex: none: without it the 44px frame is squeezed into the wrap's old 30px
+   column, so the 34px buttons hung out of the frame and the icons sat right of
+   its centre. The frame is exactly as wide as its wrap now. */
+.md-rail { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; max-height: calc(100% - 24px); overflow-y: auto; scrollbar-width: none; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: var(--dsw-elevation-prominent); opacity: 0; transform: translateX(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
 .md-rail-wrap[data-side="left"] .md-rail { transform: translateX(-10px); }
 .md-rail-wrap:hover .md-rail, .md-rail:hover, .md-rail:focus-within, .md-rail[data-open="true"] { opacity: 1; transform: none; pointer-events: auto; }
 .md-rail-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
@@ -18448,18 +19517,18 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-reader[data-rail="right"] .md-reader-stage { padding-right: 58px; }
 .md-reader[data-rail="left"] .md-reader-stage { padding-left: 58px; }
 .md-rail-panel { position: absolute; top: 50%; transform: translateY(-50%); width: 260px; max-height: calc(100vh - 110px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; box-shadow: var(--dsw-elevation-prominent); z-index: 42; pointer-events: auto; }
-.md-rail-panel[data-side="right"] { right: 48px; }
-.md-rail-panel[data-side="left"] { left: 28px; }
+.md-rail-panel[data-side="right"] { right: 46px; }
+.md-rail-panel[data-side="left"] { left: 46px; }
 .md-rail-panel-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); padding-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .md-rail-panel-hint { margin: 0; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
 /* The right-side preview gets the same edge rail, but only its core tools. */
-.md-side-rail-wrap { top: 44px; bottom: 0; }
+.md-side-rail-wrap { top: var(--pdf-side-rail-top, 44px); bottom: 0; }
 .md-side-rail-tab { top: calc(50% + 22px); }
 .md-shape-handles { position: absolute; inset: 0; pointer-events: none; }
-.md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--dsw-alias-bg-base); border: 1.5px solid var(--dsw-alias-brand-primary); border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
+.md-shape-handle { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--annot-ui-bg); border: 1.5px solid var(--annot-ui-ink); border-radius: 2px; pointer-events: auto; cursor: nwse-resize; }
 /* A press on a text box draws the next one, so moving keeps its own grip above
    the box (the mask boxes use the same idea). */
-.md-note-grip { position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid #2563eb; color: #2563eb; cursor: move; pointer-events: auto; }
+.md-note-grip { position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--annot-ui-bg) 92%, transparent); border: 1px solid var(--annot-ui-ink); color: var(--annot-ui-ink); cursor: move; pointer-events: auto; }
 .md-note-grip .md-icon { width: 12px; height: 12px; }
 .md-annot[data-tool="pen"] { cursor: crosshair; }
 .md-annot[data-tool="text"] { cursor: crosshair; }
@@ -18470,10 +19539,10 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-annot-text { position: absolute; box-sizing: border-box; font-size: 14px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; pointer-events: none; padding: 2px 4px; border: 1px solid transparent; border-radius: 0; user-select: text; -webkit-user-select: text; }
 /* With no tool picked, a note is clickable so a double-click can edit it. */
 .md-annot[data-tool=""] .md-annot-text { pointer-events: auto; cursor: text; user-select: text; -webkit-user-select: text; }
-.md-annot[data-tool=""] .md-annot-text:hover { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
+.md-annot[data-tool=""] .md-annot-text:hover { border-color: color-mix(in srgb, var(--annot-ui-ink) 55%, transparent); }
 /* The in-place editor is transparent too: only the text and the caret show.
    The style row never takes focus, so changing a font cannot blur-save. */
-.md-note-editor { position: absolute; z-index: 8; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 1px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); border-radius: 0; pointer-events: auto; }
+.md-note-editor { position: absolute; z-index: 8; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 1px; border: 1px dashed color-mix(in srgb, var(--annot-ui-ink) 42%, transparent); border-radius: 0; pointer-events: auto; }
 .md-note-style { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 0; background: transparent; box-shadow: none; }
 /* Text parameters now live in the toolbar: a nested menu, not a box on the page. */
 .md-note-style-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -18511,7 +19580,7 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 /* Frames sit on the PDF page, which stays white in every theme, so they use a
    page-local colour instead of the chrome tokens (light-tuned tokens vanish on
    white in dark mode). The white ring keeps them visible over dark scans. */
-.md-mask { position: absolute; box-sizing: border-box; overflow: visible; border: 1.5px dashed #2563eb; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85); }
+.md-mask { position: absolute; box-sizing: border-box; overflow: visible; border: 1.5px dashed var(--annot-ui-ink); box-shadow: 0 0 0 1px var(--annot-ui-halo); }
 /* The image is clipped by the inner wrapper, so the handles on the border are
    not cut off. */
 .md-mask-clip { position: absolute; inset: 0; overflow: hidden; }
@@ -18519,7 +19588,7 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-mask-boxes { position: absolute; inset: 0; pointer-events: auto; }
 .md-mask-boxes .md-mask { pointer-events: none; }
 .md-mask-boxes .md-mask-active { border-style: solid; }
-.md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--dsw-alias-bg-base); border: 1px solid #2563eb; box-shadow: var(--dsw-elevation-soft); pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.md-mask-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; background: var(--annot-ui-bg); border: 1px solid var(--annot-ui-ink); box-shadow: var(--dsw-elevation-soft); pointer-events: none; opacity: 0; transition: opacity .12s ease; }
 .md-mask[data-hover='true'] .md-mask-handle, .md-mask-active .md-mask-handle, .md-annot-edit .md-mask-handle { opacity: 1; pointer-events: auto; }
 .md-mask-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
 .md-mask-handle-n { left: 50%; top: 0; cursor: ns-resize; }
@@ -18533,10 +19602,10 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
    appears on hover and is the only target that starts a move besides Alt+drag.
    Like the handles it must not take pointers while hidden, or it would swallow
    the drag that should draw a frame on top of this one. */
-.md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent); border: 1px solid #2563eb; color: #2563eb; cursor: move; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.md-mask-grip { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--annot-ui-bg) 92%, transparent); border: 1px solid var(--annot-ui-ink); color: var(--annot-ui-ink); cursor: move; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
 .md-mask[data-hover='true'] .md-mask-grip, .md-mask-active .md-mask-grip, .md-annot-edit .md-mask-grip { opacity: 1; pointer-events: auto; }
 .md-mask-grip .md-icon { width: 12px; height: 12px; }
-.md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); }
+.md-mask-draft { border-style: solid; background: color-mix(in srgb, var(--annot-ui-ink) 16%, transparent); }
 .md-reader-dual { display: flex; gap: 12px; width: 100%; height: 100%; }
 .md-reader-column { flex: 1 1 0; min-width: 0; overflow: auto; }
 .md-reader-colhead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent); border-bottom: 1px solid var(--dsw-alias-border-l2); opacity: .82; transition: opacity .18s ease; }
@@ -18574,6 +19643,9 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-reader-subbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--pdf-bg-sub); border-bottom: 1px solid var(--pdf-border); }
 .md-reader-subbar > :has(~ .md-reader-modes) { order: 2; }
 .md-reader-subbar > .md-reader-modes, .md-reader-subbar > .md-reader-modes ~ * { order: 1; }
+/* The enhancement picker closes the tool row: it belongs with the reading
+   controls, not with the drawing tools at the front. */
+.md-reader-subbar > .md-reader-enh { order: 3; }
 .md-reader-subbar > .md-btn { box-sizing: border-box; min-height: 36px; padding: 4px 12px; border: 1px solid var(--pdf-border); border-radius: 6px; background: var(--pdf-surface); color: var(--pdf-text); font-size: 12px; }
 .md-reader-subbar > .md-btn:hover:not(:disabled) { background: var(--pdf-bg); border-color: var(--pdf-border-strong); }
 .md-reader-modes { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px; border: 1px solid var(--pdf-border); border-radius: var(--pdf-radius); background: var(--pdf-surface); }
@@ -18632,6 +19704,16 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-split-jump:focus-visible { outline: 2px solid var(--pdf-accent); outline-offset: 1px; }
 .md-split-item.md-split-flash .md-split-page { outline: 2px solid var(--pdf-accent); outline-offset: 2px; }
 .md-split-preview { margin: 0; padding-left: 16px; font-size: 11px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+/* The double-click page: a second scrim above the split panel, one page big
+   enough to read a scanned chapter number. */
+.md-split-lightbox { z-index: 95; }
+.md-split-lightbox-panel { display: flex; flex-direction: column; width: min(1100px, 94vw); height: min(92vh, 960px); background: var(--pdf-bg); color: var(--pdf-text); border-radius: 12px; box-shadow: var(--pdf-shadow); overflow: hidden; }
+.md-split-lightbox-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--pdf-border-strong); }
+.md-split-lightbox-head .md-env-title { margin: 0; }
+.md-split-lightbox-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--pdf-bg-sub); }
+.md-split-lightbox-image { display: block; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; border-radius: 6px; }
+.md-split-lightbox-canvas { display: block; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; border-radius: 6px; }
+@media (max-width: 860px) { .md-split-lightbox-panel { width: 96vw; height: 90vh; } }
 .md-wizard-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.45); }
 .md-wizard-panel { width: min(860px, 94vw); max-height: min(840px, 92vh); display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); overflow: hidden; }
 .md-wizard-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--dsw-alias-border-l3); }
@@ -18684,6 +19766,11 @@ details.md-manual-sub { margin-top: 4px; padding: 10px 14px; border: 1px solid v
 .md-side-goto { width: 56px; padding: 3px 5px; font: inherit; font-size: 12px; text-align: center; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-brand-primary); border-radius: 6px; outline: none; }
 .md-side-zoom { min-width: 38px; font-size: 12px; color: var(--dsw-alias-label-secondary); text-align: right; font-variant-numeric: tabular-nums; }
 .md-side-more { position: relative; z-index: 41; font-size: 15px; line-height: 1; padding: 2px 9px; } /* Above the rail strip (z-index 40): a wrapped toolbar can put this button inside it. */
+/* The toolbar row sits above the edge rail for the same reason. */
+.md-side-bar { z-index: 41; }
+/* The preview's paper switch: the reader's ☾/☀, one size down for this bar. */
+.md-side .md-side-bar .md-side-paper { box-sizing: border-box; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; }
+.md-side .md-side-bar .md-side-paper[aria-pressed="true"] { color: var(--pdf-accent); border-color: color-mix(in srgb, var(--pdf-accent) 60%, transparent); background: color-mix(in srgb, var(--pdf-accent) 14%, transparent); }
 /* With the toolbar hidden, the handle fades in on hover and sits in the stage's
    top padding so it never covers the page itself. */
 .md-side-handle { position: absolute; top: 6px; right: 8px; z-index: 7; opacity: 0; transition: opacity .12s ease; font-size: 15px; line-height: 1; padding: 2px 9px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent); }
@@ -18720,7 +19807,7 @@ body[data-pdfdesk-reading='1'] .dshwv-root { opacity: .28; }
 .md-annot-edit[data-tool='mask'] { cursor: copy; }
 /* The reader's overlay boxes, read-only: below the ink, above the page. */
 .md-masks-readonly { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-.md-masks-readonly .md-mask { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent); }
+.md-masks-readonly .md-mask { border-color: color-mix(in srgb, var(--annot-ui-ink) 55%, transparent); }
 .md-root :focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-clearance, 48px) + 4px); }
 @container pdfdesk (max-width: 620px) {
@@ -18731,6 +19818,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
   .md-detail { padding-left: 52px; }
   .md-session-list { padding-left: 0; }
   .md-crumb-current { max-width: 24ch; }
+  .md-crumb-ancestor { max-width: 10ch; }
 }
 @container pdfdesk (max-width: 760px) {
   .md-preview { position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: min(94%, 460px); margin: 0; padding: 14px 16px 20px 18px; background: var(--dsw-alias-bg-base); border-left: 1px solid var(--dsw-alias-border-l3); }
@@ -18766,6 +19854,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
      */
     function SidePdfView(props) {
       useT()
+      const paper = usePaperMode()
+      const inverted = paper.inverted
       const mathMode = useWorkflowMode() === 'math'
       const info = props.useTabInfo()
       const target = sideTarget(info.tab.contentId)
@@ -18775,6 +19865,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const variant = params !== null && typeof params === 'object' && params.variant === 'translated' ? 'translated' : ''
       const bookId = target === null ? '' : target.bookId
       const code = target === null ? '' : target.code
+      const [sideEnhance, setSideEnhance] = useChapterEnhance(bookId, code)
       // The chapter's shared state, for the diagnostic overlay.
       const storeView = useChapterView(bookId, code)
       const diag = useDiag()
@@ -18914,6 +20005,10 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       // Tool defaults and the hover settings panel for the side rail.
       const [sideColor, setSideColor] = useState('#1f1f1f')
       const [sideWidth, setSideWidth] = useState(2)
+      // The right preview's own pen state: the highlighter form of the same pen.
+      const [sideHighlight, setSideHighlight] = useState(false)
+      const [sideHighlightColor, setSideHighlightColor] = useState(HIGHLIGHT_COLORS[0])
+      const [sideHighlightWidth, setSideHighlightWidth] = useHighlightWidth()
       const [sidePanel, setSidePanel] = useState(false)
       const [sidePanelTool, setSidePanelTool] = useState('')
       const [sideAnchor, setSideAnchor] = useState(null)
@@ -18939,7 +20034,13 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
         sidePanelTimer.current = null
         if (sideCloseTimer.current !== null) clearTimeout(sideCloseTimer.current)
-        sideCloseTimer.current = setTimeout(() => setSidePanel(false), 700)
+        sideCloseTimer.current = setTimeout(() => setSidePanel(false), 800)
+      }
+      const keepSidePanel = () => {
+        if (sideCloseTimer.current !== null) {
+          clearTimeout(sideCloseTimer.current)
+          sideCloseTimer.current = null
+        }
       }
       useEffect(() => () => {
         if (sidePanelTimer.current !== null) clearTimeout(sidePanelTimer.current)
@@ -18981,6 +20082,26 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       }
       const seenAnnotRev = useRef(0)
       const sideRoot = useRef(null)
+      // The preview's tool row wraps on a narrow pane; the side rail's lane has
+      // to start below the measured row, not at the old fixed 44px. With the
+      // row hidden, 44px keeps the lane clear of the "⋯" handle.
+      useEffect(() => {
+        const node = sideRoot.current
+        if (node === null) return undefined
+        const measure = () => {
+          const bar = node.querySelector('.md-side-bar')
+          node.style.setProperty('--pdf-side-rail-top', `${bar === null ? 44 : bar.offsetHeight}px`)
+        }
+        if (typeof ResizeObserver !== 'function') {
+          measure()
+          return undefined
+        }
+        const observer = new ResizeObserver(measure)
+        const bar = node.querySelector('.md-side-bar')
+        if (bar !== null) observer.observe(bar)
+        measure()
+        return () => observer.disconnect()
+      }, [toolsHidden])
       const stage = useRef(null)
       const slots = useRef(new Map())
       const visibleTimer = useRef(null)
@@ -19315,6 +20436,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         commitStrokes(applyNote(strokesRef.current, draft, noteText.current))
       }
       const shapeDraftRef = useRef(null)
+      // Same rule as the reader: the highlighter is the pen's form, not a shape fill.
+      const sideMarkerPen = sideHighlight && tool === 'pen'
       const sideGestures = createInkGestures({
         tool,
         strokesRef,
@@ -19323,8 +20446,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         saveAnnots: commitStrokes,
         setDraftStroke,
         hitTest,
-        color: sideColor,
-        width: sideWidth,
+        color: sideMarkerPen ? sideHighlightColor : sideColor,
+        width: sideMarkerPen ? sideHighlightWidth : sideWidth,
+        opacity: sideMarkerPen ? HIGHLIGHT_OPACITY : undefined,
         shapeTools: SHAPE_TOOLS,
         shapeDraftRef,
         setShapeDraft,
@@ -19620,6 +20744,28 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         setAutoFit(true)
         setManualScale(null)
       }, [])
+      // Trackpad pinch: Chromium reports it as ctrl+wheel. Keep normal two-finger
+      // scrolling untouched and turn the pinch into the preview's own zoom.
+      useEffect(() => {
+        const node = sideRoot.current
+        if (node === null || typeof node.addEventListener !== 'function') return undefined
+        const onWheel = event => {
+          if (event.ctrlKey !== true || event.deltaY === 0) return
+          const target = event.target
+          if (target === null || target === undefined || typeof target.closest !== 'function') return
+          if (target.closest('.md-reader-stage') === null) return
+          if (target.closest('.md-note-editor, .md-rail-panel') !== null) return
+          event.preventDefault()
+          event.stopPropagation()
+          const delta = event.deltaMode === 1
+            ? event.deltaY * 16
+            : event.deltaMode === 2 ? event.deltaY * 100 : event.deltaY
+          const factor = Math.max(0.67, Math.min(1.5, Math.exp(-delta * 0.0025)))
+          zoomTo(renderScaleRef.current * factor)
+        }
+        node.addEventListener('wheel', onWheel, { passive: false, capture: true })
+        return () => node.removeEventListener('wheel', onWheel, { capture: true })
+      }, [bookId, code, zoomTo])
       // The toggles read the current mode from refs: a setState updater must stay
       // pure, and entering a mode needs the other two writes decided up front.
       const modeRef = useRef({ autoFit, follow })
@@ -19992,8 +21138,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             }, h('polyline', {
               points: draftStroke.points.map(point => `${point[0]},${point[1]}`).join(' '),
               fill: 'none',
-              stroke: draftStroke.color,
+              stroke: paperInkColor(draftStroke.color ?? '#e0554a', inverted),
               strokeWidth: draftStroke.width,
+              opacity: draftStroke.opacity,
               vectorEffect: 'non-scaling-stroke',
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
@@ -20032,7 +21179,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               width: Math.abs(sideTextDraft.x1 - sideTextDraft.x0),
               height: Math.abs(sideTextDraft.y1 - sideTextDraft.y0),
               fill: 'none',
-              stroke: '#2f6df6',
+              style: { stroke: 'var(--annot-ui-ink, #2f6df6)' },
               strokeWidth: 1.5,
               strokeDasharray: '5 4',
               vectorEffect: 'non-scaling-stroke',
@@ -20254,6 +21401,8 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
         page, count, mode, autoFit, follow, phase, bookId, code, target, tool, toolsHidden,
         strokes: strokes.length, masks: masks.length,
         undo: undoCount, redo: redoCount,
+        paper: inverted,
+        enhance: sideEnhance,
         tabActions: info.tab.actions,
       }
       // The menu resolves once per target kind; reading the actions from a ref
@@ -20356,6 +21505,21 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             run: () => changeMode(state.mode === 'single' ? 'continuous' : 'single'),
           },
           {
+            id: 'paper',
+            label: `${check(state.paper)}${format('paperInvert')}`,
+            run: () => paper.setMode(state.paper ? 'off' : 'on'),
+          },
+          {
+            id: 'enhance',
+            label: `${check(state.enhance !== 'off')}${format('paperEnhance')}`,
+            disabled: state.paper !== true,
+            children: [['off', 'paperEnhanceOff'], ['soft', 'paperEnhanceSoft'], ['clear', 'paperEnhanceClear'], ['ink', 'paperEnhanceInk']].map(([value, key]) => ({
+              id: `enhance-${value}`,
+              label: `${check(state.enhance === value)}${format(key)}`,
+              run: () => setSideEnhance(value),
+            })),
+          },
+          {
             id: 'sessions',
             label: format('sideMenuSessions'),
             children: MODES.map(mode => {
@@ -20400,7 +21564,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           },
         ].filter(item => mathMode || item.id !== 'sessions')
         // The action bodies read `menuState`, so only the constructors matter.
-      }, [fitToColumn, goPage, mathMode, toggleAutoFit, toggleFollow, zoomTo])
+      }, [fitToColumn, goPage, mathMode, paper.setMode, setSideEnhance, toggleAutoFit, toggleFollow, zoomTo])
 
       const openSideMenu = useCallback(event => {
         if (event !== null && event !== undefined) {
@@ -20537,13 +21701,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               }),
             })
 
-      return h('div', {
+      return h(PaperInvertProvider, { value: inverted }, h('div', {
         className: 'md-side',
         ref: sideRoot,
         'data-mode': mode,
         'data-toolbar': toolsHidden ? 'hidden' : 'shown',
+        'data-paper': inverted ? 'invert' : undefined,
+        'data-enh': enhActive(sideEnhance, inverted) ? sideEnhance : undefined,
         onContextMenu: openSideMenu,
       },
+        h(EnhanceDefs, { key: 'enh-defs' }),
         toolsHidden
           // The way back to the toolbar: a handle that appears when the pointer
           // is over the preview, without taking any layout space.
@@ -20749,6 +21916,16 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           h('span', { className: 'md-side-gap' }),
           h('span', { className: 'md-side-zoom', title: format(autoFit ? 'sideAutoFitOn' : 'sideMenuZoom') },
             `${Math.round(shown * 100)}%`),
+          // The reader's paper switch, one size down: same preference, same
+          // icons, so the preview can be inverted without opening the reader.
+          h(KitButton, {
+            type: 'button',
+            className: 'md-btn md-btn-small md-icon-btn md-side-paper',
+            'aria-pressed': inverted ? 'true' : 'false',
+            title: format('paperInvertHint'),
+            'aria-label': format('paperInvert'),
+            onClick: () => paper.setMode(inverted ? 'off' : 'on'),
+          }, annotIcon(inverted ? PAPER_ICON_SUN : PAPER_ICON_MOON)),
           h(KitButton, {
             type: 'button',
             className: 'md-btn md-btn-small md-side-more',
@@ -20800,6 +21977,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
               className: 'md-rail-panel',
               'data-side': 'right',
               style: sideAnchor === null ? undefined : { top: `${sideAnchor}px` },
+              onPointerEnter: keepSidePanel,
             },
               h('div', { className: 'md-rail-panel-title' },
                 `${format('toolSettings')} · ${format(TOOL_LABELS[sidePanelTool] ?? 'annotPen')}`),
@@ -20811,31 +21989,44 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
                   ? h('p', { className: 'md-rail-panel-hint' }, format('toolPanelMaskHint'))
                   : sidePanelTool === 'erase'
                     ? h('p', { className: 'md-rail-panel-hint' }, format('annotEraseHint'))
-                    : h(React.Fragment, null,
-                      h('div', { className: 'md-note-style-row' },
-                        h('span', { className: 'md-note-style-label' }, format('annotColor')),
-                        ['#1f1f1f', '#e0554a', '#2f6df6', '#2ecc71'].map(color => h(KitButton, {
-                          key: color,
-                          type: 'button',
-                          className: 'md-note-color',
-                          style: { background: color },
-                          'data-on': sideColor === color ? 'true' : undefined,
-                          'aria-label': color,
-                          onMouseDown: event => event.preventDefault(),
-                          onClick: () => setSideColor(color),
-                        }))
-                      ),
-                      h('div', { className: 'md-note-style-row' },
-                        h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
-                        h('input', {
-                          type: 'range', min: 1, max: 10, step: 1,
-                          value: sideWidth,
-                          'aria-label': format('annotWidthHint'),
-                          onChange: event => setSideWidth(Number(event.target.value) || 2),
-                        }),
-                        h('span', { className: 'md-note-size-value' }, `${sideWidth}px`)
+                    : sidePanelTool === 'pen'
+                      ? h(PenStyleControls, {
+                        color: sideColor,
+                        width: sideWidth,
+                        highlight: sideHighlight,
+                        highlightColor: sideHighlightColor,
+                        highlightWidth: sideHighlightWidth,
+                        onColor: setSideColor,
+                        onWidth: setSideWidth,
+                        onHighlight: setSideHighlight,
+                        onHighlightColor: setSideHighlightColor,
+                        onHighlightWidth: setSideHighlightWidth,
+                      })
+                      : h(React.Fragment, null,
+                        h('div', { className: 'md-note-style-row' },
+                          h('span', { className: 'md-note-style-label' }, format('annotColor')),
+                          penPalette(inverted).map((color, index) => h(KitButton, {
+                            key: color,
+                            type: 'button',
+                            className: 'md-note-color',
+                            style: { background: color },
+                            'data-on': (index === 0 ? isMonoInk(sideColor) : sideColor === color) ? 'true' : undefined,
+                            'aria-label': color,
+                            onMouseDown: event => event.preventDefault(),
+                            onClick: () => setSideColor(color),
+                          }))
+                        ),
+                        h('div', { className: 'md-note-style-row' },
+                          h('span', { className: 'md-note-style-label' }, format('annotWidthHint')),
+                          h('input', {
+                            type: 'range', min: 1, max: 10, step: 1,
+                            value: sideWidth,
+                            'aria-label': format('annotWidthHint'),
+                            onChange: event => setSideWidth(Number(event.target.value) || 2),
+                          }),
+                          h('span', { className: 'md-note-size-value' }, `${sideWidth}px`)
+                        )
                       )
-                    )
             )
             : null
         ),
@@ -20857,7 +22048,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             y: fallbackMenu.y,
             rows: menuActions(),
             onClose: () => setFallbackMenu(null),
-          }))
+          })))
     }
 
     /**
@@ -23623,14 +24814,11 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
           return
         }
         if (selected.size === 0) return
-        const current = groupRef.current
-        const shelf = {
-          id: `g-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
-          name: title.slice(0, 60),
-          books: [...selected],
-          ...(current === null ? {} : { parent: current }),
-        }
-        saveShelfGroups({ hidden: shelfGroups.hidden, shelves: [...shelfGroups.shelves, shelf] })
+        const result = shelfCreateFromSelection(shelfGroups, groupRef.current, title.slice(0, 60), [...selected])
+        saveShelfGroups(result.groups)
+        // Only a nested create removes books from the view the user is looking
+        // at; say where they went instead of letting them seem to vanish.
+        if (result.nested) showNotice(format('shelfAddedTo', { n: result.moved, name: result.shelf.name }))
         setShelfName(null)
         setSelected(new Set())
       }, [group, saveShelfGroups, selected, shelfGroups, shelfName, showNotice])
@@ -24432,8 +25620,9 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
       const covered = (narrow && preview !== null) || picker !== null || reader !== null || digest !== null || shelfName !== null || settingsOpen
       // The crumbs render before the catalog arrives; `work` is still null then.
       const librariesView = work !== null && work.view === 'libraries'
-      // The crumbs name the open shelf from the same view the grid renders.
-      const groupName = shelfPage.groupName
+      // The crumbs name the open shelf and the shelves above it, so a nested
+      // shelf shows where it came from: root first, the open shelf last.
+      const crumbChain = shelfChain(shelfGroups, group, hiddenLabel)
       const libraryName = library === null || typeof library.name !== 'string' || library.name === ''
         ? format('shelf')
         : library.name
@@ -24518,21 +25707,27 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
             librariesView
               ? null
-              : book === null && groupName === null
+              : book === null && crumbChain.length === 0
                 ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, libraryName)
                 : h(KitButton, {
                   type: 'button', className: 'md-crumb',
                   onClick: goShelf,
                 }, libraryName),
-            groupName === null ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
-            groupName === null
-              ? null
-              : book === null
-                ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, groupName)
-                : h(KitButton, {
-                  type: 'button', className: 'md-crumb',
-                  onClick: () => openGroup(group),
-                }, groupName),
+            // Every shelf above the open one is a way back; the open shelf is
+            // the current crumb (or a link while a book page is open).
+            librariesView ? null : crumbChain.map((item, index) => {
+              const last = index === crumbChain.length - 1
+              const here = last && book === null
+              return h(React.Fragment, { key: `crumb-${item.id}` },
+                h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
+                here
+                  ? h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, item.name)
+                  : h(KitButton, {
+                    type: 'button', className: 'md-crumb md-crumb-ancestor',
+                    title: item.name,
+                    onClick: () => openGroup(item.id),
+                  }, item.name))
+            }),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-sep', 'aria-hidden': true }, '/'),
             book === null || librariesView ? null : h('span', { className: 'md-crumb-current', 'aria-current': 'page' }, book.title),
             // Inside one custom shelf: the add-PDF card's own switch, remembered
@@ -24771,6 +25966,7 @@ html[data-platform='darwin'] .md-head { padding-top: calc(var(--dsh-frame-top-cl
             onPage: readerPage,
             onZoomIn: () => readerZoom(1.2),
             onZoomOut: () => readerZoom(1 / 1.2),
+            onZoomBy: readerZoom,
             onFit: readerFit,
             onMode: readerMode,
             onNewSession: mode => readerNewSession(mode, readerForceNew),

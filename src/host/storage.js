@@ -4,9 +4,10 @@
  * The panel only ever answers two questions: "what is using space" and "which
  * of that is rebuildable". Reading is always safe. Deleting is split by risk:
  *
- * - `rebuild` — translation caches, finished job state, upload scratch, the
- *   staging tree a crashed packing job left behind. The plugin recreates any of
- *   it on demand, so one click may remove all of it.
+ * - `rebuild` — translation caches, split-panel thumbnails and preview images,
+ *   finished job state, upload scratch, the staging tree a crashed packing job
+ *   left behind. The plugin recreates any of it on demand, so one click may
+ *   remove all of it.
  * - `manual` — packages the user asked for (`backup/*.zip`), pre-import
  *   snapshots (the only copy of the state before an import), and `回收站/`
  *   (documents the user deleted but did not empty). These are only ever removed
@@ -150,6 +151,9 @@ export async function measureStorage(options) {
     trash = { bytes: trash.bytes + removed.bytes, files: trash.files + removed.files }
   }
   const legacy = await measureTree(legacyTranslationRoot(dataDir))
+  // Split-panel thumbnails and the double-click preview images share this
+  // folder. Both are rebuildable, so the settings cleanup may drop them.
+  const thumbs = await measureTree(join(dataDir, 'thumbs'))
   const jobs = await measureTree(join(dataDir, 'translate-jobs'))
   const exportJobs = await measureTree(join(dataDir, 'export-jobs'))
   const tmp = await measureTree(join(dataDir, 'tmp'))
@@ -167,6 +171,7 @@ export async function measureStorage(options) {
     { key: 'projcache', ...projcache, safe: 'rebuild' },
     { key: 'translation', ...translation, safe: 'rebuild' },
     { key: 'legacy', ...legacy, safe: 'rebuild' },
+    { key: 'thumbs', ...thumbs, safe: 'rebuild' },
     { key: 'jobs', bytes: jobs.bytes + exportJobs.bytes, files: jobs.files + exportJobs.files, safe: 'rebuild' },
     { key: 'tmp', ...tmp, safe: 'rebuild' },
     { key: 'staging', ...backup.staging, safe: 'rebuild' },

@@ -21,7 +21,9 @@ import fitz
 from PIL import Image
 
 WIDTH_MIN = 80
-WIDTH_MAX = 480
+# The split grid asks for 240; the panel's double-click preview asks for one
+# page at reading size (1200), so the ceiling has to clear that.
+WIDTH_MAX = 1600
 
 
 def main() -> int:

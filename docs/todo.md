@@ -969,15 +969,172 @@
 - 未覆盖 / 需手测：`split-active-library-test`、`split-after-import-test` 在本会话沙箱内 `spawn EPERM`（真实 Python 拆分未跑）；重启 DSH 后手测——自定义书架隐藏/取消隐藏、傅里叶拆分后自动出现在「数学分析」、结果框打开/新建拆分会话、两个勾选记忆。
 - 状态：待用户验收
 
+## 当前队列（2026-11-28 · 拆分预览 / 荧光笔 / 书架嵌套 / 不重要缓存）
+
+> 用户 2026-11-28 直接指令（三项一起提出）；开工前已出计划并由用户确认：建子书架＝**移入**，荧光笔＝**笔面板里切「笔/荧光笔」+ 四色**。
+> 同日追加：预览大图按用户选择**保留缓存 + 一键清理**（方案 B），并入设置里的「不重要缓存」；两条历史失败按现状修正测试断言。
+> 本表由 programmer 落盘，范围与验收以本节为准；改动记录见 `docs/changes/next.md`。
+> 客户端不能热更：四项都要**重启 DSH** 后手测。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-01 | P1 | 拆分面板双击缩略图整页预览（低质量扫描件看清章号） | `client.js`（`SplitPagePreview` / `SplitDialog`）、`src/host/routes.js`、`tools/pdf_thumbs.py` | 用户 2026-11-28 指令 1 | 宽度上限 480→1600；Host 单页 1200、pdf.js 回退大画布；Esc 先关预览；拆点与滚动位置不变 | programmer | 待用户验收 |
+| T-20261128-02 | P1 | 笔的荧光笔形态（主阅读器 + 右栏预览） | `client.js`（`PenStyleControls`、两栏笔设置、`createInkGestures`） | 用户 2026-11-28 指令 2；用户确认四色 + 笔型切换 | 22px、38% 透明、四色；笔画多一个可选 `opacity`，旧数据按 1 渲染；不新增工具条按钮 | programmer | 待用户验收 |
+| T-20261128-03 | P1 | 书架内新建书架＝嵌套：选中的书移入新书架 | `client.js`（`shelfCreateFromSelection` / `createShelf`） | 用户 2026-11-28 指令 3；用户确认「移入新书架」 | 只动当前书架；其它书架保留同一本书；子书架可继续往下嵌套 | programmer | 待用户验收 |
+| T-20261128-04 | P1 | 预览大图并入「不重要缓存」一键清理，存储面板显示缩略图占用 | `client.js`、`src/host/routes.js`、`src/host/storage.js` | 用户 2026-11-28 追加指令（方案 B：保留缓存 + 清理按钮） | 不改路由形状；`clear-translation-cache` 多清 `thumbs/` 并在响应里单列 `thumbs`；不做定时静默删除（DEC-0014） | programmer | 待用户验收 |
+| T-20261128-05 | P2 | 纠正两条历史失败：`t08-test` 断言写在 pointerdown、`ui-polish-test` 断言过期 | 仓库外 `.dsh-scratch/t08-test.mjs`、`ui-polish-test.mjs` | 用户 2026-11-28「已知bug可以先修一下」 | 只改测试断言，不改产品行为；`t08` 实际点击选中、拖拽新建，与主阅读器一致 | programmer | 待用户验收 |
+
+**T-20261128-01 证据（2026-11-28）**
+
+- 根因：`SplitDialog` 的缩略图框只有剪刀按钮有点击，页面本身没有打开动作；Host 缩略图宽度上限写死 480（`routes.js` `THUMB_WIDTH_MAX`、`pdf_thumbs.py` `WIDTH_MAX`），240px 的格子对低质量扫描件就是看不清章号。
+- 修：新增 `SplitPagePreview` 与 `SPLIT_PREVIEW_WIDTH = 1200`；双击页框打开大图，Host 走 `/pdfdesk/pdf-layout` 单页请求并用响应里的 `width`/`v` 拼图（旧 Host 截到 480 也能显示）；pdf.js 回退按 window×DPR 画大画布；Esc 逐层关闭（`previewPageRef`），点暗处关闭。上限 480→1600。
+- 验证：`node --check client.js` exit 0；`split-page-preview-test.mjs` 21 条 exit 0；`split-thumbs-route-test.mjs`（含 1600/1200 新用例）、`split-thumbs-client-test.mjs`、`split-ui-test.mjs` exit 0；`py -3 tools/pdf_thumbs.py … 1200 1 1` exit 0（478 ms、166 KB）。
+- 待手测：重启 → 拆分面板 → 双击缩略图 → 大图可读；Esc 只关大图；拆点/滚动位置不变。
+
+**T-20261128-02 证据（2026-11-28）**
+
+- 根因：`createInkGestures` 只写 `color/width`，两栏笔面板只有 1–10px 实心色；没有半透明高亮这种「很粗的标记笔」。
+- 修：新增 `HIGHLIGHT_COLORS/HIGHLIGHT_WIDTH/HIGHLIGHT_OPACITY` 与共用 `PenStyleControls`；笔画新增可选 `opacity`，`flat` 提交时去掉压感（避免高亮带忽粗忽细）；两栏草稿与 `InkMarks` 按 `opacity` 渲染，旧笔画缺省 1；选中面板粗细上限 10→40。
+- 验证：`ink-gestures-test.mjs` exit 0；新增 `highlight-pen-test.mjs` 21 条 exit 0（含负向对照）；`note-style-test`、`column-ink-test`、`history-test`、`canvas-test`、`u1-test`、`t05`、`t07`、`t10`、`page-store-test` exit 0。
+- 待手测：主阅读器与右栏各一次：笔面板切「荧光笔」→ 选颜色 → 整行拖一条；切回「笔」恢复原设置；刷新后荧光笔仍在。
+
+**T-20261128-03 证据（2026-11-28）**
+
+- 根因：`createShelf` 新建时只做 `books: [...selected]` 的复制，从不从当前书架移除；主书架之所以看起来「消失」，是因为主视图用 `!shelved` 过滤，两处语义不一致。
+- 修：新增纯函数 `shelfCreateFromSelection`，`createShelf` 改走它；当前是真实书架时把选中的书从该书架移入新书架（其它书架不动），`parent` 仍按原规则记录；嵌套创建提示「已加入「X」：N 本」。
+- 验证：新增 `shelf-nested-create-test.mjs` 25 条 exit 0（含负向对照：根/嵌套/再嵌套/隐藏/去重、父书架只交出选中的书、其它书架不动）；`shelf-add-to-test`、`shelf-visibility-test`、`shelf-view-single-source-test`、`split-completion-test` exit 0。
+- 待手测：书架 → 选中几本 → 新建书架 → 原书架不再列出这几本、新子书架出现；子书架里再建一层仍可嵌套；其它书架里的同一本书不受影响。
+
+**T-20261128-04 证据（2026-11-28，用户选方案 B）**
+
+- 现状：预览大图（1200px）与网格缩略图（240px）都在 `~/.dsh/pdfdesk/thumbs/<key>/<宽>/`，只能靠手动找目录清；设置里的存储面板也不统计它。
+- 修：`measureStorage` 新增 `thumbs` 分区（12 区，`safe: 'rebuild'`）；`POST /pdfdesk/clear-translation-cache` 在清翻译缓存后逐个删除 `thumbs/<key>/`，响应新增 `thumbs` 计数（`removed`/`skipped` 语义不变）；设置 → 数据里该区块改名「不重要缓存」，按钮「清理不重要缓存」，确认/说明写明翻译缓存 + 缩略图/预览大图；存储面板新增「拆分缩略图与预览大图」。按用户选择保留缓存，**不做定时静默删除**（DEC-0014）。
+- 验证：新增 `unimportant-cache-test.mjs` 21 条 exit 0（分区统计、一次清两类缓存、`thumbs` 计数、幂等、GET 405、文案/接线）；`storage-test.mjs` 46 条 exit 0（11→12 区）；`retention-test`、`translation-cache-test`、`translate-ai-route-test`、`host-test` exit 0；`check-keys`/`check-deps` exit 0。
+- 代价：清空后第一次打开拆分面板要重新渲染首屏缩略图（约几百毫秒）；清理时若有渲染在跑，可能写回少量文件，再点一次即可。
+- 待手测：设置 → 数据 → 看到「拆分缩略图与预览大图」占用 → 点「清理不重要缓存」→ 确认/结果提示正确 → 再开拆分面板，缩略图重建、双击预览仍可用。
+
+**T-20261128-05 证据（2026-11-28，两条历史失败）**
+
+- `t08-test.mjs`：不是产品 bug。断言写在 `pointerdown`，要求「按下即选中 + sideDrag」；实际实现（与主阅读器一致）是「按下保留草稿，松开未移动才选中旧框」。这样在旧框上直接拖拽仍能新建框。已把断言改成两段：按下有草稿/未选中；松开后选中 index 0、kind text、不开编辑器。
+- `ui-polish-test.mjs`：两条断言过期——`.md-reader-modes` 的 gap 自 `695cc00` 起是 4px（断言写 2px）；`bookOverwriteConfirm` 键已随旧导入弹窗移除，只保留 `dataOverwriteConfirm`。已改成现状。
+- 验证：`t08-test.mjs` exit 0（全部场景）、`ui-polish-test.mjs` exit 0；产品代码未改。
+- 事故备注：修 `storage-test.mjs` 时用 PowerShell 读写中文 UTF-8 导致该文件编码损坏；已按原逻辑重建（46 条断言，未放宽），事故只影响仓库外测试脚本，未触碰仓库文件或用户数据。
+
+## 当前队列（2026-11-28 · 反色阅读）
+
+> 用户 2026-11-28 拍板（方案见工作区根《PDF阅读插件-反色阅读-方案-2026-11-28.md》）：跟随 DSH 深色主题自动反色 + 手动覆盖；`invert(1) hue-rotate(180deg)`；黑/白合并成一个随模式切换的「单色墨」；普通模式框保持品牌蓝、反色模式框变白；白色只用于单色墨与形状填充，荧光笔不加白。
+> 本批只改 `client.js`（样式 + 渲染 + 本机偏好），不碰 Host / 路由 / 存储 schema / `shelves.json`；客户端不能热更，需重启 DSH 手测。不升版本、不提交、不发布。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-06 | P1 | 反色阅读（夜间黑纸）：跟随深色主题 + 手动覆盖；只反纸面；单色墨；框/把手/输入框适配 | `client.js`（`usePaperMode`、`PaperInvertProvider`、`paperInkColor`/palette、主阅读器/右栏/设置入口、CSS） | 用户 2026-11-28 拍板 + 方案 §1 验收口径 | 不升版本；重启 DSH 手测；方案要求 6 张真机截图 | programmer | 待用户验收 |
+
+**T-20261128-06 证据（2026-11-28）**
+
+- 根因/需求：阅读器没有纸面显示模式；DSH 深色主题下 PDF 仍是白纸，夜间刺眼；标注墨色在反色后需要自动对比，旧黑色笔迹不能消失。
+- 实现：新增 `pdfdesk:paper-mode`（`auto`/`on`/`off`）+ `usePaperMode()`；`body[data-ds-dark-theme]` 存在性 + MutationObserver + `storage`/CustomEvent 同步；主阅读器/右栏根节点 `data-paper`，CSS 只对 `.md-reader-canvas`、`.md-overlay-text`、`.md-mask-page-image` 加 `invert(1) hue-rotate(180deg)`；`paperInkColor`/`monoInk`/`isMonoInk`/`penPalette`/`notePalette` 映射；固定色改 `--annot-ui-ink/bg/halo`；顶栏 ☾/☀ 按钮、右栏 `⋯` 菜单行、设置三档；中英 6 条文案。
+- 验证（exit 0）：`node --check client.js` / `index.js` / `src/host/*.js`；`check-keys`；`check-deps`（532 条）；`host-test`；新增 `paper-invert-test` 48 条（含 3 条负向对照）；`note-style`、`column-ink`、`notes`、`ink-gestures`、`highlight-pen`、`history`、`canvas`、`u1`、`t05`、`t07`、`t08`、`t10`、`pen-cursor`、`ui-polish`；`split-page-preview`、`split-thumbs-*`、`split-ui`、`split-jump`、`split-entries`、`split-completion`、`split-*-flow`、`storage`、`unimportant-cache`、`release-guard`、`change-record`。
+- 测试注入：`column-ink-test` / `notes-test` 因新增 `usePaperInvert`/`paperInkColor`/`notePalette`/`isMonoInk` 依赖，只更新测试桩；未改产品行为。`split-active-library-test`、`split-after-import-test` 本轮尝试时在真实拆分接口处因沙箱 `spawn EPERM` 失败（Python 拆分进程，非反色代码）。
+- 未覆盖 / 需手测：重启 DSH 后——(1) 深色主题自动反色、顶栏按钮覆盖、设置三档、刷新/重启保持、右栏同步；(2) 单页/连续/双语/译文/叠加/右栏；(3) 纯文字/彩色插图/扫描页、200%/300% 缩放；(4) 旧黑/旧彩色/新单色/荧光笔/形状描边与填充/文本笔记占位符与光标；(5) marquee/文字框/遮罩框/问号框/把手/选中描边；(6) 拆分面板/封面/导出不反色。未做真机截图（重启会结束当前会话）。
+
+## 当前队列（2026-11-28 · 阅读交互四项）
+
+> 用户 2026-11-28 直接指令；已在对话确认：荧光笔＝笔迹粗细 12–40px、对比度＝反色按钮旁弹层 100–200%、触控板＝主阅读器与右栏都支持。
+> 本批只改 `client.js` + 文档；客户端不能热更，需重启 DSH 手测；不升版本、不提交、不发布。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-07 | P1 | 荧光笔笔迹粗细可调（12–40px，默认 22，两栏共用本机记忆） | `client.js`：`HIGHLIGHT_WIDTH_*`、`useHighlightWidth`、`PenStyleControls`、两栏 marker | 用户 2026-11-28 指令 + 对话确认 | 旧笔画不迁移；滑杆只在荧光笔形态出现 | programmer | 待用户验收 |
+| T-20261128-08 | P1 | 左右工具条悬停设置面板在指针移入时不再消失 | `client.js`：`keepRailPanel`/`keepSidePanel`、面板 `onPointerEnter`、关闭宽限、面板间距/桥接 CSS | 用户 2026-11-28 报告「悬停菜单会消失」 | 不新增按钮；主阅读器与右栏一致 | programmer | 待用户验收 |
+| T-20261128-09 | P1 | 章节对比度 100–200%（依赖反色、按书+章记忆、两栏同步） | `client.js`：`useChapterContrast`、`--paper-contrast`、滤镜 `contrast()`、主阅读器弹层、右栏 `⋯` 子菜单 | 用户 2026-11-28 指令 + 对话确认 | 只反色纸面生效；普通模式不变；不碰 Host | programmer | 已关闭（用户 2026-11-28 判定「对比度效果不好」，由 T-20261128-16 文字增强整体替换；旧实现已删除，不留两套） |
+| T-20261128-10 | P1 | 触控板双指捏合缩放（主阅读器 + 右栏） | `client.js`：两处 `wheel` 监听、`onZoomBy`、侧栏 `zoomTo` | 用户 2026-11-28 指令 + 对话确认 | 普通双指滚动不变；主阅读器双栏不拦截 | programmer | 待用户验收 |
+
+**T-20261128-07…10 证据（2026-11-28）**
+
+- 荧光笔：新增 `pdfdesk:highlight-width`（12–40，默认 22）+ `useHighlightWidth`，两栏共用；`PenStyleControls` 荧光笔分支增加滑杆与 `annotHighlightSize`；旧笔画宽度不变。`highlight-pen-test` 25 条 exit 0。
+- 悬停：面板 `onPointerEnter` 取消关闭；关闭宽限 600/800ms；`right 48→34px`、`left 28→32px` 把空隙压到 2px。`rail-hover-test` 9 条 exit 0；`note-style-test` 旧 220ms 断言按新需求更新后 exit 0。
+- 对比度：`pdfdesk:contrast:<book>:<code>` + `useChapterContrast`；主阅读器 `▾` 弹层 100–200%（step 5，重置），右栏 `⋯` 五档；CSS 只对三层纸面加 `contrast(var(--paper-contrast, 1))`；普通模式无滤镜。`chapter-contrast-test` 15 条 exit 0。
+- 触控板：主阅读器 `props.paneRef`、右栏 `sideRoot` 原生 `wheel`（`passive:false`，`ctrlKey` + `.md-reader-stage`）；`exp(-delta*0.0025)` 单次 0.67–1.5；主阅读器走 `onZoomBy: readerZoom`，右栏走 `zoomTo`。`trackpad-zoom-test` 11 条 exit 0。
+- 回归：`paper-invert`、`column-ink`、`notes`、`ink-gestures`、`history`、`canvas`、`u1`、`t05`、`t07`、`t08`、`t10`、`pen-cursor`、`ui-polish`、`split-page-preview`、`split-thumbs-client`、`split-ui`、`split-jump`、`storage`、`unimportant-cache`、`release-guard` 等 25 个脚本 exit 0；`check-keys`/`check-deps` exit 0。
+- 环境/历史失败同前：`split-active-library`/`split-after-import` 的 `spawn EPERM`；`overlay-text-layer-dom` 的 Edge 调试端口；`side-page-drift`、`reading-memory`、`dual-overlay`、`copyright-and-deps` 的改动前已有失败。
+- 待手测：重启 DSH 后——荧光笔 12/22/40 + 重启记忆；左右工具条移入面板不消失、移出 0.6–0.8s 关闭；反色章节 100/150/200%、切章/重启记忆、右栏同步；触控板捏合两栏缩放、普通滚动不变、Ctrl+滚轮缩放、双栏不缩放。未做真机截图（重启会结束当前会话）。
+
+## 当前队列（2026-11-28 · 阅读器 UI 三项）
+
+> 用户 2026-11-28 指令「先解决 UI 问题」；范围按工作区根《PDF阅读插件-UI与文字增强-方案-2026-11-28.md》§1 取阅读器这一屏三项，用户在对话中选定：先做 UI-1/2/3，书架面包屑 UI-4 下一轮；窄宽度允许隐藏 `⇤` 首页 / `适应宽度` / 缩放百分比以保顶栏单行。
+> 本批只改 `client.js` + 文档；客户端不能热更，需重启 DSH 手测；不升版本、不提交、不发布。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-11 | P1 | 竖排工具条框与图标对齐（左右栏 + 右栏预览） | `client.js`：`.md-rail` 的 `flex: none`、`.md-rail-wrap` 44px、面板 46px、三条工具栏 z-index 41 | 用户 2026-11-28「右栏竖排工具条框/图标错位」+ 方案 §1 UI-1 | 不新增按钮；滚动条车道仍留 20px；悬停面板仍在框边 2px | programmer | 待用户验收 |
+| T-20261128-12 | P1 | 窄宽度顶栏保单行（书名让位；必要时收起首页/适应宽度/缩放百分比） | `client.js`：`md-reader-first`/`md-reader-fit`、`pdfdesk-reader` 容器查询、`.md-reader-titles` flex | 用户 2026-11-28「顶部变两行挤压阅读区」+ 方案 §1 UI-2 + 对话确认可隐藏 | Home/F 仍可达；双栏 `md-hidden` 不变；不新增按钮 | programmer | 待用户验收 |
+| T-20261128-13 | P1 | 右侧预览新增反色按钮（与主阅读器同步） | `client.js`：`.md-side-bar` 的 `md-side-paper` + 其 CSS | 用户 2026-11-28「右栏预览缺反色按钮」+ 方案 §1 UI-3 | 复用 `paperInvert`/`paperInvertHint`，不新增 locale 键；不新增依赖 | programmer | 待用户验收 |
+
+**T-20261128-11…13 证据（2026-11-28）**
+
+- 根因：`.md-rail` 是被 30px `.md-rail-wrap` 压缩的 flex 项——44px 的框被压到 30px，34px 按钮溢出框外、图标相对框中心右偏；`.md-reader-bar` / `.md-side-bar` 没有层级，`md-rail-wrap`（`top:0;bottom:0;z-index:40`）盖住顶栏右侧的 `×` 与反色按钮（静态画廊 `elementFromPoint` 实测落在 `md-rail-wrap`）；顶栏换行是 flex 断行按 `.md-reader-titles` 的 260px basis 算的，标题本可收缩却被提前挤到第二行。
+- 修法：`.md-rail { flex: none }`；wrap 30→44、面板 34/32→46；三条工具栏 z-index 41；`.md-reader` 加容器查询 `pdfdesk-reader`（≤740px 隐藏 `⇤`/`适应宽度`/百分比）；`.md-reader-titles` basis 0；右栏新增 `md-side-paper` 28px 按钮。
+- 证据：`reader-ui-geometry-test` 22 条 exit 0（4 条负向对照）；静态画廊（真实 `client.js` CSS）全宽 1280/1600/1920 × 明暗 6 张 + 分栏 6 张——框宽 44、框右缘距边 20、`×` 命中自身、全宽顶栏均单行、分栏 619px 时顶栏仍单行；`issue6-rail-hit-test` 12 个宽度命中测试 exit 0，负向对照 11/12 复现旧 bug。
+- 回归：`rail-hover`、`issue6-side-bar-rail-clearance`、`ui-polish`、`t05`、`t07`、`t08`、`t10`、`u1`、`note-style`、`layout`、`paper-invert`、`trackpad-zoom`、`highlight-pen`、`chapter-contrast`、`split-ui`、`split-page-preview`、`unimportant-cache`、`storage`（46）、`release-guard`、`change-record`、`host-test` 均 exit 0；`check-keys` / `check-deps` exit 0。
+- 待手测：重启 DSH 后——① 左/右竖排框完整、图标居中、不压滚动条、鼠标移入设置面板不消失；② 1280 全宽与打开右侧预览时顶栏单行、`×` 可点、Home/F 仍生效；③ 右栏 ☾ 与主阅读器同步、重启后保持。
+- 未做/风险：书架面包屑 UI-4 留待下一轮；fit 宽度下竖排框仍会压住纸右缘约 40px（既有 `fitScale` 用 `clientWidth - 48`，没算竖排车道；改前约 33px），若要「框绝不上纸」需下一轮改 fit 计算（会使适应宽度下的页面窄 44px，需用户拍板）。
+
+## 当前队列（2026-11-28 · 竖排条让位 + 书架面包屑）
+
+> 用户 2026-11-28 手测反馈「PDF 页顶部工具栏将工具条遮挡了，其它没有问题」（T-14），并指令「接着做面包屑」（T-15，方案 §1 UI-4）。
+> 只改 `client.js` + 文档；客户端不能热更，需重启 DSH 手测；不升版本、不提交、不发布。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-14 | P1 | 竖排工具条从顶栏/工具行下方开始（主阅读器 + 右栏预览） | `client.js`：两处 `ResizeObserver`、`--pdf-reader-rail-top`/`--pdf-side-rail-top`、`.md-rail` 的 `max-height`/`scrollbar-width` | 用户 2026-11-28 手测反馈 | 工具行折行/收起都成立；保留工具栏 z-index 41 兜底；不新增按钮 | programmer | 待用户验收 |
+| T-20261128-15 | P1 | 面包屑显示多级书架链路（点祖先返回；hidden 一级；父缺失/成环截断） | `client.js`：`shelfChain`、`crumbChain.map`、`.md-crumb-ancestor`/`.md-crumbs` CSS | 用户 2026-11-28 指令 + 方案 §1 UI-4 | 只读 `shelves[].parent`，不改 schema/路由；长名省略、窄屏换行 | programmer | 待用户验收 |
+
+**T-20261128-14…15 证据（2026-11-28）**
+
+- T-14 根因：上一轮把顶栏/工具行抬到竖排条之上后，竖排条仍在阅读器里垂直居中（`top:0`），工具行折行时条顶钻到工具栏下面。修法：`ReaderView`/`SidePdfView` 用 `ResizeObserver` 把工具栏高度写进 CSS 变量，`.md-rail-wrap`/`.md-side-rail-wrap` 的 `top` 跟随；`.md-rail` 高度上限改为车道高度并隐藏内部滚动条。画廊量测：工具行底到条顶 25.5–72.5px，全为正。
+- T-15 根因：面包屑只读当前 `shelfPage.groupName`，不读 `shelves[].parent`。修法：纯函数 `shelfChain`（root→current，hidden 一级，缺失父/环/20 层截断）+ `crumbChain.map` 渲染（祖先与书页所属书架可点，`openGroup(id)`）；`.md-crumbs` 可换行、祖先名 16ch 省略。
+- 验证：`shelf-breadcrumb-test` 20 条、`reader-ui-geometry-test` 28 条、`issue6-side-bar-rail-clearance` 10 条、`rail-hover` 8 条、`issue6-rail-hit-test`（无头 Edge）均 exit 0；`shelf-view-single-source`、`shelf-*`、`split-result-route`、`library-tips`、`change-record`、`release-guard`、`check-keys`/`check-deps` exit 0。
+- 待手测：重启后——① 竖排条顶端不再压住顶栏/工具行（工具行收起再打开、窗口变矮也看一次）；② 3 层书架面包屑、点祖先返回、hidden 链路、书页书名后点中间层返回、悬空父/成环不白屏。
+- 未做/风险：`--pdf-reader-rail-top` 首帧为 0（ResizeObserver 回调前竖排条会在旧位置一帧）；窄屏折行时分隔符可能落在行尾；未做真机截图。
+
+## 当前队列（2026-11-28 · 文字增强 FUNC-1）
+
+> 用户 2026-11-28 拍板：对比度效果不好，改用三档「文字增强」；对话确认：三档（柔和/清晰/黑白）、**所有档只处理近灰像素**（彩色插图保留原色）、入口＝右栏 `⋯` 子菜单 + 主阅读器 `⌄` 子栏下拉（顶栏不再放 `▾`）。
+> 只改 `client.js` + 文档；客户端不能热更，需重启 DSH 手测；不升版本、不提交、不发布。
+
+| ID | 优先级 | 执行单元 | 影响范围 | 验收来源 | 依赖/备注 | 承接 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-20261128-16 | P1 | 文字增强替换对比度（按章记忆的三档 S 曲线、只作用反色、只处理近灰像素、两栏同步） | `client.js`：`useChapterEnhance`/`ENHANCE_*`、`EnhanceDefs` SVG 滤镜、`--pdf-enh`、`⌄` 子栏下拉、右栏 `⋯` 子菜单；删除 contrast 全套 | 用户 2026-11-28 指令 + 方案 §2 FUNC-1 + 三项对话确认 | 不新增依赖/按钮；普通纸面不变；旧 `pdfdesk:contrast*` 键不读不迁移 | programmer | 待用户验收 |
+
+**T-20261128-16 证据（2026-11-28）**
+
+- 根因：`contrast()` 围绕中灰做线性拉伸，灰纸与灰字一起动，扫描件反而更糊。改为 SVG `feComponentTransfer` **线性增益**（柔和 1.3 / 清晰 1.9 / 黑白 2.8，黑点 0.02）：同一条滤镜里先反色 + 色相回正，再用 `|base − gray|` 色度遮罩把彩色像素排除（`feComposite out/over`），所以四个档位都不动彩色插图。
+- **两轮按用户实测回调**：① 第一版（1.65/−0.33）对卓里奇类浅灰书「效果不大」——实测该页反色后纸 0.004、字核 0.427，被算成 0.414（比关闭更暗）。② 中间试过带趾部的 table 曲线，字变亮了，但用户反馈「字边缘不锐利、认不清」：趾部把抗锯齿边像素压到 0，只剩字芯。③ 最终**回退为线性 + 黑点 0.02**：边像素等比保留，只抬增益；clear 把 0.427→≈0.77、ink→1.0，纸 0→0。真实页 CSS 探针（真实插件 CSS + 真实滤镜）放大核对：字更白且边缘连续。
+- 入口：主阅读器 `⌄` 子栏末尾一个紧凑下拉（4 档；未反色时禁用并提示「反色后生效」）；右栏 `⋯` 新增「文字增强」子菜单（同样 4 档、反色门控、勾选当前档）。顶栏对比度 `▾`、弹层、右栏对比度子菜单、`useChapterContrast`/`--paper-contrast`/`paperContrast*` 文案全部删除，未留两套。
+- 存储：`pdfdesk:enhance:<book>:<code>`（off 时删键），`pdfdesk:enhance` 广播 + `storage` 监听，两栏同一档；不动 Host、路由、locale 键结构。
+- 验证：`paper-enhance-test` 27 条（含 4 条负向对照）exit 0；`paper-invert-test` 按新滤镜语法更新后 48 条 exit 0；`check-keys` / `check-deps`（534） / `node --check` 全 0；`reader-ui-geometry`、`ui-polish`、`t05`、`highlight-pen`、`note-style`、`layout`、`rail-hover`、`issue6-*` 全 0。
+- 渲染证据：真实 `EnhanceDefs` + 真实插件 CSS 渲染卓里奇页：关闭/清晰/黑白三档对比，清晰与黑白字明显更白、笔画连续；合成页（纸 #f4f4f4、正文 #3e3e3e、浅灰行 #8f8f8f、红/蓝块）四档纸近黑、正文逐档变白，红/蓝块 RGB 与色度四档完全一致。
+- 待手测：重启后选**卓里奇**一章与一本原本就清楚的书各看一次（反色 → 柔和/清晰/黑白）；彩色插图页确认颜色保留；切章/重启记忆；右栏 `⋯` 与主阅读器同步；关闭档回到原反色。
+- 未做/风险：线性无趾部，纸不是纯白（反色后 >0.1）的旧复印会把纸与噪点一起提亮（本库实测纸面均为 0.0）；色度阈值 0.10 仍是经验值；`feBlend difference` / `feComposite` 依赖 Chromium 的 SVG 滤镜实现（DSH 桌面为 Chromium，风险低）；未在真实扫描件上量过 200%/300% 缩放下的观感与性能。
+
 ## 待拆解入口
 
 - 新需求规格：`docs/requirements/`
 - 角色调整提案：`docs/feedback/`
 - 用户直接指令：由用户在对话中给出，boss 拆解后写入本表
+- **（2026-11-27 用户指令，未拆解）改「书 id」后书架归属丢失**：`分片\<书 id>` 的目录名、或章文件名前缀一改，`~/.dsh/pdfdesk/shelves.json` 里记的还是旧 id → 旧 id 悬空，书从原书架里掉出去；`state.json` 的 `bookId` / `expandedByBook` 同样指向旧 id，原来打开的那本书也打不开。实测 2026-11-27 19:01–19:18 一批 11 本改名后，三个书架 26 条记录里 **14 条对不上**（数学分析 11、抽象代数 3），用外部脚本按 `缓存\重命名记录` 的 old→new 反推才修回来（修好 2/2、13/13、7/7，悬空 0）。
+  - 【需求】改书 id 后，书仍留在原来那个书架里。
+  - 【现状】书架归属只按书 id 字符串记（`shelves[].books`、`hidden`），改名只动文件系统，两个 json 不跟着改，无处提示。
+  - 【期望】改名入口做一次原子迁移：同步 `shelves[].books`、`hidden`、`state.bookId`、`expandedByBook`；外部改名的书，刷新后也能被认回原位（保守匹配，认不准就不动并提示）。
+  - 【验收】① 改一本分片书的 id 后刷新，它仍在原书架、书架计数不变；② `state.bookId` 不再指向不存在的 id（原书能打开，或回落到书架）；③ 未改名的书、整本卡、`hidden` 行为不变；④ 迁移只改 id 字符串，`shelves.json` 结构 / `version` 不变，可回退。
+  - 【不做】不改书架结构、不改 `hidden` 语义、不新增常驻按钮。
+  - 【未决】改名入口做进工作台（可原子同步），还是只接受外部命令行改名（只能启动时迁移）？后者要定匹配策略——长书名在章文件名里会被截成 40 字前缀（如 `AbstractAlgebra,ThirdEdition(DavidS.Dumm`），歧义时不得猜。
+  - 参考实现：外部脚本 `D:\长期文件\数学文件拆分稿\工具\sync_shelves.py`（读 `缓存\重命名记录\` 的 old→new 反推旧 id→新 id，写前备份到 `~/.dsh/pdfdesk/backup/`，可 dry-run）。本次修复的原始数据备份：`~/.dsh/pdfdesk/backup/shelves-20261127-192616.json.bak`。
+  - 状态（2026-11-27）：**待拆解**，拆成单元前不派发。用户要求「加入下次更新」。
 - **下一轮（2026-11-27 用户指令，未拆解）**：大文件拆分面板性能——打开慢、滚动卡、有闪退风险；需虚拟化/释放缩略图位图/简略模式兜底。规格与验收待拍板项见 [`docs/requirements/2026-11-27-大文件拆分性能.md`](requirements/2026-11-27-大文件拆分性能.md)。
-  - **状态（2026-11-27）：待用户验收**。用户选方案 B（WPS 式 Host 缩略图）并批准新增路由/缓存；已实现 `/pdfdesk/pdf-layout`、`/pdfdesk/pdf-thumb`、`tools/pdf_thumbs.py` 与拆分面板图片网格（pdf.js 降级保留）。记录见 `docs/changes/next.md` 第十二节；未提交、未发布。
+  - **状态（2026-11-27）：待用户验收**。用户选方案 B（WPS 式 Host 缩略图）并批准新增路由/缓存；已实现 `/pdfdesk/pdf-layout`、`/pdfdesk/pdf-thumb`、`tools/pdf_thumbs.py` 与拆分面板图片网格（pdf.js 降级保留）。记录见 `docs/changes/next.md` 第一、二节（拆分预览 / 不重要缓存）；未提交、未发布。
 - **重构（2026-11-27 用户拍板，下一轮）**：先只修 bug，重构不与本轮同批；下轮抽出 `shelfView`（主/自定义/隐藏书架的成员与计数单一来源）和拆分收尾流程（等待刷新、按目录定位拆分书、加入书架、打开拆分会话），纯重构不得改行为，并补回归测试。
-  - **状态（2026-11-27）：待用户验收**。已抽出 `shelfView` / `shelfAddBooks` / `splitShelfTarget` / `splitBookIds` / `fileSplitBooks`（`client.js`），行为等价对照与回归测试见 `docs/changes/next.md` 第九节；未提交、未发布。
+  - **状态（2026-11-27）：待用户验收**。已抽出 `shelfView` / `shelfAddBooks` / `splitShelfTarget` / `splitBookIds` / `fileSplitBooks`（`client.js`），行为等价对照与回归测试见 `docs/changes/next.md`；未提交、未发布。
 
 ## 单元模板
 

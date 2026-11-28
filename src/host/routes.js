@@ -545,7 +545,9 @@ async function activeLibrary() {
 
   /** Thumbnail widths the split panel may ask for, in CSS pixels. */
   const THUMB_WIDTH_MIN = 80
-  const THUMB_WIDTH_MAX = 480
+  // 240 is the grid cell; the double-click preview asks for one page at reading
+  // size (1200) so a low-quality scan's title still lands above 480 px.
+  const THUMB_WIDTH_MAX = 1600
   const THUMB_WIDTH_DEFAULT = 240
   /** One Python run renders at most this many pages; the panel scrolls in batches. */
   const THUMB_BATCH_MAX = 60
@@ -1774,7 +1776,18 @@ async function activeLibrary() {
               removed += 1
             }
           }
-          sendJson(response, 200, { ok: true, removed, skipped })
+          // The split panel's thumbnails (240 px) and the double-click preview
+          // images (1200 px) are rebuildable too, and this button is the one
+          // "unimportant cache" entry in Settings → 数据. Report them apart so
+          // the note can say how much of the cleanup was thumbnails.
+          let thumbs = 0
+          const thumbRoot = join(config.dataDir, 'thumbs')
+          for (const entry of await readdir(thumbRoot, { withFileTypes: true }).catch(() => [])) {
+            const target = join(thumbRoot, entry.name)
+            if (!(await rm(target, { recursive: true, force: true }).then(() => true, () => false))) continue
+            thumbs += 1
+          }
+          sendJson(response, 200, { ok: true, removed, skipped, thumbs })
         } catch (error) {
           fail(response, 500, 'clear-cache-failed', String(error && error.message ? error.message : error))
         }
